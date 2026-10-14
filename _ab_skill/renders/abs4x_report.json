@@ -1,0 +1,35 @@
+{
+ "ppu": 384.0,
+ "res": [
+  1760,
+  2160
+ ],
+ "scene": "abskill",
+ "prefix": "abs_",
+ "el_deg": 35.264389682754654,
+ "az_deg": 45.0,
+ "sun": [
+  -0.36108487844467163,
+  0.3009040653705597,
+  0.8826518654823303
+ ],
+ "frames": {
+  "abs4x_x_0": {
+   "variant": null,
+   "rotation": 0,
+   "raw": "/Users/hermmoment/coding/4tox/_ab_skill/renders/abs4x_x_0_raw.png",
+   "tris": 1026,
+   "verts": 930,
+   "parts": 110,
+   "size": [
+    1.967,
+    1.897,
+    2.668
+   ],
+   "footprint": [
+    1.967,
+    1.897
+   ]
+  }
+ }
+}

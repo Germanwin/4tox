@@ -1,0 +1,10 @@
+{
+ "_": "Настройки живой сборки (tools/build_live.py): что рендерить в уже запущенном Blender. Меняй этот файл, а не код — Blender перезапускать не нужно.",
+ "variants": "a",
+ "rotations": [0, 90, 180, 270],
+ "samples": 64,
+ "export": false,
+ "save_blend": false,
+ "viewport": true,
+ "calib": {"variants": ["a"], "rotations": [0, 90, 180, 270], "samples": 16, "reload": true}
+}

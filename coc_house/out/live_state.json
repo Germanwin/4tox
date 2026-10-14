@@ -1,0 +1,22 @@
+{
+ "scene": "Scene",
+ "my_collection_objects": 21,
+ "collection_hidden_in_viewport": false,
+ "default_objects": {
+  "Cube": {
+   "hidden_render": true,
+   "hidden_viewport": true
+  },
+  "Light": {
+   "hidden_render": true,
+   "hidden_viewport": true
+  },
+  "Camera": {
+   "hidden_render": true,
+   "hidden_viewport": true
+  }
+ },
+ "filepath": "",
+ "is_dirty": false,
+ "active_camera": "coc_house_camera"
+}

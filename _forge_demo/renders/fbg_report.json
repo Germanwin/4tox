@@ -1,0 +1,86 @@
+{
+ "ppu": 96.0,
+ "res": [
+  512,
+  640
+ ],
+ "scene": "forge_barn",
+ "prefix": "fb_",
+ "el_deg": 35.264389682754654,
+ "az_deg": 45.0,
+ "sun": [
+  -0.36108487844467163,
+  0.3009040653705597,
+  0.8826518654823303
+ ],
+ "frames": {
+  "fbg_x_0": {
+   "variant": null,
+   "rotation": 0,
+   "raw": "/Users/hermmoment/coding/4tox/_forge_demo/renders/fbg_x_0_raw.png",
+   "tris": 528,
+   "verts": 626,
+   "parts": 78,
+   "size": [
+    2.06,
+    1.824,
+    1.86
+   ],
+   "footprint": [
+    2.06,
+    1.824
+   ]
+  },
+  "fbg_x_90": {
+   "variant": null,
+   "rotation": 90,
+   "raw": "/Users/hermmoment/coding/4tox/_forge_demo/renders/fbg_x_90_raw.png",
+   "tris": 528,
+   "verts": 626,
+   "parts": 78,
+   "size": [
+    1.824,
+    2.06,
+    1.86
+   ],
+   "footprint": [
+    1.824,
+    2.06
+   ]
+  },
+  "fbg_x_180": {
+   "variant": null,
+   "rotation": 180,
+   "raw": "/Users/hermmoment/coding/4tox/_forge_demo/renders/fbg_x_180_raw.png",
+   "tris": 528,
+   "verts": 626,
+   "parts": 78,
+   "size": [
+    2.06,
+    1.824,
+    1.86
+   ],
+   "footprint": [
+    2.06,
+    1.824
+   ]
+  },
+  "fbg_x_270": {
+   "variant": null,
+   "rotation": 270,
+   "raw": "/Users/hermmoment/coding/4tox/_forge_demo/renders/fbg_x_270_raw.png",
+   "tris": 528,
+   "verts": 626,
+   "parts": 78,
+   "size": [
+    1.824,
+    2.06,
+    1.86
+   ],
+   "footprint": [
+    1.824,
+    2.06
+   ]
+  }
+ }
+}

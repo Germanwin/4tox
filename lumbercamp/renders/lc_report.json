@@ -1,0 +1,86 @@
+{
+ "ppu": 96.0,
+ "res": [
+  512,
+  640
+ ],
+ "scene": "lumbercamp",
+ "prefix": "lc_",
+ "el_deg": 35.264389682754654,
+ "az_deg": 45.0,
+ "sun": [
+  -0.36108487844467163,
+  0.3009040653705597,
+  0.8826518654823303
+ ],
+ "frames": {
+  "lc_x_0": {
+   "variant": null,
+   "rotation": 0,
+   "raw": "/Users/hermmoment/coding/4tox/lumbercamp/renders/lc_x_0_raw.png",
+   "tris": 982,
+   "verts": 680,
+   "parts": 66,
+   "size": [
+    2.862,
+    2.716,
+    1.75
+   ],
+   "footprint": [
+    2.862,
+    2.716
+   ]
+  },
+  "lc_x_90": {
+   "variant": null,
+   "rotation": 90,
+   "raw": "/Users/hermmoment/coding/4tox/lumbercamp/renders/lc_x_90_raw.png",
+   "tris": 982,
+   "verts": 680,
+   "parts": 66,
+   "size": [
+    2.716,
+    2.862,
+    1.75
+   ],
+   "footprint": [
+    2.716,
+    2.862
+   ]
+  },
+  "lc_x_180": {
+   "variant": null,
+   "rotation": 180,
+   "raw": "/Users/hermmoment/coding/4tox/lumbercamp/renders/lc_x_180_raw.png",
+   "tris": 982,
+   "verts": 680,
+   "parts": 66,
+   "size": [
+    2.862,
+    2.716,
+    1.75
+   ],
+   "footprint": [
+    2.862,
+    2.716
+   ]
+  },
+  "lc_x_270": {
+   "variant": null,
+   "rotation": 270,
+   "raw": "/Users/hermmoment/coding/4tox/lumbercamp/renders/lc_x_270_raw.png",
+   "tris": 982,
+   "verts": 680,
+   "parts": 66,
+   "size": [
+    2.716,
+    2.862,
+    1.75
+   ],
+   "footprint": [
+    2.716,
+    2.862
+   ]
+  }
+ }
+}

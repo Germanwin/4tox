@@ -1,0 +1,74 @@
+{
+ "tag": "vgpose",
+ "ppu": 96.0,
+ "ortho": 2.0,
+ "res": [
+  144,
+  192
+ ],
+ "az_deg": 45.0,
+ "el_deg": 35.264389682754654,
+ "cell": [
+  112,
+  132
+ ],
+ "anims": {
+  "idle": {
+   "frames": 6,
+   "fps": 8.0,
+   "loop": true
+  }
+ },
+ "shadow": {
+  "a": 15.0,
+  "b": 5.0,
+  "angle_deg": -30.0,
+  "alpha": 0.45,
+  "blur": 2.2,
+  "shift": [
+   2.0,
+   1.0
+  ]
+ },
+ "outline": {
+  "rgb": [
+   14,
+   18,
+   14
+  ],
+  "dilate": 1
+ },
+ "note": "жительница: 1 юнит = 1 клетка карты; клетка и якорь — как у героя (112x132, опора 56,106); anchorX/anchorY — пиксель клетки, куда проецируется (0,0,0), то есть земля между ступнями",
+ "frames": {
+  "vgpose_idle_0_0": {
+   "file": "vgpose_idle_0_0.png",
+   "w": 112,
+   "h": 132,
+   "anchorX": 56.0,
+   "anchorY": 106.0,
+   "anim": "idle",
+   "frame": 0,
+   "rotation": 0
+  },
+  "vgpose_idle_2_0": {
+   "file": "vgpose_idle_2_0.png",
+   "w": 112,
+   "h": 132,
+   "anchorX": 56.0,
+   "anchorY": 106.0,
+   "anim": "idle",
+   "frame": 2,
+   "rotation": 0
+  },
+  "vgpose_idle_4_0": {
+   "file": "vgpose_idle_4_0.png",
+   "w": 112,
+   "h": 132,
+   "anchorX": 56.0,
+   "anchorY": 106.0,
+   "anim": "idle",
+   "frame": 4,
+   "rotation": 0
+  }
+ }
+}

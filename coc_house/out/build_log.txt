@@ -1,0 +1,7 @@
+[coc_house] живая сессия Blender 5.2.0 LTS
+[coc_house] скрыто из кадра: ['Cube', 'Light', 'Camera']
+[coc_house] объектов: 15, треугольников: 3202
+[coc_house] габарит дома X 4.00  Y 5.06  Z 4.24
+[coc_house] центр кадра: 0.00 -0.75 2.12, орто 7.66
+Info: Saved copy as "coc_house.blend"
+[coc_house] копия .blend: /Users/hermmoment/coding/4tox/coc_house/coc_house.blend

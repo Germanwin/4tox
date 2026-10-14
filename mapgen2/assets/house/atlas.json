@@ -1,0 +1,214 @@
+{
+ "atlas": "atlas.png",
+ "ppu": 80.0,
+ "az_deg": 45.0,
+ "el_deg": 35.264389682754654,
+ "res": [
+  512,
+  640
+ ],
+ "variants": {
+  "a": [
+   3,
+   2
+  ],
+  "b": [
+   3,
+   2
+  ],
+  "c": [
+   3,
+   2
+  ]
+ },
+ "note": "дом жителя: 1 юнит модели = 1 клетка карты, пятно 3 x 2 (при повороте 2 x 3); anchorX/anchorY — центр пятна застройки",
+ "shadow": {
+  "a": 136.0,
+  "b": 34.0,
+  "angle_deg": 10.0,
+  "alpha": 0.32,
+  "blur": 3.0,
+  "shift": [
+   14.0,
+   68.0
+  ]
+ },
+ "outline": {
+  "rgb": [
+   14,
+   18,
+   14
+  ],
+  "dilate": 1
+ },
+ "frames": {
+  "vh_a_0": {
+   "x": 2,
+   "y": 2,
+   "w": 301,
+   "h": 359,
+   "anchorX": 147.0,
+   "anchorY": 244.0,
+   "variant": "a",
+   "rotation": 0,
+   "footprint": [
+    3,
+    2
+   ]
+  },
+  "vh_a_90": {
+   "x": 307,
+   "y": 2,
+   "w": 301,
+   "h": 359,
+   "anchorX": 147.0,
+   "anchorY": 244.0,
+   "variant": "a",
+   "rotation": 90,
+   "footprint": [
+    2,
+    3
+   ]
+  },
+  "vh_a_180": {
+   "x": 612,
+   "y": 2,
+   "w": 301,
+   "h": 359,
+   "anchorX": 147.0,
+   "anchorY": 244.0,
+   "variant": "a",
+   "rotation": 180,
+   "footprint": [
+    3,
+    2
+   ]
+  },
+  "vh_a_270": {
+   "x": 917,
+   "y": 2,
+   "w": 301,
+   "h": 359,
+   "anchorX": 147.0,
+   "anchorY": 244.0,
+   "variant": "a",
+   "rotation": 270,
+   "footprint": [
+    2,
+    3
+   ]
+  },
+  "vh_b_0": {
+   "x": 2,
+   "y": 365,
+   "w": 301,
+   "h": 359,
+   "anchorX": 147.0,
+   "anchorY": 244.0,
+   "variant": "b",
+   "rotation": 0,
+   "footprint": [
+    3,
+    2
+   ]
+  },
+  "vh_b_90": {
+   "x": 307,
+   "y": 365,
+   "w": 301,
+   "h": 359,
+   "anchorX": 147.0,
+   "anchorY": 244.0,
+   "variant": "b",
+   "rotation": 90,
+   "footprint": [
+    2,
+    3
+   ]
+  },
+  "vh_b_180": {
+   "x": 612,
+   "y": 365,
+   "w": 301,
+   "h": 359,
+   "anchorX": 147.0,
+   "anchorY": 244.0,
+   "variant": "b",
+   "rotation": 180,
+   "footprint": [
+    3,
+    2
+   ]
+  },
+  "vh_b_270": {
+   "x": 917,
+   "y": 365,
+   "w": 301,
+   "h": 359,
+   "anchorX": 147.0,
+   "anchorY": 244.0,
+   "variant": "b",
+   "rotation": 270,
+   "footprint": [
+    2,
+    3
+   ]
+  },
+  "vh_c_0": {
+   "x": 2,
+   "y": 728,
+   "w": 301,
+   "h": 359,
+   "anchorX": 147.0,
+   "anchorY": 244.0,
+   "variant": "c",
+   "rotation": 0,
+   "footprint": [
+    3,
+    2
+   ]
+  },
+  "vh_c_90": {
+   "x": 307,
+   "y": 728,
+   "w": 301,
+   "h": 359,
+   "anchorX": 147.0,
+   "anchorY": 244.0,
+   "variant": "c",
+   "rotation": 90,
+   "footprint": [
+    2,
+    3
+   ]
+  },
+  "vh_c_180": {
+   "x": 612,
+   "y": 728,
+   "w": 301,
+   "h": 359,
+   "anchorX": 147.0,
+   "anchorY": 244.0,
+   "variant": "c",
+   "rotation": 180,
+   "footprint": [
+    3,
+    2
+   ]
+  },
+  "vh_c_270": {
+   "x": 917,
+   "y": 728,
+   "w": 301,
+   "h": 359,
+   "anchorX": 147.0,
+   "anchorY": 244.0,
+   "variant": "c",
+   "rotation": 270,
+   "footprint": [
+    2,
+    3
+   ]
+  }
+ }
+}

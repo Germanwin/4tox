@@ -1,0 +1,78 @@
+{
+ "ortho": 8.0,
+ "res": [
+  512,
+  640
+ ],
+ "ppu": 80.0,
+ "el_deg": 35.264389682754654,
+ "az_deg": 45.0,
+ "sun": [
+  -0.36108487844467163,
+  0.3009040653705597,
+  0.8826518654823303
+ ],
+ "sun_energy": 2.05,
+ "frames": {
+  "th_a_0": {
+   "tris": 1068,
+   "verts": 730,
+   "objects": 21
+  },
+  "th_a_90": {
+   "tris": 1068,
+   "verts": 730,
+   "objects": 21
+  },
+  "th_a_180": {
+   "tris": 1068,
+   "verts": 730,
+   "objects": 21
+  },
+  "th_a_270": {
+   "tris": 1068,
+   "verts": 730,
+   "objects": 21
+  },
+  "th_b_0": {
+   "tris": 1566,
+   "verts": 1024,
+   "objects": 26
+  },
+  "th_b_90": {
+   "tris": 1566,
+   "verts": 1024,
+   "objects": 26
+  },
+  "th_b_180": {
+   "tris": 1566,
+   "verts": 1024,
+   "objects": 26
+  },
+  "th_b_270": {
+   "tris": 1566,
+   "verts": 1024,
+   "objects": 26
+  },
+  "th_c_0": {
+   "tris": 1124,
+   "verts": 758,
+   "objects": 23
+  },
+  "th_c_90": {
+   "tris": 1124,
+   "verts": 758,
+   "objects": 23
+  },
+  "th_c_180": {
+   "tris": 1124,
+   "verts": 758,
+   "objects": 23
+  },
+  "th_c_270": {
+   "tris": 1124,
+   "verts": 758,
+   "objects": 23
+  }
+ }
+}

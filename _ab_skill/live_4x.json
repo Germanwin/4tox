@@ -1,0 +1,21 @@
+{
+ "scene": "abskill",
+ "prefix": "abs_",
+ "variants": [
+  null
+ ],
+ "rotations": [
+  0
+ ],
+ "ppu": 384.0,
+ "res": [
+  1760,
+  2160
+ ],
+ "samples": 64,
+ "export": false,
+ "save_blend": false,
+ "viewport": false,
+ "tag": "abs4x",
+ "closeups": false
+}

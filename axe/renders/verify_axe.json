@@ -1,0 +1,34 @@
+{
+ "glb": {
+  "tris": 236,
+  "verts": 460,
+  "materials": [
+   "leather",
+   "leather_dk",
+   "leather_lt",
+   "stone",
+   "stone_dark",
+   "stone_mid",
+   "wood",
+   "wood_dark",
+   "wood_mid"
+  ],
+  "iou_vs_scene": 0.9996
+ },
+ "obj": {
+  "tris": 236,
+  "verts": 130,
+  "materials": [
+   "leather",
+   "leather_dk",
+   "leather_lt",
+   "stone",
+   "stone_dark",
+   "stone_mid",
+   "wood",
+   "wood_dark",
+   "wood_mid"
+  ],
+  "iou_vs_scene": 0.9996
+ }
+}

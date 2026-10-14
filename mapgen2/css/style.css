@@ -1,0 +1,292 @@
+/* style.css — тёмная панель, карта во весь экран */
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #0b1a24;
+  color: #dbe7ee;
+  font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+#app { display: flex; height: 100%; }
+
+/* ------------------------------- панель ------------------------------- */
+
+#panel {
+  width: 258px;
+  flex: 0 0 258px;
+  height: 100%;
+  overflow-y: auto;
+  padding: 14px 14px 24px;
+  background: linear-gradient(180deg, #14262f, #0f1e26);
+  border-right: 1px solid #1d3742;
+}
+
+/* Панель — инструмент разработчика, а не часть игры: при открытии игры её
+   нет, и выезжает она только по кнопке ⚙ или клавише `. */
+#panel.hidden { display: none; }
+
+#panel h1 {
+  margin: 0 0 14px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: .2px;
+}
+#panel h1 span {
+  font-size: 10px;
+  font-weight: 700;
+  vertical-align: 2px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #2a8f5f;
+  color: #eafff4;
+}
+
+#panel h2 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .7px;
+  color: #7fa0b0;
+}
+
+.group {
+  padding: 12px 0;
+  border-top: 1px solid #1c333d;
+}
+.group:first-of-type { border-top: 0; padding-top: 0; }
+
+.field { display: block; margin-bottom: 10px; }
+.field > span {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  color: #9dbbc8;
+  font-size: 12px;
+}
+.field > span b { color: #eaf4f8; font-weight: 600; }
+
+input[type="text"], select {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid #2a4b58;
+  background: #0c1a21;
+  color: #eaf4f8;
+  font: inherit;
+}
+input[type="text"]:focus, select:focus { outline: 1px solid #35a06d; }
+
+input[type="range"] {
+  width: 100%;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: 2px;
+  background: #24444f;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: #46b47c;
+  border: 2px solid #0d1d24;
+  cursor: pointer;
+}
+
+.row { display: flex; gap: 8px; }
+.row > button { flex: 1; }
+
+button {
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: 1px solid #2c4d5b;
+  background: #1a3038;
+  color: #dbe7ee;
+  font: inherit;
+  cursor: pointer;
+}
+button:hover { background: #234049; }
+button:active { transform: translateY(1px); }
+button:disabled { opacity: .45; cursor: default; }
+button:disabled:hover { background: #1a3038; }
+button:disabled:active { transform: none; }
+button.primary {
+  background: #2f9163;
+  border-color: #38a771;
+  color: #f2fff8;
+  font-weight: 600;
+}
+button.primary:hover { background: #35a06d; }
+
+.toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; }
+.toggles.one { grid-template-columns: 1fr; margin-top: 8px; }
+.chk { display: flex; align-items: center; gap: 6px; cursor: pointer; color: #b9d2dc; }
+.chk input { accent-color: #35a06d; }
+
+/* ------------------------- панель ратуши ------------------------- */
+
+/* Вариант выбирается по картинке: A, B и C — одно здание с разными
+   пристройками, и по буквам их не различить. Миниатюры рисуются из того же
+   атласа, что и карта, поэтому в панели ровно то, что встанет на клетки. */
+.chips { display: flex; gap: 6px; margin-bottom: 8px; }
+.chips .chip {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 2px 2px;
+  font-size: 11px;
+  color: #9dbbc8;
+}
+.chips .chip.active {
+  border-color: #46b47c;
+  background: #1d3b33;
+  color: #eafff4;
+}
+.chips .thumb { display: block; width: 62px; height: 72px; }
+.chips.rots .chip { flex-direction: row; justify-content: center; padding: 6px 2px; }
+
+.place-info {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #0d1c23;
+  border: 1px solid #24424e;
+  color: #9dbbc8;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.place-info.ok { color: #b6f0cd; border-color: #2f6b4c; }
+.place-info.warn { color: #f2d79a; border-color: #6b5a2f; }
+.place-info.bad { color: #f3b1a5; border-color: #6b3a2f; }
+
+.stat {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
+  color: #93b1bf;
+}
+.stat b { color: #eaf4f8; font-weight: 600; }
+
+.hint {
+  margin: 14px 0 0;
+  color: #6f8d9b;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.hint b { color: #a8c6d2; }
+
+/* -------------------------------- сцена -------------------------------- */
+
+#stage { position: relative; flex: 1; min-width: 0; }
+#view { display: block; width: 100%; height: 100%; cursor: grab; }
+#view.dragging { cursor: grabbing; }
+/* В режиме размещения курсор прицельный: видно, что клик ставит здание,
+   а не тащит карту. Панорама при этом работает как обычно. */
+#view.placing { cursor: crosshair; }
+#view.placing.dragging { cursor: grabbing; }
+
+/* Кнопка генератора: маленькая, в углу, из игры не бросается в глаза. */
+#devToggle {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 9px;
+  font-size: 16px;
+  line-height: 1;
+  background: rgba(10, 24, 31, .72);
+  border: 1px solid #23414d;
+  color: #9dbbc8;
+  z-index: 2;
+}
+#devToggle:hover { background: rgba(22, 46, 57, .9); color: #eaf4f8; }
+#devToggle.active { border-color: #46b47c; color: #eafff4; }
+
+#minimap {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  padding: 6px;
+  border-radius: 10px;
+  background: rgba(10, 24, 31, .82);
+  border: 1px solid #23414d;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .35);
+}
+#mm { display: block; width: 192px; height: 192px; border-radius: 4px; cursor: crosshair; }
+.mm-label {
+  margin-top: 4px;
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: .8px;
+  text-transform: uppercase;
+  color: #6f8d9b;
+}
+
+#hud {
+  position: absolute;
+  left: 14px;
+  top: 14px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(10, 24, 31, .78);
+  border: 1px solid #23414d;
+  color: #b9d2dc;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+/* Полоса лесоруба: состояние, счётчик срубленного и две кнопки камеры.
+   Стоит под #hud, поэтому её верх — сразу под высотой строки подсказки. */
+#heroHud {
+  position: absolute;
+  left: 14px;
+  top: 52px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px 5px 10px;
+  border-radius: 8px;
+  background: rgba(10, 24, 31, .78);
+  border: 1px solid #23414d;
+  color: #b9d2dc;
+  font-variant-numeric: tabular-nums;
+  z-index: 2;
+}
+#heroHud.chops span#heroChops { color: #8fb3c0; font-size: 11px; }
+#heroHud button {
+  padding: 3px 8px;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.2;
+  border-radius: 6px;
+  border: 1px solid #23414d;
+  background: rgba(16, 36, 45, .9);
+  color: #9dbbc8;
+  cursor: pointer;
+}
+#heroHud button:hover { background: rgba(22, 46, 57, .95); color: #eaf4f8; }
+#heroHud button.active { border-color: #46b47c; color: #eafff4; background: rgba(24, 62, 46, .9); }
+#heroHud button.off { color: #6f8d9b; }
+/* Герой не загрузился — полосе нечего показывать. */
+#heroHud.hidden { display: none; }
+
+#loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0b1a24;
+  color: #7fa0b0;
+  letter-spacing: .3px;
+}
+#loading.hidden { display: none; }

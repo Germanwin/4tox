@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>4tox — остров</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+  <aside id="panel" class="hidden">
+    <h1>Генератор карт <span>v2</span></h1>
+
+    <div class="group">
+      <label class="field">
+        <span>Сид</span>
+        <input id="seed" type="text" spellcheck="false" autocomplete="off">
+      </label>
+      <div class="row">
+        <button id="regen" class="primary">Сгенерировать</button>
+        <button id="dice" title="Случайный сид (R)">🎲</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <label class="field">
+        <span>Размер карты</span>
+        <select id="size">
+          <option value="48">48 × 48</option>
+          <option value="64" selected>64 × 64</option>
+          <option value="96">96 × 96</option>
+          <option value="128">128 × 128</option>
+        </select>
+      </label>
+
+      <label class="field">
+        <span>Доля суши <b id="landVal">72 %</b></span>
+        <input id="land" type="range" min="30" max="92" value="72">
+      </label>
+
+      <label class="field">
+        <span>Изрезанность берега <b id="coastVal">50 %</b></span>
+        <input id="coast" type="range" min="0" max="100" value="50">
+      </label>
+    </div>
+
+    <div class="group">
+      <h2>Ресурсы</h2>
+
+      <label class="field">
+        <span>Лес <b id="forestVal">50 %</b></span>
+        <input id="forest" type="range" min="0" max="100" value="50">
+      </label>
+
+      <label class="field">
+        <span>Камни <b id="rockVal">50 %</b></span>
+        <input id="rock" type="range" min="0" max="100" value="50">
+      </label>
+
+      <label class="field">
+        <span>Густота деревьев <b id="treeVal">45 %</b></span>
+        <input id="tree" type="range" min="0" max="100" value="45">
+      </label>
+    </div>
+
+    <div class="group" id="stats">
+      <h2>Сводка</h2>
+      <div class="stat"><span>Клеток</span><b id="sTiles">—</b></div>
+      <div class="stat"><span>Суша</span><b id="sLand">—</b></div>
+      <div class="stat"><span>Деревья</span><b id="sTrees">—</b></div>
+      <div class="stat"><span>Камни (добыча)</span><b id="sRocks">—</b></div>
+      <div class="stat"><span>Россыпь</span><b id="sSmall">—</b></div>
+      <div class="stat"><span>Ратуши</span><b id="sBuild">0</b></div>
+      <div class="stat"><span>Генерация</span><b id="sTime">—</b></div>
+    </div>
+
+    <div class="group">
+      <h2>Слои</h2>
+      <div class="toggles">
+        <label class="chk"><input id="tTrees" type="checkbox" checked><span>Деревья</span></label>
+        <label class="chk"><input id="tRocks" type="checkbox" checked><span>Камни</span></label>
+        <label class="chk"><input id="tBuild" type="checkbox" checked><span>Ратуша</span></label>
+        <label class="chk"><input id="tVillager" type="checkbox" checked><span>Житель</span></label>
+        <label class="chk"><input id="tGrid" type="checkbox"><span>Сетка (G)</span></label>
+        <label class="chk"><input id="tSmall" type="checkbox" checked><span>Мелочь</span></label>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Ратуша</h2>
+
+      <div class="chips" id="thVariants">
+        <button class="chip active" data-variant="a" title="A — дом с фонарём на коньке">
+          <canvas class="thumb" data-variant="a" width="62" height="72"></canvas>A
+        </button>
+        <button class="chip" data-variant="b" title="B — дом с навесом, плетнём и кадкой">
+          <canvas class="thumb" data-variant="b" width="62" height="72"></canvas>B
+        </button>
+        <button class="chip" data-variant="c" title="C — дом со звонницей в щипце">
+          <canvas class="thumb" data-variant="c" width="62" height="72"></canvas>C
+        </button>
+      </div>
+
+      <div class="chips rots" id="thRots">
+        <button class="chip active" data-rot="0">0°</button>
+        <button class="chip" data-rot="90">90°</button>
+        <button class="chip" data-rot="180">180°</button>
+        <button class="chip" data-rot="270">270°</button>
+      </div>
+
+      <div class="row">
+        <button id="thPlace" class="primary" title="Режим размещения (B)">Поставить</button>
+        <button id="thTurn" title="Повернуть на 90° (Q/E)">⟳</button>
+      </div>
+      <div class="row">
+        <button id="thAll" title="Найти место и поставить A, B и C">Все три</button>
+        <button id="thUndo" title="Убрать выбранную или последнюю (Delete)">Убрать</button>
+      </div>
+      <div class="row">
+        <button id="thClear">Очистить карту от построек</button>
+      </div>
+
+      <div class="toggles one">
+        <label class="chk"><input id="thClearSite" type="checkbox" checked><span>Расчищать место и двор</span></label>
+        <label class="chk"><input id="thStrict" type="checkbox"><span>Только чистое место</span></label>
+      </div>
+
+      <div id="placeInfo" class="place-info">Режим размещения выключен</div>
+
+      <p class="hint">
+        <b>B</b> — режим размещения · ЛКМ — поставить · <b>Q</b>/<b>E</b> — поворот ·
+        <b>1</b>/<b>2</b>/<b>3</b> — вариант · ПКМ или <b>Esc</b> — выход.
+        Клик по ратуше выбирает её, <b>Delete</b> сносит.
+      </p>
+    </div>
+
+    <div class="group">
+      <div class="row">
+        <button id="export">Экспорт PNG</button>
+        <button id="reset" title="Сбросить камеру">Сброс камеры</button>
+      </div>
+    </div>
+
+    <p class="hint">
+      Тянуть — панорама · колесо — зум · <b>V</b> — общий план ·
+      <b>R</b> — новая карта · <b>G</b> — сетка · <b>F</b> — вписать остров.
+      Панель прячется кнопкой <b>⚙</b> или клавишей <b>`</b>.
+    </p>
+  </aside>
+
+  <main id="stage">
+    <canvas id="view"></canvas>
+    <button id="devToggle" title="Генератор карт (клавиша `)">⚙</button>
+    <div id="minimap">
+      <canvas id="mm" width="192" height="192"></canvas>
+      <div class="mm-label">обзор</div>
+    </div>
+    <div id="hud"><span id="hudText"></span></div>
+    <div id="heroHud">
+      <span id="heroState">Лесоруб</span>
+      <span id="heroChops">срублено 0</span>
+      <button id="heroFocus" title="Показать лесоруба (H)">К лесорубу</button>
+      <button id="heroFollow" class="off" title="Камера следит за лесорубом (C)">Следить</button>
+    </div>
+    <div id="loading">Загрузка спрайтов…</div>
+  </main>
+</div>
+
+<script src="assets/sprites/atlas.js"></script>
+<script src="assets/townhall/atlas.js"></script>
+<script src="assets/waves/atlas.js"></script>
+<script src="assets/hero/atlas.js"></script>
+<script src="assets/villager/atlas.js"></script>
+<script src="js/noise.js"></script>
+<script src="js/rng.js"></script>
+<script src="js/sprites.js"></script>
+<script src="js/worldgen.js"></script>
+<script src="js/buildings.js"></script>
+<script src="js/waves.js"></script>
+<script src="js/hero.js"></script>
+<script src="js/villager.js"></script>
+<script src="js/render.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

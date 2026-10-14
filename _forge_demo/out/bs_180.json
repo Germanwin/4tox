@@ -1,0 +1,14 @@
+{
+ "raw": "fbg_x_180_raw.png",
+ "anchor": [
+  274,
+  394
+ ],
+ "size": [
+  548,
+  537
+ ],
+ "ppu": 96.0,
+ "outline": true,
+ "dilate": 1
+}

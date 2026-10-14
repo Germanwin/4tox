@@ -1,0 +1,21 @@
+{
+ "scene": "lumbercamp",
+ "prefix": "lc_",
+ "variants": [
+  null
+ ],
+ "rotations": [
+  0
+ ],
+ "ppu": 384.0,
+ "res": [
+  2048,
+  2560
+ ],
+ "samples": 64,
+ "export": false,
+ "save_blend": false,
+ "viewport": false,
+ "tag": "lc4x",
+ "closeups": false
+}

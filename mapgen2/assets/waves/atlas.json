@@ -1,0 +1,123 @@
+{
+ "atlas": "atlas.png",
+ "ppu": 120.0,
+ "az_deg": 45.0,
+ "el_deg": 35.264389682754654,
+ "res": [
+  768,
+  960
+ ],
+ "note": "спрайты волн: 1 юнит модели = 1 клетка карты, anchorX/anchorY — центр вала на уровне воды; rotation 0 — вал вдоль течения, 90 — поперёк",
+ "frames": {
+  "wave_0_0": {
+   "x": 2,
+   "y": 2,
+   "w": 370,
+   "h": 215,
+   "anchorX": 185.0,
+   "anchorY": 107.0,
+   "shape": 0,
+   "rotation": 0,
+   "units": 4.2
+  },
+  "wave_0_90": {
+   "x": 376,
+   "y": 2,
+   "w": 367,
+   "h": 217,
+   "anchorX": 183.0,
+   "anchorY": 109.0,
+   "shape": 0,
+   "rotation": 90,
+   "units": 4.2
+  },
+  "wave_1_0": {
+   "x": 750,
+   "y": 2,
+   "w": 273,
+   "h": 157,
+   "anchorX": 138.0,
+   "anchorY": 75.0,
+   "shape": 1,
+   "rotation": 0,
+   "units": 3.0
+  },
+  "wave_1_90": {
+   "x": 1124,
+   "y": 2,
+   "w": 265,
+   "h": 161,
+   "anchorX": 127.0,
+   "anchorY": 79.0,
+   "shape": 1,
+   "rotation": 90,
+   "units": 3.0
+  },
+  "wave_2_0": {
+   "x": 2,
+   "y": 223,
+   "w": 200,
+   "h": 122,
+   "anchorX": 107.0,
+   "anchorY": 57.0,
+   "shape": 2,
+   "rotation": 0,
+   "units": 2.1
+  },
+  "wave_2_90": {
+   "x": 376,
+   "y": 223,
+   "w": 205,
+   "h": 119,
+   "anchorX": 95.0,
+   "anchorY": 56.0,
+   "shape": 2,
+   "rotation": 90,
+   "units": 2.1
+  },
+  "wave_3_0": {
+   "x": 750,
+   "y": 223,
+   "w": 148,
+   "h": 86,
+   "anchorX": 85.0,
+   "anchorY": 39.0,
+   "shape": 3,
+   "rotation": 0,
+   "units": 1.4
+  },
+  "wave_3_90": {
+   "x": 1124,
+   "y": 223,
+   "w": 142,
+   "h": 89,
+   "anchorX": 64.0,
+   "anchorY": 38.0,
+   "shape": 3,
+   "rotation": 90,
+   "units": 1.4
+  },
+  "wave_4_0": {
+   "x": 2,
+   "y": 444,
+   "w": 122,
+   "h": 76,
+   "anchorX": 69.0,
+   "anchorY": 34.0,
+   "shape": 4,
+   "rotation": 0,
+   "units": 0.95
+  },
+  "wave_4_90": {
+   "x": 376,
+   "y": 444,
+   "w": 124,
+   "h": 73,
+   "anchorX": 55.0,
+   "anchorY": 32.0,
+   "shape": 4,
+   "rotation": 90,
+   "units": 0.95
+  }
+ }
+}

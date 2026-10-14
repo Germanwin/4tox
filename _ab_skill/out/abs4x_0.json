@@ -1,0 +1,14 @@
+{
+ "raw": "abs4x_x_0_raw.png",
+ "anchor": [
+  1417,
+  1905
+ ],
+ "size": [
+  2144,
+  2585
+ ],
+ "ppu": 384.0,
+ "outline": true,
+ "dilate": 1
+}

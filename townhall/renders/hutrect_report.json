@@ -1,0 +1,88 @@
+{
+ "ortho": 8.0,
+ "res": [
+  512,
+  640
+ ],
+ "ppu": 80.0,
+ "el_deg": 35.264389682754654,
+ "az_deg": 45.0,
+ "footprint": [
+  3,
+  2
+ ],
+ "frames": {
+  "hutrect_a_0": {
+   "variant": "a",
+   "rotation": 0,
+   "tris": 844,
+   "verts": 560
+  },
+  "hutrect_a_90": {
+   "variant": "a",
+   "rotation": 90,
+   "tris": 844,
+   "verts": 560
+  },
+  "hutrect_a_180": {
+   "variant": "a",
+   "rotation": 180,
+   "tris": 844,
+   "verts": 560
+  },
+  "hutrect_a_270": {
+   "variant": "a",
+   "rotation": 270,
+   "tris": 844,
+   "verts": 560
+  },
+  "hutrect_b_0": {
+   "variant": "b",
+   "rotation": 0,
+   "tris": 878,
+   "verts": 594
+  },
+  "hutrect_b_90": {
+   "variant": "b",
+   "rotation": 90,
+   "tris": 878,
+   "verts": 594
+  },
+  "hutrect_b_180": {
+   "variant": "b",
+   "rotation": 180,
+   "tris": 878,
+   "verts": 594
+  },
+  "hutrect_b_270": {
+   "variant": "b",
+   "rotation": 270,
+   "tris": 878,
+   "verts": 594
+  },
+  "hutrect_c_0": {
+   "variant": "c",
+   "rotation": 0,
+   "tris": 1064,
+   "verts": 680
+  },
+  "hutrect_c_90": {
+   "variant": "c",
+   "rotation": 90,
+   "tris": 1064,
+   "verts": 680
+  },
+  "hutrect_c_180": {
+   "variant": "c",
+   "rotation": 180,
+   "tris": 1064,
+   "verts": 680
+  },
+  "hutrect_c_270": {
+   "variant": "c",
+   "rotation": 270,
+   "tris": 1064,
+   "verts": 680
+  }
+ }
+}

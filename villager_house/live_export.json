@@ -1,0 +1,11 @@
+{
+ "variants": "a",
+ "rotations": [],
+ "samples": 64,
+ "ppu": 80,
+ "res": [512, 640],
+ "tag": "vh",
+ "export": true,
+ "save_blend": true,
+ "viewport": true
+}

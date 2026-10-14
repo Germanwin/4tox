@@ -1,0 +1,114 @@
+[
+ {
+  "idx": 0,
+  "name": "w0_v5",
+  "params": {
+   "A_WALL": 1.05,
+   "B_WALL": 1.15,
+   "WALL_H": 1.3,
+   "EAVE_Z": 1.28,
+   "RIDGE_Z": 2.2,
+   "OVER_GABLE": 0.14,
+   "OVER_EAVE": 0.12
+  },
+  "file": "v0.png"
+ },
+ {
+  "idx": 1,
+  "name": "w1_стена+",
+  "params": {
+   "A_WALL": 0.95,
+   "B_WALL": 1.05,
+   "WALL_H": 1.45,
+   "EAVE_Z": 1.42,
+   "RIDGE_Z": 2.45,
+   "OVER_GABLE": 0.16,
+   "OVER_EAVE": 0.14
+  },
+  "file": "v1.png"
+ },
+ {
+  "idx": 2,
+  "name": "w2_стена++",
+  "params": {
+   "A_WALL": 0.95,
+   "B_WALL": 1.05,
+   "WALL_H": 1.62,
+   "EAVE_Z": 1.58,
+   "RIDGE_Z": 2.6,
+   "OVER_GABLE": 0.16,
+   "OVER_EAVE": 0.14
+  },
+  "file": "v2.png"
+ },
+ {
+  "idx": 3,
+  "name": "w3_круче",
+  "params": {
+   "A_WALL": 0.95,
+   "B_WALL": 1.05,
+   "WALL_H": 1.3,
+   "EAVE_Z": 1.28,
+   "RIDGE_Z": 2.6,
+   "OVER_GABLE": 0.16,
+   "OVER_EAVE": 0.14
+  },
+  "file": "v3.png"
+ },
+ {
+  "idx": 4,
+  "name": "w4_пологий",
+  "params": {
+   "A_WALL": 0.95,
+   "B_WALL": 1.05,
+   "WALL_H": 1.45,
+   "EAVE_Z": 1.42,
+   "RIDGE_Z": 2.2,
+   "OVER_GABLE": 0.16,
+   "OVER_EAVE": 0.14
+  },
+  "file": "v4.png"
+ },
+ {
+  "idx": 5,
+  "name": "w5_узкая_стена",
+  "params": {
+   "A_WALL": 0.82,
+   "B_WALL": 0.92,
+   "WALL_H": 1.45,
+   "EAVE_Z": 1.42,
+   "RIDGE_Z": 2.45,
+   "OVER_GABLE": 0.24,
+   "OVER_EAVE": 0.22
+  },
+  "file": "v5.png"
+ },
+ {
+  "idx": 6,
+  "name": "w6_высокий_конёк",
+  "params": {
+   "A_WALL": 1.0,
+   "B_WALL": 1.1,
+   "WALL_H": 1.5,
+   "EAVE_Z": 1.46,
+   "RIDGE_Z": 2.85,
+   "OVER_GABLE": 0.14,
+   "OVER_EAVE": 0.12
+  },
+  "file": "v6.png"
+ },
+ {
+  "idx": 7,
+  "name": "w7_низкая_стена",
+  "params": {
+   "A_WALL": 1.0,
+   "B_WALL": 1.1,
+   "WALL_H": 1.1,
+   "EAVE_Z": 1.08,
+   "RIDGE_Z": 2.3,
+   "OVER_GABLE": 0.16,
+   "OVER_EAVE": 0.14
+  },
+  "file": "v7.png"
+ }
+]

@@ -1,0 +1,24 @@
+{
+ "scene": "forge_barn",
+ "prefix": "fb_",
+ "variants": [
+  null
+ ],
+ "rotations": [
+  0,
+  90,
+  180,
+  270
+ ],
+ "ppu": 96.0,
+ "res": [
+  512,
+  640
+ ],
+ "samples": 64,
+ "export": false,
+ "save_blend": false,
+ "viewport": true,
+ "tag": "fbg",
+ "closeups": false
+}

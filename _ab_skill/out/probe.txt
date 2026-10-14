@@ -1,0 +1,15 @@
+$ /Users/hermmoment/.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/python/bin/python3 tools/xray.py probe --gen tools/building.py --full
+деталей 110, трис 1026, вершин 930
+габарит X -0.984..0.984  Y -0.907..0.990  Z 0.000..2.668
+
+== ВИДИМЫЕ ИЗНАНКИ (дыры), 6 канонных видов ==
+  gable_1                   3 px
+  iron_stock0               2 px
+  corner_11                 1 px
+
+== СЕТКА РАКУРСОВ (32 кадров) ==
+  худший кадр 47 px (270, -15.0)
+  ни одна деталь не превысила порог шума
+
+== Z-FIGHTING (совпадающие плоскости разных деталей) ==
+  нет

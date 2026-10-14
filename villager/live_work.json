@@ -1,0 +1,3 @@
+{"variant": "m", "anims": "work", "frames": null,
+ "rotations": [0, 90, 180, 270], "samples": 16, "ppu": 96, "res": [144, 192],
+ "export": false, "save_blend": false, "viewport": true, "tag": "vg"}

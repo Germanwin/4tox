@@ -1,0 +1,14 @@
+{
+ "raw": "abs_x_180_raw.png",
+ "anchor": [
+  355,
+  479
+ ],
+ "size": [
+  539,
+  653
+ ],
+ "ppu": 96.0,
+ "outline": true,
+ "dilate": 1
+}

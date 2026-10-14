@@ -1,0 +1,43 @@
+{
+ "ppu": 80.0,
+ "ortho": 8.0,
+ "res": [
+  512,
+  640
+ ],
+ "note": "1 юнит модели = 1 клетка; хижина ~2 x 2 клетки",
+ "frames": {
+  "hut_0": {
+   "file": "hut_0.png",
+   "w": 321,
+   "h": 343,
+   "anchorX": 162.0,
+   "anchorY": 219.0,
+   "rotation": 0
+  },
+  "hut_90": {
+   "file": "hut_90.png",
+   "w": 320,
+   "h": 343,
+   "anchorX": 158.0,
+   "anchorY": 219.0,
+   "rotation": 90
+  },
+  "hut_180": {
+   "file": "hut_180.png",
+   "w": 321,
+   "h": 342,
+   "anchorX": 159.0,
+   "anchorY": 218.0,
+   "rotation": 180
+  },
+  "hut_270": {
+   "file": "hut_270.png",
+   "w": 320,
+   "h": 342,
+   "anchorX": 162.0,
+   "anchorY": 218.0,
+   "rotation": 270
+  }
+ }
+}

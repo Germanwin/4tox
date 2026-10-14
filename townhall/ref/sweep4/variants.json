@@ -1,0 +1,86 @@
+[
+ {
+  "idx": 0,
+  "name": "q0_стена1.10",
+  "params": {
+   "A_WALL": 0.92,
+   "B_WALL": 1.02,
+   "WALL_H": 1.1,
+   "EAVE_Z": 1.08,
+   "RIDGE_Z": 2.3,
+   "OVER_GABLE": 0.16,
+   "OVER_EAVE": 0.14
+  },
+  "file": "v0.png"
+ },
+ {
+  "idx": 1,
+  "name": "q1_стена1.25",
+  "params": {
+   "A_WALL": 0.92,
+   "B_WALL": 1.02,
+   "WALL_H": 1.25,
+   "EAVE_Z": 1.23,
+   "RIDGE_Z": 2.4,
+   "OVER_GABLE": 0.16,
+   "OVER_EAVE": 0.14
+  },
+  "file": "v1.png"
+ },
+ {
+  "idx": 2,
+  "name": "q2_стена1.40",
+  "params": {
+   "A_WALL": 0.92,
+   "B_WALL": 1.02,
+   "WALL_H": 1.4,
+   "EAVE_Z": 1.38,
+   "RIDGE_Z": 2.55,
+   "OVER_GABLE": 0.16,
+   "OVER_EAVE": 0.14
+  },
+  "file": "v2.png"
+ },
+ {
+  "idx": 3,
+  "name": "q3_стена1.55",
+  "params": {
+   "A_WALL": 0.92,
+   "B_WALL": 1.02,
+   "WALL_H": 1.55,
+   "EAVE_Z": 1.53,
+   "RIDGE_Z": 2.7,
+   "OVER_GABLE": 0.16,
+   "OVER_EAVE": 0.14
+  },
+  "file": "v3.png"
+ },
+ {
+  "idx": 4,
+  "name": "q4_стена1.40_свес+",
+  "params": {
+   "A_WALL": 0.86,
+   "B_WALL": 0.96,
+   "WALL_H": 1.4,
+   "EAVE_Z": 1.38,
+   "RIDGE_Z": 2.55,
+   "OVER_GABLE": 0.22,
+   "OVER_EAVE": 0.2
+  },
+  "file": "v4.png"
+ },
+ {
+  "idx": 5,
+  "name": "q5_стена1.25_план+",
+  "params": {
+   "A_WALL": 1.02,
+   "B_WALL": 1.12,
+   "WALL_H": 1.25,
+   "EAVE_Z": 1.23,
+   "RIDGE_Z": 2.4,
+   "OVER_GABLE": 0.16,
+   "OVER_EAVE": 0.14
+  },
+  "file": "v5.png"
+ }
+]

@@ -1,0 +1,204 @@
+{
+ "ortho": 1.6666666666666667,
+ "res": [
+  512,
+  640
+ ],
+ "ppu": 384.0,
+ "el_deg": 35.264389682754654,
+ "az_deg": 45.0,
+ "sun": [
+  -0.36108487844467163,
+  0.3009040653705597,
+  0.8826518654823303
+ ],
+ "sun_energy": 2.05,
+ "lift": 1.9,
+ "live": true,
+ "frames": {
+  "shovel_a_0": {
+   "tris": 244,
+   "verts": 134,
+   "objects": 5,
+   "size": 0.622,
+   "tones": {
+    "shovel_iron_dark": [
+     24,
+     0.06888
+    ],
+    "shovel_iron_mid": [
+     15,
+     0.05821
+    ],
+    "shovel_iron": [
+     3,
+     0.00964
+    ],
+    "shovel_wood_dark": [
+     29,
+     0.02998
+    ],
+    "shovel_wood": [
+     11,
+     0.01238
+    ],
+    "shovel_wood_mid": [
+     4,
+     0.00362
+    ],
+    "shovel_leather_dk": [
+     14,
+     0.0061
+    ],
+    "shovel_leather_lt": [
+     8,
+     0.00378
+    ],
+    "shovel_leather": [
+     6,
+     0.00168
+    ]
+   },
+   "variant": "a",
+   "rotation": 0
+  },
+  "shovel_a_90": {
+   "tris": 244,
+   "verts": 134,
+   "objects": 5,
+   "size": 0.622,
+   "tones": {
+    "shovel_iron_dark": [
+     24,
+     0.06888
+    ],
+    "shovel_iron_mid": [
+     15,
+     0.05821
+    ],
+    "shovel_iron": [
+     3,
+     0.00964
+    ],
+    "shovel_wood_dark": [
+     29,
+     0.02998
+    ],
+    "shovel_wood": [
+     11,
+     0.01238
+    ],
+    "shovel_wood_mid": [
+     4,
+     0.00362
+    ],
+    "shovel_leather_dk": [
+     14,
+     0.0061
+    ],
+    "shovel_leather_lt": [
+     8,
+     0.00378
+    ],
+    "shovel_leather": [
+     6,
+     0.00168
+    ]
+   },
+   "variant": "a",
+   "rotation": 90
+  },
+  "shovel_a_180": {
+   "tris": 244,
+   "verts": 134,
+   "objects": 5,
+   "size": 0.622,
+   "tones": {
+    "shovel_iron_dark": [
+     24,
+     0.06888
+    ],
+    "shovel_iron_mid": [
+     15,
+     0.05821
+    ],
+    "shovel_iron": [
+     3,
+     0.00964
+    ],
+    "shovel_wood_dark": [
+     29,
+     0.02998
+    ],
+    "shovel_wood": [
+     11,
+     0.01238
+    ],
+    "shovel_wood_mid": [
+     4,
+     0.00362
+    ],
+    "shovel_leather_dk": [
+     14,
+     0.0061
+    ],
+    "shovel_leather_lt": [
+     8,
+     0.00378
+    ],
+    "shovel_leather": [
+     6,
+     0.00168
+    ]
+   },
+   "variant": "a",
+   "rotation": 180
+  },
+  "shovel_a_270": {
+   "tris": 244,
+   "verts": 134,
+   "objects": 5,
+   "size": 0.622,
+   "tones": {
+    "shovel_iron_dark": [
+     24,
+     0.06888
+    ],
+    "shovel_iron_mid": [
+     15,
+     0.05821
+    ],
+    "shovel_iron": [
+     3,
+     0.00964
+    ],
+    "shovel_wood_dark": [
+     29,
+     0.02998
+    ],
+    "shovel_wood": [
+     11,
+     0.01238
+    ],
+    "shovel_wood_mid": [
+     4,
+     0.00362
+    ],
+    "shovel_leather_dk": [
+     14,
+     0.0061
+    ],
+    "shovel_leather_lt": [
+     8,
+     0.00378
+    ],
+    "shovel_leather": [
+     6,
+     0.00168
+    ]
+   },
+   "variant": "a",
+   "rotation": 270
+  }
+ }
+}

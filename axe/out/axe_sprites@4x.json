@@ -1,0 +1,131 @@
+{
+ "ppu": 384.0,
+ "ortho": 1.6666666666666667,
+ "res": [
+  512,
+  640
+ ],
+ "note": "1 юнит модели = 1 клетка карты; топор ~0.5 юнита в высоту, кадр 0 — лезвие влево-вперёд, опора — комель на земле",
+ "frames": {
+  "axe_a_0": {
+   "file": "axe_a_0@4x.png",
+   "w": 91,
+   "h": 173,
+   "anchorX": 52.0,
+   "anchorY": 156.0,
+   "variant": "a",
+   "rotation": 0,
+   "ppu": 384.0
+  },
+  "axe_a_90": {
+   "file": "axe_a_90@4x.png",
+   "w": 91,
+   "h": 173,
+   "anchorX": 39.0,
+   "anchorY": 156.0,
+   "variant": "a",
+   "rotation": 90,
+   "ppu": 384.0
+  },
+  "axe_a_180": {
+   "file": "axe_a_180@4x.png",
+   "w": 91,
+   "h": 195,
+   "anchorX": 39.0,
+   "anchorY": 178.0,
+   "variant": "a",
+   "rotation": 180,
+   "ppu": 384.0
+  },
+  "axe_a_270": {
+   "file": "axe_a_270@4x.png",
+   "w": 91,
+   "h": 195,
+   "anchorX": 52.0,
+   "anchorY": 178.0,
+   "variant": "a",
+   "rotation": 270,
+   "ppu": 384.0
+  },
+  "axe_b_0": {
+   "file": "axe_b_0@4x.png",
+   "w": 92,
+   "h": 173,
+   "anchorX": 53.0,
+   "anchorY": 156.0,
+   "variant": "b",
+   "rotation": 0,
+   "ppu": 384.0
+  },
+  "axe_b_90": {
+   "file": "axe_b_90@4x.png",
+   "w": 92,
+   "h": 173,
+   "anchorX": 39.0,
+   "anchorY": 156.0,
+   "variant": "b",
+   "rotation": 90,
+   "ppu": 384.0
+  },
+  "axe_b_180": {
+   "file": "axe_b_180@4x.png",
+   "w": 92,
+   "h": 194,
+   "anchorX": 39.0,
+   "anchorY": 177.0,
+   "variant": "b",
+   "rotation": 180,
+   "ppu": 384.0
+  },
+  "axe_b_270": {
+   "file": "axe_b_270@4x.png",
+   "w": 92,
+   "h": 194,
+   "anchorX": 53.0,
+   "anchorY": 177.0,
+   "variant": "b",
+   "rotation": 270,
+   "ppu": 384.0
+  },
+  "axe_c_0": {
+   "file": "axe_c_0@4x.png",
+   "w": 91,
+   "h": 203,
+   "anchorX": 52.0,
+   "anchorY": 186.0,
+   "variant": "c",
+   "rotation": 0,
+   "ppu": 384.0
+  },
+  "axe_c_90": {
+   "file": "axe_c_90@4x.png",
+   "w": 91,
+   "h": 203,
+   "anchorX": 39.0,
+   "anchorY": 186.0,
+   "variant": "c",
+   "rotation": 90,
+   "ppu": 384.0
+  },
+  "axe_c_180": {
+   "file": "axe_c_180@4x.png",
+   "w": 91,
+   "h": 225,
+   "anchorX": 39.0,
+   "anchorY": 208.0,
+   "variant": "c",
+   "rotation": 180,
+   "ppu": 384.0
+  },
+  "axe_c_270": {
+   "file": "axe_c_270@4x.png",
+   "w": 91,
+   "h": 225,
+   "anchorX": 52.0,
+   "anchorY": 208.0,
+   "variant": "c",
+   "rotation": 270,
+   "ppu": 384.0
+  }
+ }
+}

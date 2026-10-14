@@ -1,0 +1,34 @@
+{
+ "glb": {
+  "tris": 244,
+  "verts": 472,
+  "materials": [
+   "shovel_iron",
+   "shovel_iron_dark",
+   "shovel_iron_mid",
+   "shovel_leather",
+   "shovel_leather_dk",
+   "shovel_leather_lt",
+   "shovel_wood",
+   "shovel_wood_dark",
+   "shovel_wood_mid"
+  ],
+  "iou_vs_scene": 0.9997
+ },
+ "obj": {
+  "tris": 244,
+  "verts": 134,
+  "materials": [
+   "shovel_iron",
+   "shovel_iron_dark",
+   "shovel_iron_mid",
+   "shovel_leather",
+   "shovel_leather_dk",
+   "shovel_leather_lt",
+   "shovel_wood",
+   "shovel_wood_dark",
+   "shovel_wood_mid"
+  ],
+  "iou_vs_scene": 0.9997
+ }
+}

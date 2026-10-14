@@ -1,0 +1,47 @@
+{
+ "ortho": 1.6666666666666667,
+ "res": [
+  512,
+  640
+ ],
+ "ppu": 384.0,
+ "el_deg": 35.264389682754654,
+ "az_deg": 45.0,
+ "sun": [
+  -0.36108487844467163,
+  0.3009040653705597,
+  0.8826518654823303
+ ],
+ "sun_energy": 2.05,
+ "lift": 1.9,
+ "frames": {
+  "axe_b_0": {
+   "tris": 236,
+   "verts": 130,
+   "objects": 3,
+   "variant": "b",
+   "rotation": 0
+  },
+  "axe_b_90": {
+   "tris": 236,
+   "verts": 130,
+   "objects": 3,
+   "variant": "b",
+   "rotation": 90
+  },
+  "axe_b_180": {
+   "tris": 236,
+   "verts": 130,
+   "objects": 3,
+   "variant": "b",
+   "rotation": 180
+  },
+  "axe_b_270": {
+   "tris": 236,
+   "verts": 130,
+   "objects": 3,
+   "variant": "b",
+   "rotation": 270
+  }
+ }
+}

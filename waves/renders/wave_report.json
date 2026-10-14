@@ -1,0 +1,88 @@
+{
+ "ortho": 8.0,
+ "res": [
+  768,
+  960
+ ],
+ "ppu": 120.0,
+ "el_deg": 35.264389682754654,
+ "az_deg": 45.0,
+ "sun": [
+  -0.36108487844467163,
+  0.3009040653705597,
+  0.8826518654823303
+ ],
+ "sun_energy": 2.05,
+ "frames": {
+  "wave_0_0": {
+   "tris": 68,
+   "verts": 37,
+   "objects": 1,
+   "shape": 0,
+   "rotation": 0.0
+  },
+  "wave_0_90": {
+   "tris": 68,
+   "verts": 37,
+   "objects": 1,
+   "shape": 0,
+   "rotation": 90.0
+  },
+  "wave_1_0": {
+   "tris": 68,
+   "verts": 37,
+   "objects": 1,
+   "shape": 1,
+   "rotation": 0.0
+  },
+  "wave_1_90": {
+   "tris": 68,
+   "verts": 37,
+   "objects": 1,
+   "shape": 1,
+   "rotation": 90.0
+  },
+  "wave_2_0": {
+   "tris": 68,
+   "verts": 37,
+   "objects": 1,
+   "shape": 2,
+   "rotation": 0.0
+  },
+  "wave_2_90": {
+   "tris": 68,
+   "verts": 37,
+   "objects": 1,
+   "shape": 2,
+   "rotation": 90.0
+  },
+  "wave_3_0": {
+   "tris": 54,
+   "verts": 30,
+   "objects": 1,
+   "shape": 3,
+   "rotation": 0.0
+  },
+  "wave_3_90": {
+   "tris": 54,
+   "verts": 30,
+   "objects": 1,
+   "shape": 3,
+   "rotation": 90.0
+  },
+  "wave_4_0": {
+   "tris": 40,
+   "verts": 23,
+   "objects": 1,
+   "shape": 4,
+   "rotation": 0.0
+  },
+  "wave_4_90": {
+   "tris": 40,
+   "verts": 23,
+   "objects": 1,
+   "shape": 4,
+   "rotation": 90.0
+  }
+ }
+}

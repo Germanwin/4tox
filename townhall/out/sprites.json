@@ -1,0 +1,140 @@
+{
+ "ppu": 80.0,
+ "ortho": 8.0,
+ "res": [
+  512,
+  640
+ ],
+ "note": "1 юнит модели = 1 клетка; ратуша 4 клетки по X, 3 по Y",
+ "frames": {
+  "townhall_b_0": {
+   "file": "th_b_0.png",
+   "w": 434,
+   "h": 446,
+   "anchorX": 218.0,
+   "anchorY": 268.0,
+   "variant": "b",
+   "rotation": 0
+  },
+  "cut_b": {
+   "file": "cut_b.png",
+   "w": 432,
+   "h": 404,
+   "anchorX": 217.0,
+   "anchorY": 267.0
+  },
+  "townhall_b_90": {
+   "file": "th_b_90.png",
+   "w": 478,
+   "h": 447,
+   "anchorX": 236.0,
+   "anchorY": 269.0,
+   "variant": "b",
+   "rotation": 90
+  },
+  "townhall_b_180": {
+   "file": "th_b_180.png",
+   "w": 434,
+   "h": 446,
+   "anchorX": 216.0,
+   "anchorY": 268.0,
+   "variant": "b",
+   "rotation": 180
+  },
+  "townhall_b_270": {
+   "file": "th_b_270.png",
+   "w": 478,
+   "h": 446,
+   "anchorX": 242.0,
+   "anchorY": 268.0,
+   "variant": "b",
+   "rotation": 270
+  },
+  "townhall_a_0": {
+   "file": "th_a_0.png",
+   "w": 431,
+   "h": 440,
+   "anchorX": 215.0,
+   "anchorY": 268.0,
+   "variant": "a",
+   "rotation": 0
+  },
+  "cut_a": {
+   "file": "cut_a.png",
+   "w": 429,
+   "h": 398,
+   "anchorX": 214.0,
+   "anchorY": 267.0
+  },
+  "townhall_a_90": {
+   "file": "th_a_90.png",
+   "w": 434,
+   "h": 441,
+   "anchorX": 216.0,
+   "anchorY": 269.0,
+   "variant": "a",
+   "rotation": 90
+  },
+  "townhall_a_180": {
+   "file": "th_a_180.png",
+   "w": 431,
+   "h": 440,
+   "anchorX": 216.0,
+   "anchorY": 268.0,
+   "variant": "a",
+   "rotation": 180
+  },
+  "townhall_a_270": {
+   "file": "th_a_270.png",
+   "w": 434,
+   "h": 440,
+   "anchorX": 218.0,
+   "anchorY": 268.0,
+   "variant": "a",
+   "rotation": 270
+  },
+  "townhall_c_0": {
+   "file": "th_c_0.png",
+   "w": 431,
+   "h": 436,
+   "anchorX": 215.0,
+   "anchorY": 268.0,
+   "variant": "c",
+   "rotation": 0
+  },
+  "cut_c": {
+   "file": "cut_c.png",
+   "w": 429,
+   "h": 398,
+   "anchorX": 214.0,
+   "anchorY": 267.0
+  },
+  "townhall_c_90": {
+   "file": "th_c_90.png",
+   "w": 434,
+   "h": 437,
+   "anchorX": 216.0,
+   "anchorY": 269.0,
+   "variant": "c",
+   "rotation": 90
+  },
+  "townhall_c_180": {
+   "file": "th_c_180.png",
+   "w": 431,
+   "h": 436,
+   "anchorX": 216.0,
+   "anchorY": 268.0,
+   "variant": "c",
+   "rotation": 180
+  },
+  "townhall_c_270": {
+   "file": "th_c_270.png",
+   "w": 434,
+   "h": 436,
+   "anchorX": 218.0,
+   "anchorY": 268.0,
+   "variant": "c",
+   "rotation": 270
+  }
+ }
+}

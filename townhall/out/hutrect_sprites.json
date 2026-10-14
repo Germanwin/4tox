@@ -1,0 +1,178 @@
+{
+ "ppu": 80.0,
+ "ortho": 8.0,
+ "res": [
+  512,
+  640
+ ],
+ "az_deg": 45.0,
+ "el_deg": 35.264389682754654,
+ "footprint": [
+  3,
+  2
+ ],
+ "variants": [
+  "a",
+  "b",
+  "c"
+ ],
+ "note": "1 юнит = 1 клетка; хижина 3 x 2 клетки, X — длинная сторона",
+ "frames": {
+  "hutrect_a_0": {
+   "file": "hutrect_a_0.png",
+   "w": 299,
+   "h": 339,
+   "anchorX": 147.0,
+   "anchorY": 210.0,
+   "variant": "a",
+   "rotation": 0,
+   "footprint": [
+    3,
+    2
+   ]
+  },
+  "hutrect_b_0": {
+   "file": "hutrect_b_0.png",
+   "w": 300,
+   "h": 357,
+   "anchorX": 150.0,
+   "anchorY": 228.0,
+   "variant": "b",
+   "rotation": 0,
+   "footprint": [
+    3,
+    2
+   ]
+  },
+  "hutrect_c_0": {
+   "file": "hutrect_c_0.png",
+   "w": 310,
+   "h": 329,
+   "anchorX": 155.0,
+   "anchorY": 196.0,
+   "variant": "c",
+   "rotation": 0,
+   "footprint": [
+    3,
+    2
+   ]
+  },
+  "hutrect_a_90": {
+   "file": "hutrect_a_90.png",
+   "w": 298,
+   "h": 338,
+   "anchorX": 151.0,
+   "anchorY": 209.0,
+   "variant": "a",
+   "rotation": 90,
+   "footprint": [
+    3,
+    2
+   ]
+  },
+  "hutrect_a_180": {
+   "file": "hutrect_a_180.png",
+   "w": 299,
+   "h": 329,
+   "anchorX": 152.0,
+   "anchorY": 200.0,
+   "variant": "a",
+   "rotation": 180,
+   "footprint": [
+    3,
+    2
+   ]
+  },
+  "hutrect_a_270": {
+   "file": "hutrect_a_270.png",
+   "w": 298,
+   "h": 328,
+   "anchorX": 147.0,
+   "anchorY": 199.0,
+   "variant": "a",
+   "rotation": 270,
+   "footprint": [
+    3,
+    2
+   ]
+  },
+  "hutrect_b_90": {
+   "file": "hutrect_b_90.png",
+   "w": 298,
+   "h": 320,
+   "anchorX": 148.0,
+   "anchorY": 191.0,
+   "variant": "b",
+   "rotation": 90,
+   "footprint": [
+    3,
+    2
+   ]
+  },
+  "hutrect_b_180": {
+   "file": "hutrect_b_180.png",
+   "w": 300,
+   "h": 320,
+   "anchorX": 150.0,
+   "anchorY": 191.0,
+   "variant": "b",
+   "rotation": 180,
+   "footprint": [
+    3,
+    2
+   ]
+  },
+  "hutrect_b_270": {
+   "file": "hutrect_b_270.png",
+   "w": 298,
+   "h": 338,
+   "anchorX": 150.0,
+   "anchorY": 209.0,
+   "variant": "b",
+   "rotation": 270,
+   "footprint": [
+    3,
+    2
+   ]
+  },
+  "hutrect_c_90": {
+   "file": "hutrect_c_90.png",
+   "w": 313,
+   "h": 328,
+   "anchorX": 156.0,
+   "anchorY": 195.0,
+   "variant": "c",
+   "rotation": 90,
+   "footprint": [
+    3,
+    2
+   ]
+  },
+  "hutrect_c_180": {
+   "file": "hutrect_c_180.png",
+   "w": 310,
+   "h": 327,
+   "anchorX": 155.0,
+   "anchorY": 194.0,
+   "variant": "c",
+   "rotation": 180,
+   "footprint": [
+    3,
+    2
+   ]
+  },
+  "hutrect_c_270": {
+   "file": "hutrect_c_270.png",
+   "w": 313,
+   "h": 328,
+   "anchorX": 157.0,
+   "anchorY": 195.0,
+   "variant": "c",
+   "rotation": 270,
+   "footprint": [
+    3,
+    2
+   ]
+  }
+ }
+}

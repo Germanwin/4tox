@@ -1,0 +1,53 @@
+{
+ "eevee": [
+  "gi_glossy_clamp",
+  "taa_samples",
+  "taa_render_samples",
+  "ray_tracing_method",
+  "use_shadow_jitter_viewport",
+  "clamp_surface_direct",
+  "clamp_surface_indirect",
+  "clamp_volume_direct",
+  "clamp_volume_indirect",
+  "volumetric_start",
+  "volumetric_end",
+  "volumetric_tile_size",
+  "volumetric_samples",
+  "volumetric_sample_distribution",
+  "volumetric_ray_depth",
+  "volumetric_light_clamp",
+  "use_volumetric_shadows",
+  "volumetric_shadow_samples",
+  "use_volume_custom_range",
+  "fast_gi_ray_count",
+  "use_bokeh_jittered",
+  "use_shadows",
+  "shadow_pool_size",
+  "shadow_ray_count",
+  "shadow_step_count",
+  "use_raytracing",
+  "shadow_resolution_scale"
+ ],
+ "resolution": [
+  "image_settings",
+  "resolution_x",
+  "resolution_y",
+  "resolution_percentage",
+  "film_transparent"
+ ],
+ "addons": [
+  "io_anim_bvh",
+  "io_curve_svg",
+  "io_mesh_uv_layout",
+  "io_scene_fbx",
+  "io_scene_gltf2",
+  "cycles",
+  "pose_library",
+  "bl_pkg",
+  "addon",
+  "GenesisCore"
+ ],
+ "cycles_ok": true,
+ "engine_after": "CYCLES",
+ "view_transform": "AgX"
+}

@@ -1,0 +1,5 @@
+{
+ "variants": "a,b,c", "rotations": [0, 90, 180, 270], "samples": 64, "ppu": 96,
+ "res": [512, 640], "export": false, "save_blend": false, "viewport": false,
+ "tag": "vhg"
+}

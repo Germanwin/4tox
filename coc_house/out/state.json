@@ -1,0 +1,42 @@
+{
+ "objects": [
+  "coc_house_camera",
+  "coc_house_fill",
+  "coc_house_glass",
+  "coc_house_grass",
+  "coc_house_key",
+  "coc_house_metal",
+  "coc_house_metal_dark",
+  "coc_house_ridge",
+  "coc_house_rim",
+  "coc_house_sky",
+  "coc_house_slate",
+  "coc_house_stone",
+  "coc_house_stone_dark",
+  "coc_house_stone_lit",
+  "coc_house_stone_mid",
+  "coc_house_wood",
+  "coc_house_wood_dark",
+  "coc_house_wood_lit"
+ ],
+ "meshes": 13,
+ "tris": 2876,
+ "bbox_lo": [
+  -4.6,
+  -4.6,
+  0.0
+ ],
+ "bbox_hi": [
+  4.6,
+  4.6,
+  4.625
+ ],
+ "sizes": [
+  9.2,
+  9.2,
+  4.625
+ ],
+ "camera": "coc_house_camera",
+ "engine": "BLENDER_EEVEE",
+ "coll_objs": 18
+}

@@ -1,0 +1,14 @@
+{
+ "engines": [
+  "BLENDER_EEVEE"
+ ],
+ "current": "BLENDER_EEVEE",
+ "has_eevee_next": true,
+ "has_cycles": true,
+ "view_transforms": [
+  "NONE"
+ ],
+ "looks": [
+  "NONE"
+ ]
+}

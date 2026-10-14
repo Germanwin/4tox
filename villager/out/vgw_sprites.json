@@ -1,0 +1,94 @@
+{
+ "tag": "vgw",
+ "ppu": 96.0,
+ "ortho": 2.0,
+ "res": [
+  144,
+  192
+ ],
+ "az_deg": 45.0,
+ "el_deg": 35.264389682754654,
+ "cell": [
+  112,
+  132
+ ],
+ "anims": {
+  "work": {
+   "frames": 8,
+   "fps": 12.0,
+   "loop": false
+  }
+ },
+ "shadow": {
+  "a": 15.0,
+  "b": 5.0,
+  "angle_deg": -30.0,
+  "alpha": 0.45,
+  "blur": 2.2,
+  "shift": [
+   2.0,
+   1.0
+  ]
+ },
+ "outline": {
+  "rgb": [
+   14,
+   18,
+   14
+  ],
+  "dilate": 1
+ },
+ "note": "жительница: 1 юнит = 1 клетка карты; клетка и якорь — как у героя (112x132, опора 56,106); anchorX/anchorY — пиксель клетки, куда проецируется (0,0,0), то есть земля между ступнями",
+ "frames": {
+  "vgw_work_0_0": {
+   "file": "vgw_work_0_0.png",
+   "w": 112,
+   "h": 132,
+   "anchorX": 56.0,
+   "anchorY": 106.0,
+   "anim": "work",
+   "frame": 0,
+   "rotation": 0
+  },
+  "vgw_work_1_0": {
+   "file": "vgw_work_1_0.png",
+   "w": 112,
+   "h": 132,
+   "anchorX": 56.0,
+   "anchorY": 106.0,
+   "anim": "work",
+   "frame": 1,
+   "rotation": 0
+  },
+  "vgw_work_3_0": {
+   "file": "vgw_work_3_0.png",
+   "w": 112,
+   "h": 132,
+   "anchorX": 56.0,
+   "anchorY": 106.0,
+   "anim": "work",
+   "frame": 3,
+   "rotation": 0
+  },
+  "vgw_work_4_0": {
+   "file": "vgw_work_4_0.png",
+   "w": 112,
+   "h": 132,
+   "anchorX": 56.0,
+   "anchorY": 106.0,
+   "anim": "work",
+   "frame": 4,
+   "rotation": 0
+  },
+  "vgw_work_6_0": {
+   "file": "vgw_work_6_0.png",
+   "w": 112,
+   "h": 132,
+   "anchorX": 56.0,
+   "anchorY": 106.0,
+   "anim": "work",
+   "frame": 6,
+   "rotation": 0
+  }
+ }
+}

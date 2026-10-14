@@ -1,0 +1,35 @@
+{
+ "ppu": 384.0,
+ "res": [
+  2048,
+  2560
+ ],
+ "scene": "lumbercamp",
+ "prefix": "lc_",
+ "el_deg": 35.264389682754654,
+ "az_deg": 45.0,
+ "sun": [
+  -0.36108487844467163,
+  0.3009040653705597,
+  0.8826518654823303
+ ],
+ "frames": {
+  "lc4x_x_0": {
+   "variant": null,
+   "rotation": 0,
+   "raw": "/Users/hermmoment/coding/4tox/lumbercamp/renders/lc4x_x_0_raw.png",
+   "tris": 982,
+   "verts": 680,
+   "parts": 66,
+   "size": [
+    2.862,
+    2.716,
+    1.75
+   ],
+   "footprint": [
+    2.862,
+    2.716
+   ]
+  }
+ }
+}

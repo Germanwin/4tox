@@ -1,0 +1,117 @@
+{
+ "variant": "b",
+ "probes": [
+  {
+   "family": "leather",
+   "tone": 0,
+   "key": "leather_lt",
+   "normal": [
+    -1.0,
+    0.0,
+    0.0
+   ],
+   "weight": 0.00518,
+   "base_hex": "#130802",
+   "target_hex": "#3A2614",
+   "probe": "renders/calib_leather_0.png"
+  },
+  {
+   "family": "leather",
+   "tone": 1,
+   "key": "leather",
+   "normal": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "weight": 0.00518,
+   "base_hex": "#0A0301",
+   "target_hex": "#2A1B0E",
+   "probe": "renders/calib_leather_1.png"
+  },
+  {
+   "family": "stone",
+   "tone": 0,
+   "key": "stone",
+   "normal": [
+    0.0,
+    0.28,
+    0.96
+   ],
+   "weight": 0.002577,
+   "base_hex": "#373D41",
+   "target_hex": "#787F85",
+   "probe": "renders/calib_stone_0.png"
+  },
+  {
+   "family": "stone",
+   "tone": 1,
+   "key": "stone_mid",
+   "normal": [
+    -0.44721,
+    0.89443,
+    0.0
+   ],
+   "weight": 0.003975,
+   "base_hex": "#464E50",
+   "target_hex": "#6C7377",
+   "probe": "renders/calib_stone_1.png"
+  },
+  {
+   "family": "stone",
+   "tone": 2,
+   "key": "stone_dark",
+   "normal": [
+    0.44721,
+    0.89443,
+    0.0
+   ],
+   "weight": 0.001325,
+   "base_hex": "#272A2A",
+   "target_hex": "#44484A",
+   "probe": "renders/calib_stone_2.png"
+  },
+  {
+   "family": "wood",
+   "tone": 0,
+   "key": "wood",
+   "normal": [
+    -0.82947,
+    0.55836,
+    -0.01491
+   ],
+   "weight": 0.001513,
+   "base_hex": "#290E06",
+   "target_hex": "#553321",
+   "probe": "renders/calib_wood_0.png"
+  },
+  {
+   "family": "wood",
+   "tone": 1,
+   "key": "wood_mid",
+   "normal": [
+    -0.00027,
+    0.99964,
+    -0.02672
+   ],
+   "weight": 0.001212,
+   "base_hex": "#220E05",
+   "target_hex": "#452D1C",
+   "probe": "renders/calib_wood_1.png"
+  },
+  {
+   "family": "wood",
+   "tone": 2,
+   "key": "wood_dark",
+   "normal": [
+    0.5538,
+    0.83242,
+    0.01962
+   ],
+   "weight": 0.000304,
+   "base_hex": "#180801",
+   "target_hex": "#32200F",
+   "probe": "renders/calib_wood_2.png"
+  }
+ ]
+}

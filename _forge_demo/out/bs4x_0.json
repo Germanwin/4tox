@@ -1,0 +1,14 @@
+{
+ "raw": "fb4x_x_0_raw.png",
+ "anchor": [
+  1091,
+  1564
+ ],
+ "size": [
+  2182,
+  2123
+ ],
+ "ppu": 384.0,
+ "outline": true,
+ "dilate": 1
+}

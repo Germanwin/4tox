@@ -1,0 +1,520 @@
+{
+ "atlas": "sprites/atlas.png",
+ "size": 1024,
+ "ppu": 96.0,
+ "note": "anchorX/anchorY — пиксель внутри кадра, куда проецируется точка опоры модели",
+ "frames": {
+  "tree_oak_0": {
+   "x": 3,
+   "y": 874,
+   "w": 107,
+   "h": 147,
+   "anchorX": 50.9,
+   "anchorY": 120.0
+  },
+  "tree_oak_90": {
+   "x": 113,
+   "y": 874,
+   "w": 107,
+   "h": 147,
+   "anchorX": 56.1,
+   "anchorY": 120.0
+  },
+  "tree_oak_180": {
+   "x": 223,
+   "y": 874,
+   "w": 107,
+   "h": 147,
+   "anchorX": 56.1,
+   "anchorY": 117.4
+  },
+  "tree_oak_270": {
+   "x": 333,
+   "y": 874,
+   "w": 107,
+   "h": 147,
+   "anchorX": 50.9,
+   "anchorY": 117.4
+  },
+  "tree_autumn_0": {
+   "x": 443,
+   "y": 874,
+   "w": 107,
+   "h": 147,
+   "anchorX": 51.3,
+   "anchorY": 119.8
+  },
+  "tree_autumn_90": {
+   "x": 553,
+   "y": 874,
+   "w": 107,
+   "h": 147,
+   "anchorX": 55.7,
+   "anchorY": 119.8
+  },
+  "tree_autumn_180": {
+   "x": 663,
+   "y": 874,
+   "w": 107,
+   "h": 147,
+   "anchorX": 55.7,
+   "anchorY": 117.6
+  },
+  "tree_autumn_270": {
+   "x": 773,
+   "y": 874,
+   "w": 107,
+   "h": 147,
+   "anchorX": 51.3,
+   "anchorY": 117.6
+  },
+  "tree_pine_0": {
+   "x": 883,
+   "y": 881,
+   "w": 96,
+   "h": 140,
+   "anchorX": 49.1,
+   "anchorY": 115.1
+  },
+  "tree_pine_90": {
+   "x": 3,
+   "y": 728,
+   "w": 96,
+   "h": 140,
+   "anchorX": 49.1,
+   "anchorY": 113.9
+  },
+  "tree_pine_180": {
+   "x": 102,
+   "y": 728,
+   "w": 96,
+   "h": 140,
+   "anchorX": 46.9,
+   "anchorY": 113.9
+  },
+  "tree_pine_270": {
+   "x": 201,
+   "y": 728,
+   "w": 96,
+   "h": 140,
+   "anchorX": 46.9,
+   "anchorY": 115.1
+  },
+  "tree_birch_0": {
+   "x": 300,
+   "y": 732,
+   "w": 90,
+   "h": 136,
+   "anchorX": 47.2,
+   "anchorY": 110.6
+  },
+  "tree_birch_90": {
+   "x": 393,
+   "y": 732,
+   "w": 90,
+   "h": 136,
+   "anchorX": 42.8,
+   "anchorY": 110.6
+  },
+  "tree_birch_180": {
+   "x": 486,
+   "y": 732,
+   "w": 90,
+   "h": 136,
+   "anchorX": 42.8,
+   "anchorY": 112.8
+  },
+  "tree_birch_270": {
+   "x": 579,
+   "y": 732,
+   "w": 90,
+   "h": 136,
+   "anchorX": 47.2,
+   "anchorY": 112.8
+  },
+  "bush_0": {
+   "x": 672,
+   "y": 799,
+   "w": 74,
+   "h": 69,
+   "anchorX": 36.0,
+   "anchorY": 49.1
+  },
+  "bush_90": {
+   "x": 749,
+   "y": 799,
+   "w": 74,
+   "h": 69,
+   "anchorX": 38.0,
+   "anchorY": 49.1
+  },
+  "bush_180": {
+   "x": 826,
+   "y": 799,
+   "w": 74,
+   "h": 69,
+   "anchorX": 38.0,
+   "anchorY": 48.1
+  },
+  "bush_270": {
+   "x": 903,
+   "y": 799,
+   "w": 74,
+   "h": 69,
+   "anchorX": 36.0,
+   "anchorY": 48.1
+  },
+  "bush_berry_0": {
+   "x": 3,
+   "y": 653,
+   "w": 73,
+   "h": 69,
+   "anchorX": 35.5,
+   "anchorY": 49.1
+  },
+  "bush_berry_90": {
+   "x": 79,
+   "y": 653,
+   "w": 73,
+   "h": 69,
+   "anchorX": 37.5,
+   "anchorY": 49.1
+  },
+  "bush_berry_180": {
+   "x": 155,
+   "y": 653,
+   "w": 73,
+   "h": 69,
+   "anchorX": 37.5,
+   "anchorY": 48.1
+  },
+  "bush_berry_270": {
+   "x": 231,
+   "y": 653,
+   "w": 73,
+   "h": 69,
+   "anchorX": 35.5,
+   "anchorY": 48.1
+  },
+  "rock_pebble_0": {
+   "x": 307,
+   "y": 690,
+   "w": 33,
+   "h": 32,
+   "anchorX": 16.5,
+   "anchorY": 21.0
+  },
+  "rock_pebble_90": {
+   "x": 343,
+   "y": 690,
+   "w": 33,
+   "h": 32,
+   "anchorX": 16.5,
+   "anchorY": 21.0
+  },
+  "rock_pebble_180": {
+   "x": 379,
+   "y": 690,
+   "w": 33,
+   "h": 32,
+   "anchorX": 16.5,
+   "anchorY": 21.0
+  },
+  "rock_pebble_270": {
+   "x": 415,
+   "y": 690,
+   "w": 33,
+   "h": 32,
+   "anchorX": 16.5,
+   "anchorY": 21.0
+  },
+  "rock_boulder_0": {
+   "x": 451,
+   "y": 666,
+   "w": 55,
+   "h": 56,
+   "anchorX": 27.5,
+   "anchorY": 38.8
+  },
+  "rock_boulder_90": {
+   "x": 509,
+   "y": 666,
+   "w": 55,
+   "h": 56,
+   "anchorX": 27.5,
+   "anchorY": 38.8
+  },
+  "rock_boulder_180": {
+   "x": 567,
+   "y": 666,
+   "w": 55,
+   "h": 56,
+   "anchorX": 27.5,
+   "anchorY": 38.8
+  },
+  "rock_boulder_270": {
+   "x": 625,
+   "y": 666,
+   "w": 55,
+   "h": 56,
+   "anchorX": 27.5,
+   "anchorY": 38.8
+  },
+  "rock_cluster_0": {
+   "x": 683,
+   "y": 648,
+   "w": 82,
+   "h": 74,
+   "anchorX": 44.5,
+   "anchorY": 51.3
+  },
+  "rock_cluster_90": {
+   "x": 768,
+   "y": 648,
+   "w": 82,
+   "h": 74,
+   "anchorX": 59.6,
+   "anchorY": 51.8
+  },
+  "rock_cluster_180": {
+   "x": 853,
+   "y": 648,
+   "w": 82,
+   "h": 74,
+   "anchorX": 60.6,
+   "anchorY": 44.2
+  },
+  "rock_cluster_270": {
+   "x": 938,
+   "y": 648,
+   "w": 82,
+   "h": 74,
+   "anchorX": 45.5,
+   "anchorY": 43.7
+  },
+  "ore_iron_0": {
+   "x": 3,
+   "y": 570,
+   "w": 77,
+   "h": 72,
+   "anchorX": 40.0,
+   "anchorY": 49.3
+  },
+  "ore_iron_90": {
+   "x": 83,
+   "y": 570,
+   "w": 77,
+   "h": 72,
+   "anchorX": 53.8,
+   "anchorY": 51.1
+  },
+  "ore_iron_180": {
+   "x": 163,
+   "y": 570,
+   "w": 77,
+   "h": 72,
+   "anchorX": 57.4,
+   "anchorY": 44.2
+  },
+  "ore_iron_270": {
+   "x": 243,
+   "y": 570,
+   "w": 77,
+   "h": 72,
+   "anchorX": 43.6,
+   "anchorY": 42.4
+  },
+  "salt_crystals_0": {
+   "x": 323,
+   "y": 591,
+   "w": 54,
+   "h": 51,
+   "anchorX": 27.4,
+   "anchorY": 34.9
+  },
+  "salt_crystals_90": {
+   "x": 380,
+   "y": 591,
+   "w": 54,
+   "h": 51,
+   "anchorX": 13.8,
+   "anchorY": 34.6
+  },
+  "salt_crystals_180": {
+   "x": 437,
+   "y": 591,
+   "w": 54,
+   "h": 51,
+   "anchorX": 13.1,
+   "anchorY": 41.4
+  },
+  "salt_crystals_270": {
+   "x": 494,
+   "y": 591,
+   "w": 54,
+   "h": 51,
+   "anchorX": 26.6,
+   "anchorY": 41.7
+  },
+  "grass_tuft_0": {
+   "x": 551,
+   "y": 609,
+   "w": 26,
+   "h": 33,
+   "anchorX": 13.0,
+   "anchorY": 24.7
+  },
+  "grass_tuft_90": {
+   "x": 580,
+   "y": 609,
+   "w": 26,
+   "h": 33,
+   "anchorX": 6.9,
+   "anchorY": 24.5
+  },
+  "grass_tuft_180": {
+   "x": 609,
+   "y": 609,
+   "w": 26,
+   "h": 33,
+   "anchorX": 6.5,
+   "anchorY": 27.5
+  },
+  "grass_tuft_270": {
+   "x": 638,
+   "y": 609,
+   "w": 26,
+   "h": 33,
+   "anchorX": 12.6,
+   "anchorY": 27.7
+  },
+  "reeds_0": {
+   "x": 667,
+   "y": 585,
+   "w": 28,
+   "h": 57,
+   "anchorX": 14.0,
+   "anchorY": 47.0
+  },
+  "reeds_90": {
+   "x": 698,
+   "y": 585,
+   "w": 28,
+   "h": 57,
+   "anchorX": 17.9,
+   "anchorY": 49.2
+  },
+  "reeds_180": {
+   "x": 729,
+   "y": 585,
+   "w": 28,
+   "h": 57,
+   "anchorX": 22.2,
+   "anchorY": 47.2
+  },
+  "reeds_270": {
+   "x": 760,
+   "y": 585,
+   "w": 28,
+   "h": 57,
+   "anchorX": 18.3,
+   "anchorY": 45.0
+  },
+  "flower_white_0": {
+   "x": 791,
+   "y": 612,
+   "w": 28,
+   "h": 30,
+   "anchorX": 13.0,
+   "anchorY": 21.8
+  },
+  "flower_white_90": {
+   "x": 822,
+   "y": 612,
+   "w": 28,
+   "h": 30,
+   "anchorX": 8.2,
+   "anchorY": 21.8
+  },
+  "flower_white_180": {
+   "x": 853,
+   "y": 612,
+   "w": 28,
+   "h": 30,
+   "anchorX": 8.2,
+   "anchorY": 24.2
+  },
+  "flower_white_270": {
+   "x": 884,
+   "y": 612,
+   "w": 28,
+   "h": 30,
+   "anchorX": 13.0,
+   "anchorY": 24.2
+  },
+  "flower_yellow_0": {
+   "x": 915,
+   "y": 612,
+   "w": 28,
+   "h": 30,
+   "anchorX": 13.0,
+   "anchorY": 21.8
+  },
+  "flower_yellow_90": {
+   "x": 946,
+   "y": 612,
+   "w": 28,
+   "h": 30,
+   "anchorX": 8.2,
+   "anchorY": 21.8
+  },
+  "flower_yellow_180": {
+   "x": 977,
+   "y": 612,
+   "w": 28,
+   "h": 30,
+   "anchorX": 8.2,
+   "anchorY": 24.2
+  },
+  "flower_yellow_270": {
+   "x": 3,
+   "y": 534,
+   "w": 28,
+   "h": 30,
+   "anchorX": 13.0,
+   "anchorY": 24.2
+  },
+  "flower_pink_0": {
+   "x": 34,
+   "y": 534,
+   "w": 28,
+   "h": 30,
+   "anchorX": 13.0,
+   "anchorY": 21.8
+  },
+  "flower_pink_90": {
+   "x": 65,
+   "y": 534,
+   "w": 28,
+   "h": 30,
+   "anchorX": 8.2,
+   "anchorY": 21.8
+  },
+  "flower_pink_180": {
+   "x": 96,
+   "y": 534,
+   "w": 28,
+   "h": 30,
+   "anchorX": 8.2,
+   "anchorY": 24.2
+  },
+  "flower_pink_270": {
+   "x": 127,
+   "y": 534,
+   "w": 28,
+   "h": 30,
+   "anchorX": 13.0,
+   "anchorY": 24.2
+  }
+ }
+}

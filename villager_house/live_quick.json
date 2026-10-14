@@ -1,0 +1,4 @@
+{
+ "variants": "a", "rotations": [0], "samples": 32, "ppu": 80,
+ "export": false, "save_blend": false, "viewport": true, "tag": "vhq"
+}

@@ -1,0 +1,133 @@
+{
+ "variants": [
+  "a"
+ ],
+ "probes": [
+  {
+   "family": "iron",
+   "tone": 0,
+   "key": "iron",
+   "normal": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "weight": 0.002804,
+   "base_hex": "#2F363A",
+   "target_hex": "#6E767C",
+   "probe": "renders/calib_iron_0.png"
+  },
+  {
+   "family": "iron",
+   "tone": 1,
+   "key": "iron_mid",
+   "normal": [
+    -0.99997,
+    0.00027,
+    -0.00758
+   ],
+   "weight": 0.006245,
+   "base_hex": "#414A51",
+   "target_hex": "#636B72",
+   "probe": "renders/calib_iron_1.png"
+  },
+  {
+   "family": "iron",
+   "tone": 2,
+   "key": "iron_dark",
+   "normal": [
+    0.00012,
+    0.97845,
+    -0.20649
+   ],
+   "weight": 0.00278,
+   "base_hex": "#2D3236",
+   "target_hex": "#454B50",
+   "probe": "renders/calib_iron_2.png"
+  },
+  {
+   "family": "leather",
+   "tone": 0,
+   "key": "leather_lt",
+   "normal": [
+    -0.0,
+    0.0,
+    1.0
+   ],
+   "weight": 0.000624,
+   "base_hex": "#0C0501",
+   "target_hex": "#3A2614",
+   "probe": "renders/calib_leather_0.png"
+  },
+  {
+   "family": "leather",
+   "tone": 1,
+   "key": "leather",
+   "normal": [
+    -0.995,
+    0.0,
+    -0.09984
+   ],
+   "weight": 0.000149,
+   "base_hex": "#0D0501",
+   "target_hex": "#2A1B0E",
+   "probe": "renders/calib_leather_1.png"
+  },
+  {
+   "family": "leather",
+   "tone": 2,
+   "key": "leather_dk",
+   "normal": [
+    -0.8617,
+    -0.4975,
+    -0.09984
+   ],
+   "weight": 4.4e-05,
+   "base_hex": "#060100",
+   "target_hex": "#1C1108",
+   "probe": "renders/calib_leather_2.png"
+  },
+  {
+   "family": "wood",
+   "tone": 0,
+   "key": "wood",
+   "normal": [
+    -0.496,
+    0.86816,
+    0.01663
+   ],
+   "weight": 0.001227,
+   "base_hex": "#290E06",
+   "target_hex": "#553321",
+   "probe": "renders/calib_wood_0.png"
+  },
+  {
+   "family": "wood",
+   "tone": 1,
+   "key": "wood_mid",
+   "normal": [
+    -0.00366,
+    0.99998,
+    0.00558
+   ],
+   "weight": 0.0009,
+   "base_hex": "#210D05",
+   "target_hex": "#452D1C",
+   "probe": "renders/calib_wood_1.png"
+  },
+  {
+   "family": "wood",
+   "tone": 2,
+   "key": "wood_dark",
+   "normal": [
+    0.49698,
+    0.8676,
+    0.01659
+   ],
+   "weight": 0.000344,
+   "base_hex": "#170801",
+   "target_hex": "#32200F",
+   "probe": "renders/calib_wood_2.png"
+  }
+ ]
+}

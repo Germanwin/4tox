@@ -1,0 +1,142 @@
+{
+ "ppu": 384.0,
+ "ortho": 1.6666666666666667,
+ "res": [
+  512,
+  640
+ ],
+ "note": "1 юнит модели = 1 клетка карты; лопата 0.62 юнита в высоту, кадр 0 — штык влево-вниз, опора — режущая кромка на земле",
+ "shadow": {
+  "a": 9.0,
+  "b": 4.6,
+  "angle": -30.0,
+  "alpha": 0.55,
+  "blur": 0.026,
+  "shift": [
+   4.0,
+   2.0
+  ]
+ },
+ "frames": {
+  "shovel_a_0": {
+   "file": "shovel_a_0@4x.png",
+   "w": 111,
+   "h": 258,
+   "anchorX": 41.0,
+   "anchorY": 211.0,
+   "variant": "a",
+   "rotation": 0,
+   "ppu": 384.0
+  },
+  "shovel_a_90": {
+   "file": "shovel_a_90@4x.png",
+   "w": 111,
+   "h": 258,
+   "anchorX": 41.0,
+   "anchorY": 211.0,
+   "variant": "a",
+   "rotation": 90,
+   "ppu": 384.0
+  },
+  "shovel_a_180": {
+   "file": "shovel_a_180@4x.png",
+   "w": 111,
+   "h": 259,
+   "anchorX": 41.0,
+   "anchorY": 212.0,
+   "variant": "a",
+   "rotation": 180,
+   "ppu": 384.0
+  },
+  "shovel_a_270": {
+   "file": "shovel_a_270@4x.png",
+   "w": 111,
+   "h": 259,
+   "anchorX": 41.0,
+   "anchorY": 212.0,
+   "variant": "a",
+   "rotation": 270,
+   "ppu": 384.0
+  },
+  "shovel_b_0": {
+   "file": "shovel_b_0@4x.png",
+   "w": 111,
+   "h": 258,
+   "anchorX": 41.0,
+   "anchorY": 211.0,
+   "variant": "b",
+   "rotation": 0,
+   "ppu": 384.0
+  },
+  "shovel_b_90": {
+   "file": "shovel_b_90@4x.png",
+   "w": 111,
+   "h": 258,
+   "anchorX": 41.0,
+   "anchorY": 211.0,
+   "variant": "b",
+   "rotation": 90,
+   "ppu": 384.0
+  },
+  "shovel_b_180": {
+   "file": "shovel_b_180@4x.png",
+   "w": 111,
+   "h": 259,
+   "anchorX": 41.0,
+   "anchorY": 212.0,
+   "variant": "b",
+   "rotation": 180,
+   "ppu": 384.0
+  },
+  "shovel_b_270": {
+   "file": "shovel_b_270@4x.png",
+   "w": 111,
+   "h": 259,
+   "anchorX": 41.0,
+   "anchorY": 212.0,
+   "variant": "b",
+   "rotation": 270,
+   "ppu": 384.0
+  },
+  "shovel_c_0": {
+   "file": "shovel_c_0@4x.png",
+   "w": 111,
+   "h": 286,
+   "anchorX": 41.0,
+   "anchorY": 239.0,
+   "variant": "c",
+   "rotation": 0,
+   "ppu": 384.0
+  },
+  "shovel_c_90": {
+   "file": "shovel_c_90@4x.png",
+   "w": 111,
+   "h": 286,
+   "anchorX": 41.0,
+   "anchorY": 239.0,
+   "variant": "c",
+   "rotation": 90,
+   "ppu": 384.0
+  },
+  "shovel_c_180": {
+   "file": "shovel_c_180@4x.png",
+   "w": 111,
+   "h": 287,
+   "anchorX": 41.0,
+   "anchorY": 240.0,
+   "variant": "c",
+   "rotation": 180,
+   "ppu": 384.0
+  },
+  "shovel_c_270": {
+   "file": "shovel_c_270@4x.png",
+   "w": 111,
+   "h": 287,
+   "anchorX": 41.0,
+   "anchorY": 240.0,
+   "variant": "c",
+   "rotation": 270,
+   "ppu": 384.0
+  }
+ }
+}

@@ -1,0 +1,19 @@
+{
+ "scene": "abskill",
+ "prefix": "abs_",
+ "variants": [
+  null
+ ],
+ "rotations": [],
+ "ppu": 96.0,
+ "res": [
+  512,
+  640
+ ],
+ "samples": 64,
+ "export": true,
+ "save_blend": true,
+ "viewport": true,
+ "tag": "abs",
+ "closeups": false
+}

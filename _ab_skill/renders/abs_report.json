@@ -1,0 +1,86 @@
+{
+ "ppu": 96.0,
+ "res": [
+  440,
+  540
+ ],
+ "scene": "abskill",
+ "prefix": "abs_",
+ "el_deg": 35.264389682754654,
+ "az_deg": 45.0,
+ "sun": [
+  -0.36108487844467163,
+  0.3009040653705597,
+  0.8826518654823303
+ ],
+ "frames": {
+  "abs_x_0": {
+   "variant": null,
+   "rotation": 0,
+   "raw": "/Users/hermmoment/coding/4tox/_ab_skill/renders/abs_x_0_raw.png",
+   "tris": 1026,
+   "verts": 930,
+   "parts": 110,
+   "size": [
+    1.967,
+    1.897,
+    2.668
+   ],
+   "footprint": [
+    1.967,
+    1.897
+   ]
+  },
+  "abs_x_90": {
+   "variant": null,
+   "rotation": 90,
+   "raw": "/Users/hermmoment/coding/4tox/_ab_skill/renders/abs_x_90_raw.png",
+   "tris": 1026,
+   "verts": 930,
+   "parts": 110,
+   "size": [
+    1.897,
+    1.967,
+    2.668
+   ],
+   "footprint": [
+    1.897,
+    1.967
+   ]
+  },
+  "abs_x_180": {
+   "variant": null,
+   "rotation": 180,
+   "raw": "/Users/hermmoment/coding/4tox/_ab_skill/renders/abs_x_180_raw.png",
+   "tris": 1026,
+   "verts": 930,
+   "parts": 110,
+   "size": [
+    1.967,
+    1.897,
+    2.668
+   ],
+   "footprint": [
+    1.967,
+    1.897
+   ]
+  },
+  "abs_x_270": {
+   "variant": null,
+   "rotation": 270,
+   "raw": "/Users/hermmoment/coding/4tox/_ab_skill/renders/abs_x_270_raw.png",
+   "tris": 1026,
+   "verts": 930,
+   "parts": 110,
+   "size": [
+    1.897,
+    1.967,
+    2.668
+   ],
+   "footprint": [
+    1.897,
+    1.967
+   ]
+  }
+ }
+}

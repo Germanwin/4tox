@@ -1,0 +1,84 @@
+{
+ "tag": "vgt4",
+ "ppu": 384.0,
+ "ortho": 2.0,
+ "res": [
+  576,
+  768
+ ],
+ "az_deg": 45.0,
+ "el_deg": 35.264389682754654,
+ "cell": [
+  448,
+  528
+ ],
+ "anims": {
+  "walk": {
+   "frames": 8,
+   "fps": 12.0,
+   "loop": true
+  }
+ },
+ "shadow": {
+  "a": 20.0,
+  "b": 4.5,
+  "angle_deg": 0.0,
+  "alpha": 0.55,
+  "blur": 1.6,
+  "shift": [
+   2.0,
+   7.5
+  ]
+ },
+ "outline": {
+  "rgb": [
+   14,
+   18,
+   14
+  ],
+  "dilate": 1
+ },
+ "note": "жительница: 1 юнит = 1 клетка карты; клетка и якорь — как у героя (112x132, опора 56,106); anchorX/anchorY — пиксель клетки, куда проецируется (0,0,0), то есть земля между ступнями",
+ "frames": {
+  "vgt4_walk_2_90": {
+   "file": "vgt4_walk_2_90.png",
+   "w": 448,
+   "h": 528,
+   "anchorX": 224.0,
+   "anchorY": 424.0,
+   "anim": "walk",
+   "frame": 2,
+   "rotation": 90
+  },
+  "vgt4_walk_3_90": {
+   "file": "vgt4_walk_3_90.png",
+   "w": 448,
+   "h": 528,
+   "anchorX": 224.0,
+   "anchorY": 424.0,
+   "anim": "walk",
+   "frame": 3,
+   "rotation": 90
+  },
+  "vgt4_walk_4_90": {
+   "file": "vgt4_walk_4_90.png",
+   "w": 448,
+   "h": 528,
+   "anchorX": 224.0,
+   "anchorY": 424.0,
+   "anim": "walk",
+   "frame": 4,
+   "rotation": 90
+  },
+  "vgt4_walk_7_90": {
+   "file": "vgt4_walk_7_90.png",
+   "w": 448,
+   "h": 528,
+   "anchorX": 224.0,
+   "anchorY": 424.0,
+   "anim": "walk",
+   "frame": 7,
+   "rotation": 90
+  }
+ }
+}

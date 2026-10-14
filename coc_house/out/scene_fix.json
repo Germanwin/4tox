@@ -1,0 +1,49 @@
+{
+ "Cube": {
+  "type": "MESH",
+  "dims": [
+   2.0,
+   2.0,
+   2.0
+  ],
+  "loc": [
+   0.0,
+   0.0,
+   0.0
+  ],
+  "hide_render": true
+ },
+ "Light": {
+  "type": "LIGHT",
+  "dims": [
+   0.0,
+   0.0,
+   0.0
+  ],
+  "loc": [
+   4.076,
+   1.005,
+   5.904
+  ],
+  "hide_render": true
+ },
+ "Camera": {
+  "type": "CAMERA",
+  "dims": [
+   0.0,
+   0.0,
+   0.0
+  ],
+  "loc": [
+   7.359,
+   -6.926,
+   4.958
+  ],
+  "hide_render": true
+ },
+ "collections": [
+  "COC_House",
+  "Collection"
+ ],
+ "scene_objects_in_view_layer": 21
+}

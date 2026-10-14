@@ -1,0 +1,35 @@
+{
+ "ppu": 384.0,
+ "res": [
+  2048,
+  2560
+ ],
+ "scene": "forge_barn",
+ "prefix": "fb_",
+ "el_deg": 35.264389682754654,
+ "az_deg": 45.0,
+ "sun": [
+  -0.36108487844467163,
+  0.3009040653705597,
+  0.8826518654823303
+ ],
+ "frames": {
+  "fb4x_x_0": {
+   "variant": null,
+   "rotation": 0,
+   "raw": "/Users/hermmoment/coding/4tox/_forge_demo/renders/fb4x_x_0_raw.png",
+   "tris": 528,
+   "verts": 626,
+   "parts": 78,
+   "size": [
+    2.06,
+    1.824,
+    1.86
+   ],
+   "footprint": [
+    2.06,
+    1.824
+   ]
+  }
+ }
+}

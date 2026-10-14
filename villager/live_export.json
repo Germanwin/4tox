@@ -1,0 +1,3 @@
+{"variant": "m", "anims": "idle", "frames": [0], "rotations": [0], "samples": 16,
+ "ppu": 96, "res": [144, 192], "export": true, "save_blend": false,
+ "viewport": false, "tag": "vgx"}

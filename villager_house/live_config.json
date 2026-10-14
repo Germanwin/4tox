@@ -1,0 +1,14 @@
+{
+ "variants": "a,b,c",
+ "rotations": [
+  0,
+  90,
+  180,
+  270
+ ],
+ "samples": 64,
+ "ppu": 80,
+ "export": false,
+ "save_blend": false,
+ "viewport": true
+}
