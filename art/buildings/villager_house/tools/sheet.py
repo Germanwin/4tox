@@ -24,9 +24,10 @@ from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-PARENT = os.path.dirname(ROOT)
+# Корень 4tox — три уровня вверх от проекта (docs/STRUCTURE.md).
+REPO = os.path.abspath(os.path.join(ROOT, '..', '..', '..'))
 OUT = os.path.join(ROOT, 'out')
-GAME = os.path.join(PARENT, 'mapgen2')
+GAME = os.path.join(REPO, 'mapgen2')
 PPU_COMMON = 96.0
 BG = (246, 246, 244)
 
@@ -78,11 +79,11 @@ def main():
         if key in af:
             img, anc, ppu = af[key]
             items.append((key, img, anc, ppu))
-    th = os.path.join(PARENT, 'townhall', 'out', 'th_a_0.png')
+    th = os.path.join(REPO, 'art', 'buildings', 'townhall', 'out', 'th_a_0.png')
     if os.path.exists(th):
         img, anc = load_frame(th, 80.0, (431 * 0.63, 440 * 0.80))
         items.append(('ратуша (эталон)', img, anc, 96.0))
-    hu = os.path.join(PARENT, 'townhall', 'out', 'hutrect_a_0.png')
+    hu = os.path.join(REPO, 'art', 'buildings', 'townhall', 'out', 'hutrect_a_0.png')
     if os.path.exists(hu):
         img, anc = load_frame(hu, 80.0, (147.0, 210.0))
         items.append(('хижина (в игре)', img, anc, 96.0))

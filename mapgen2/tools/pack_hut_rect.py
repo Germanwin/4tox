@@ -19,7 +19,8 @@ from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-DEFAULT_SRC = os.path.join(ROOT, '..', 'townhall', 'out')
+REPO = os.path.dirname(ROOT)                       # корень 4tox (docs/STRUCTURE.md)
+DEFAULT_SRC = os.path.join(REPO, 'art', 'buildings', 'townhall', 'out')
 DST = os.path.join(ROOT, 'assets', 'hut')
 
 VARIANTS = ('a', 'b', 'c')

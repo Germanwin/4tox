@@ -1,6 +1,10 @@
 import json, numpy as np, collections, statistics as st
 from PIL import Image
-A = '/Users/hermmoment/coding/4tox/mapgen2/assets/hero/'
+import os
+# references → hero → research → корень 4tox (docs/STRUCTURE.md)
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.abspath(os.path.join(HERE, '..', '..', '..'))
+A = os.path.join(REPO, 'mapgen2', 'assets', 'hero') + os.sep
 meta = json.load(open(A + 'atlas.json'))
 img = np.asarray(Image.open(A + 'atlas.png').convert('RGBA'))
 

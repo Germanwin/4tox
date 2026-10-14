@@ -33,7 +33,8 @@ from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)                       # mapgen2/
-DEFAULT_SRC = os.path.join(ROOT, '..', 'townhall', 'out')
+REPO = os.path.dirname(ROOT)                       # корень 4tox (docs/STRUCTURE.md)
+DEFAULT_SRC = os.path.join(REPO, 'art', 'buildings', 'townhall', 'out')
 DST = os.path.join(ROOT, 'assets', 'townhall')
 
 VARIANTS = ('a', 'b', 'c')
@@ -111,7 +112,8 @@ def main():
 
     # Камера и масштаб: берём из отчёта рендера, если он есть, иначе —
     # конвенции thpipe.py. Это те же числа, что и в renders/render_report.json.
-    report_path = os.path.join(ROOT, '..', 'townhall', 'renders', 'render_report.json')
+    report_path = os.path.join(REPO, 'art', 'buildings', 'townhall', 'renders',
+                               'render_report.json')
     az, el, ppu, res = 45.0, 35.264389682754654, 80.0, [512, 640]
     if os.path.exists(report_path):
         rep = json.load(open(report_path))

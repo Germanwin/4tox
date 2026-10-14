@@ -18,7 +18,9 @@ from PIL import Image
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 OUT = os.path.join(ROOT, 'out')
-GAME = os.path.join(ROOT, '..', 'mapgen2', 'assets')
+# Корень 4tox — три уровня вверх от проекта (docs/STRUCTURE.md).
+REPO = os.path.abspath(os.path.join(ROOT, '..', '..', '..'))
+GAME = os.path.join(REPO, 'mapgen2', 'assets')
 SPR = os.path.join(GAME, 'sprites')
 TH = os.path.join(GAME, 'townhall')
 HUT = os.path.join(GAME, 'hut')

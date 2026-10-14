@@ -7,7 +7,7 @@
   ~/.dsh/skills/4tox-lowpoly-3d/references/palette.json   (палитра канона)
   ~/.dsh/skills/4tox-lowpoly-3d/scripts/{canon,measure}.py (инструменты замера)
 
-Пишет в /Users/hermmoment/coding/4tox/hero/references/:
+Пишет рядом с собой (research/hero/references/):
   hero-reference.md, hero-reference.json, PNG-вырезки @6x.
 
 Запуск:
@@ -24,8 +24,12 @@ import sys
 import numpy as np
 from PIL import Image
 
-HERO = '/Users/hermmoment/coding/4tox/mapgen2/assets/hero/'
-OUT = '/Users/hermmoment/coding/4tox/hero/references/'
+# Пути считаются от самого скрипта, а не от абсолютного адреса: references →
+# hero → research → корень 4tox (docs/STRUCTURE.md).
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.abspath(os.path.join(HERE, '..', '..', '..'))
+HERO = os.path.join(REPO, 'mapgen2', 'assets', 'hero') + os.sep
+OUT = HERE + os.sep
 SKILL = '/Users/hermmoment/.dsh/skills/4tox-lowpoly-3d/'
 sys.path.insert(0, os.path.join(SKILL, 'scripts'))
 import canon as C            # noqa: E402

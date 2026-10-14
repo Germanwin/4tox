@@ -17,7 +17,9 @@ from PIL import Image, ImageDraw, ImageFont
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-ATLAS = os.path.join(os.path.dirname(ROOT), 'mapgen2', 'assets', 'sprites')
+# Корень 4tox — три уровня вверх от проекта (docs/STRUCTURE.md).
+REPO = os.path.abspath(os.path.join(ROOT, '..', '..', '..'))
+ATLAS = os.path.join(REPO, 'mapgen2', 'assets', 'sprites')
 OUT = os.path.join(ROOT, 'out')
 
 # Кадры эталона: имя, подпись

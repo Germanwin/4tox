@@ -21,10 +21,11 @@ from PIL import Image, ImageDraw, ImageFont
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-PROJECT = os.path.dirname(ROOT)
-ATLAS = os.path.join(PROJECT, 'mapgen2', 'assets', 'sprites')
+# Корень 4tox — три уровня вверх от проекта (docs/STRUCTURE.md).
+REPO = os.path.abspath(os.path.join(ROOT, '..', '..', '..'))
+ATLAS = os.path.join(REPO, 'mapgen2', 'assets', 'sprites')
 OUT = os.path.join(ROOT, 'out')
-AXE_OUT = os.path.join(PROJECT, 'axe', 'out')
+AXE_OUT = os.path.join(REPO, 'art', 'props', 'axe', 'out')
 
 # Кадры эталона: имя, подпись
 REF = [

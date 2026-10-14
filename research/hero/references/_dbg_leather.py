@@ -2,7 +2,11 @@ import json, sys, numpy as np
 from PIL import Image
 sys.path.insert(0, '/Users/hermmoment/.dsh/skills/4tox-lowpoly-3d/scripts')
 import canon as C
-A = '/Users/hermmoment/coding/4tox/mapgen2/assets/hero/'
+import os
+# references → hero → research → корень 4tox (docs/STRUCTURE.md)
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.abspath(os.path.join(HERE, '..', '..', '..'))
+A = os.path.join(REPO, 'mapgen2', 'assets', 'hero') + os.sep
 meta = json.load(open(A + 'atlas.json'))
 img = np.asarray(Image.open(A + 'atlas.png').convert('RGBA'))
 TONES = C.canon_tones()

@@ -31,7 +31,8 @@ from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)                       # mapgen2/
-DEFAULT_SRC = os.path.join(ROOT, '..', 'waves', 'out')
+REPO = os.path.dirname(ROOT)                       # корень 4tox (docs/STRUCTURE.md)
+DEFAULT_SRC = os.path.join(REPO, 'art', 'fx', 'waves', 'out')
 DST = os.path.join(ROOT, 'assets', 'waves')
 RIPPLE_SRC = os.path.join(ROOT, 'assets', 'textures', 'water.png')
 RIPPLE_GAIN = 2.6          # во сколько раз усилить разброс яркости воды

@@ -20,8 +20,10 @@ from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-PARENT = os.path.dirname(ROOT)
-DEFAULT_DST = os.path.join(PARENT, 'mapgen2', 'assets', 'house')
+# Проект стоит на art/<группа>/<ассет>, поэтому корень 4tox — три уровня вверх
+# (docs/STRUCTURE.md).
+REPO = os.path.abspath(os.path.join(ROOT, '..', '..', '..'))
+DEFAULT_DST = os.path.join(REPO, 'mapgen2', 'assets', 'house')
 VARIANTS = ('a', 'b', 'c')
 ROTATIONS = (0, 90, 180, 270)
 PAD = 2

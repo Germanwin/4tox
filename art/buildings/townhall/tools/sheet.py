@@ -58,7 +58,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--src', default=os.path.join(ROOT, 'out'))
     ap.add_argument('--atlas', default=os.path.join(
-        ROOT, '..', 'mapgen2', 'assets', 'sprites', 'atlas.png'))
+        REPO, 'mapgen2', 'assets', 'sprites', 'atlas.png'))
     ap.add_argument('--out', default=os.path.join(ROOT, 'out', 'compare.png'))
     args = ap.parse_args()
 

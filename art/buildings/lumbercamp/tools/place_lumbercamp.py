@@ -37,7 +37,10 @@ from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-GAME = os.path.abspath(os.path.join(ROOT, '..', 'mapgen2'))
+# Проект стоит на art/<группа>/<ассет>, поэтому корень 4tox — три уровня вверх
+# (docs/STRUCTURE.md).
+REPO = os.path.abspath(os.path.join(ROOT, '..', '..', '..'))
+GAME = os.path.join(REPO, 'mapgen2')
 ATLAS = os.path.join(GAME, 'assets', 'lumbercamp')
 
 sys.path.insert(0, HERE)

@@ -50,7 +50,10 @@ from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-GAME = os.path.join(ROOT, '..', 'mapgen2')
+# Проект стоит на art/<группа>/<ассет>, поэтому корень 4tox — три уровня вверх.
+# Раскладка и правило глубины: docs/STRUCTURE.md.
+REPO = os.path.abspath(os.path.join(ROOT, '..', '..', '..'))
+GAME = os.path.join(REPO, 'mapgen2')
 DST = os.path.join(GAME, 'assets', 'lumbercamp')
 
 ROTATIONS = (0, 90, 180, 270)

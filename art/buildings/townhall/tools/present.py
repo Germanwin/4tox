@@ -18,8 +18,11 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)
 from sheet import checker, font
 
-ATLAS = os.path.join(ROOT, '..', 'mapgen2', 'assets', 'sprites', 'atlas.png')
-META = os.path.join(ROOT, '..', 'mapgen2', 'assets', 'sprites', 'atlas.json')
+# Проект стоит на art/<группа>/<ассет>, поэтому корень 4tox — три уровня вверх.
+# Раскладка и правило глубины: docs/STRUCTURE.md.
+REPO = os.path.abspath(os.path.join(ROOT, '..', '..', '..'))
+ATLAS = os.path.join(REPO, 'mapgen2', 'assets', 'sprites', 'atlas.png')
+META = os.path.join(REPO, 'mapgen2', 'assets', 'sprites', 'atlas.json')
 OUT = os.path.join(ROOT, 'out')
 
 
