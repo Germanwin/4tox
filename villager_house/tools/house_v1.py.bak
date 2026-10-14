@@ -1,0 +1,782 @@
+"""house.py — геометрия ДОМА ЖИТЕЛЯ для mapgen2. Чистый Python, без Blender.
+
+Конвенции пайплайна (townhall/tools/thpipe.py, geom.py):
+    1 юнит модели = 1 клетка карты; пятно 3 x 2 (X — длинная сторона);
+    начало координат — центр пятна; z = 0 — земля; дверь смотрит в +Y.
+    Камера смотрит С -X/+Y: при повороте 0 видно фасад (+Y) и торец (-X).
+
+Эталон — уже собранная ратуша (`townhall/out/th_a_0.png`, 4 x 3 клетки):
+обмазанный плетень под двускатной соломой, каркас, каменный цоколь, мох,
+глубокий свес кровли. Дом жителя — та же строительная школа, но:
+    * втрое меньше и «теплее»: ставни, навес над дверью, труба, поленница;
+    * кровля читается ПЛАСТАМИ соломы (пила из 8 пластов на скат), а не
+      двумя гладкими плоскостями, как у ратуши;
+    * каркас с раскосами — как у ратуши, но с проёмами по всем четырём стенам.
+
+Ярусы снизу вверх (канон `4tox-house-3d/references/house-canon.md`, §3):
+    цоколь -> стены с каркасом -> проёмы -> кровля -> труба -> двор.
+
+Каждая деталь — dict(name, family, verts, faces). Семейство — зона палитры
+атласа (см. tools/palette.py), тон фасета считается ПО НОРМАЛИ уже в Blender
+(tools/build.py::split_tones), поэтому здесь цвета не задаются вовсе.
+"""
+import math
+import random
+
+# --------------------------------------------------------------------------
+# КОНВЕНЦИИ И РАЗМЕРЫ (юниты; 1 юнит = 1 клетка)
+# --------------------------------------------------------------------------
+WALL_X, WALL_Y = 2.76, 1.64        # оси стен: X — длинная сторона
+#   (канон 2.70 x 1.70; чуть узже по Y, чтобы кровля со свесом
+#    0.18 = 11% легла ровно в пятно 3 x 2, а не вылезла за него)
+HX, HY = WALL_X / 2.0, WALL_Y / 2.0       # 1.35, 0.83
+
+PL_H = 0.16                        # каменный цоколь, высота (канон 0.15)
+PL_OUT = 0.055                     # выступ цоколя за плоскость стены (канон 0.06)
+WALL_Z0 = PL_H                     # 0.16
+WALL_H = 1.35                      # высота стен (канон 1.35)
+WALL_Z1 = WALL_Z0 + WALL_H         # 1.51
+
+FRAME_OUT = 0.05                   # выступ каркаса за плоскость стены (канон 0.03..0.05)
+FRAME_T = 0.11                     # толщина бруса каркаса в плоскости стены
+
+PITCH = math.radians(47.0)         # уклон ската: солома 45..55 град (канон)
+TAN_P, COS_P = math.tan(PITCH), math.cos(PITCH)
+OVER_SLOPE = 0.18                  # свес по скату (канон 11..31%)
+OVER_END = 0.12                    # свес по торцу (канон 4..13%)
+EAVE_Y = HY + OVER_SLOPE           # 1.03 — карниз по Y
+ROOF_X = HX + OVER_END             # 1.49 — торец кровли по X
+ROOF_T = 0.13                      # толщина кровли у карниза
+N_PLAST = 8                        # пластов соломы на скат (канон 6..14)
+
+DOOR_W, DOOR_H = 0.34, 0.78        # канон 0.32 x 0.72 (+ запас на косяк)
+WIN = 0.28                         # канон 0.26
+
+
+def z_under(y):
+    """Низ кровли: плоскость, проходящая через верх стены на |y| = HY."""
+    return WALL_Z1 + (HY - abs(y)) * TAN_P
+
+
+def z_nom(y):
+    """Номинальная ВЕРХНЯЯ поверхность кровли (без ступеней пластов)."""
+    return z_under(y) + ROOF_T / COS_P
+
+
+RIDGE_Z = z_nom(0.0)               # 2.532 — конёк по номиналу
+
+
+# --------------------------------------------------------------------------
+# ПРИМИТИВЫ
+# --------------------------------------------------------------------------
+FACES_ALL = ('+x', '-x', '+y', '-y', '+z', '-z')
+
+
+def _rot(p, cx, cy, cz, rz, rx, ry):
+    """Поворот точки вокруг (cx, cy, cz): сначала Z, потом X, потом Y."""
+    x, y, z = p[0] - cx, p[1] - cy, p[2] - cz
+    if rz:
+        c, s = math.cos(rz), math.sin(rz)
+        x, y = x * c - y * s, x * s + y * c
+    if rx:
+        c, s = math.cos(rx), math.sin(rx)
+        y, z = y * c - z * s, y * s + z * c
+    if ry:
+        c, s = math.cos(ry), math.sin(ry)
+        x, z = x * c + z * s, -x * s + z * c
+    return (x + cx, y + cy, z + cz)
+
+
+def box(cx, cy, z0, sx, sy, sz, rz=0.0, rx=0.0, ry=0.0, keep=None):
+    """Короб: (cx, cy, z0) — центр ОСНОВАНИЯ, размеры, поворот вокруг основания.
+
+    `keep` — какие грани оставить (('+y', '-y', ...)); None — все шесть.
+    Порядок вершин и граней даёт нормали НАРУЖУ без пересчёта.
+    """
+    x0, x1 = cx - sx / 2.0, cx + sx / 2.0
+    y0, y1 = cy - sy / 2.0, cy + sy / 2.0
+    z1 = z0 + sz
+    base = [(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0),
+            (x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)]
+    if rz or rx or ry:
+        base = [_rot(p, cx, cy, z0, rz, rx, ry) for p in base]
+    named = [('+z', (4, 5, 6, 7)), ('-z', (0, 3, 2, 1)),
+             ('+y', (2, 3, 7, 6)), ('-y', (0, 1, 5, 4)),
+             ('+x', (1, 2, 6, 5)), ('-x', (3, 0, 4, 7))]
+    if keep is None:
+        faces = [f for _, f in named]
+    else:
+        faces = [f for n, f in named if n in keep]
+    return base, faces
+
+
+def prism_x(poly_yz, x0, x1, keep=None):
+    """Призма вдоль X по контуру в плоскости YZ. Нормали — наружу.
+
+    Контур задаётся в любом обходе: ориентация выправляется знаком площади
+    (CCW в (y,z) при взгляде с +X даёт нормаль +X).
+    """
+    if x1 < x0:
+        x0, x1 = x1, x0
+    poly = list(poly_yz)
+    area = 0.5 * sum(poly[i][0] * poly[(i + 1) % len(poly)][1]
+                     - poly[(i + 1) % len(poly)][0] * poly[i][1]
+                     for i in range(len(poly)))
+    if area < 0.0:
+        poly = poly[::-1]
+    n = len(poly)
+    verts = [(x0, y, z) for y, z in poly] + [(x1, y, z) for y, z in poly]
+    faces = []
+    for i in range(n):
+        j = (i + 1) % n
+        faces.append((i, j, n + j, n + i))
+    faces.append(tuple(range(n - 1, -1, -1)))           # торец x0: нормаль -X
+    faces.append(tuple(range(n, 2 * n)))                # торец x1: нормаль +X
+    if keep is not None:
+        named = dict(zip(('side', '-x', '+x'), faces[-3:]))
+        named['side'] = faces[:n]
+        out = []
+        if 'side' in keep:
+            out += faces[:n]
+        if '-x' in keep:
+            out.append(faces[-2])
+        if '+x' in keep:
+            out.append(faces[-1])
+        faces = out
+    return verts, faces
+
+
+def _norm(v):
+    d = math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) or 1.0
+    return (v[0] / d, v[1] / d, v[2] / d)
+
+
+def bar(p0, p1, sx, sy, keep=None, over=0.0):
+    """Брусок из p0 в p1 (p0/p1 — центры торцов), сечение sx (поперёк) x sy.
+
+    Ось бруска — от p0 к p1; для наклонных элементов (раскосы, жерди, лобовая
+    доска) это единственный способ задать их одной строкой и без ошибок.
+    `over` удлиняет брусок на столько с каждого конца.
+    """
+    ax = (p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2])
+    ln = math.sqrt(ax[0] ** 2 + ax[1] ** 2 + ax[2] ** 2)
+    w = _norm(ax)
+    ref = (0.0, 0.0, 1.0) if abs(w[2]) < 0.9 else (1.0, 0.0, 0.0)
+    u = _norm((w[1] * ref[2] - w[2] * ref[1],
+               w[2] * ref[0] - w[0] * ref[2],
+               w[0] * ref[1] - w[1] * ref[0]))
+    v = (w[1] * u[2] - w[2] * u[1], w[2] * u[0] - w[0] * u[2], w[0] * u[1] - w[1] * u[0])
+    hx, hy, hz = sx / 2.0, sy / 2.0, ln / 2.0 + over
+    cx = (p0[0] + p1[0]) / 2.0
+    cy = (p0[1] + p1[1]) / 2.0
+    cz = (p0[2] + p1[2]) / 2.0
+    verts = []
+    for sz_ in (-1, 1):
+        for sgx, sgy in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+            verts.append((cx + u[0] * hx * sgx + v[0] * hy * sgy + w[0] * hz * sz_,
+                          cy + u[1] * hx * sgx + v[1] * hy * sgy + w[1] * hz * sz_,
+                          cz + u[2] * hx * sgx + v[2] * hy * sgy + w[2] * hz * sz_))
+    # низ (0..3), верх (4..7); обход согласован с box(): нормали наружу
+    faces = [(4, 5, 6, 7), (0, 3, 2, 1), (2, 3, 7, 6), (0, 1, 5, 4),
+             (1, 2, 6, 5), (3, 0, 4, 7)]
+    if keep is not None:
+        faces = [f for n, f in zip(FACES_ALL, faces) if n in keep]
+    return verts, faces
+
+
+def jitter(verts, amount, seed, axis=None):
+    """Дрожь вершин: «глина», а не линейка. Малая (0.006..0.014)."""
+    if not amount:
+        return verts
+    rng = random.Random(seed)
+    out = []
+    for p in verts:
+        d = [rng.uniform(-amount, amount) for _ in range(3)]
+        if axis:
+            for i in range(3):
+                if axis[i] == 0:
+                    d[i] = 0.0
+        out.append((p[0] + d[0], p[1] + d[1], p[2] + d[2]))
+    return out
+
+
+def part(parts, name, family, verts, faces, jit=0.0, seed=0):
+    if jit:
+        verts = jitter(verts, jit, seed)
+    parts.append(dict(name=name, family=family, verts=verts, faces=faces))
+    return parts
+
+
+def tris_of(parts):
+    return sum(sum(len(f) - 2 for f in p['faces']) for p in parts)
+
+
+def verts_of(parts):
+    return sum(len(p['verts']) for p in parts)
+
+
+# --------------------------------------------------------------------------
+# РАСКЛАДКА ФАСАДА (где стойки, где проёмы)
+# --------------------------------------------------------------------------
+STUD_X = 0.42                      # промежуточные стойки фасада, |x|
+SIDE_STUD_Y = 0.40                 # промежуточные стойки торца, |y|
+GABLE_STUD_Y = 0.44                # стойки щипца, |y|
+WIN_FRONT_X = 0.78                 # центры окон фасада
+WIN_Z = WALL_Z0 + 0.42 * WALL_H    # 0.727 — центр окна по высоте (канон 0.42)
+WIN_BACK_X = 0.78
+SIDE_WIN_Y = 0.0
+CHIMNEY_X = -0.60                  # труба смещена от центра (канон 0.3..0.6)
+CHIMNEY_Y = 0.40                   # стоит на скате: на коньке её съедает гребень
+
+
+# --------------------------------------------------------------------------
+# ЯРУС 1: КАМЕННЫЙ ЦОКОЛЬ
+# --------------------------------------------------------------------------
+def build_plinth(parts, rng):
+    """Цоколь: непрерывное ядро + отдельные блоки со швом (канон §2)."""
+    px, py = HX + 0.045, HY + 0.045
+    v, f = box(0.0, 0.0, 0.0, 2 * px, 2 * py, PL_H + 0.03,
+               keep=('+x', '-x', '+y', '-y', '+z'))
+    part(parts, 'plinth_core', 'stone', v, f, jit=0.006, seed=101)
+
+    # блоки по длинным стенам: 6 на сторону, ширина 0.36..0.46, шов 0.025
+    for sgn_y in (1, -1):
+        n = 6
+        w = (2 * px + 0.06) / n
+        for i in range(n):
+            cx = -px - 0.03 + w * (i + 0.5)
+            sh = rng.uniform(0.13, 0.19)
+            h = PL_H + rng.uniform(-0.02, 0.025)
+            dz = rng.uniform(-0.012, 0.012)
+            sy = rng.uniform(0.025, 0.052)
+            v, f = box(cx, sgn_y * (py + sy / 2.0 - 0.012), dz,
+                       w - 0.03, sy, h,
+                       rz=math.radians(rng.uniform(-3.0, 3.0)),
+                       rx=math.radians(rng.uniform(-2.0, 2.0)),
+                       keep=(('+z', '+y', '+x', '-x') if sgn_y > 0
+                             else ('+z', '-y', '+x', '-x')))
+            part(parts, 'plinth_block_y%d_%d' % (sgn_y, i), 'stone', v, f,
+                 jit=0.004, seed=110 + i + (0 if sgn_y > 0 else 7))
+    # блоки по торцам: 4 на сторону
+    for sgn_x in (1, -1):
+        n = 4
+        w = (2 * py + 0.06) / n
+        for i in range(n):
+            cy = -py - 0.03 + w * (i + 0.5)
+            h = PL_H + rng.uniform(-0.02, 0.025)
+            dz = rng.uniform(-0.012, 0.012)
+            sx = rng.uniform(0.025, 0.052)
+            v, f = box(sgn_x * (px + sx / 2.0 - 0.012), cy, dz,
+                       sx, w - 0.03, h,
+                       rz=math.radians(rng.uniform(-3.0, 3.0)),
+                       ry=math.radians(rng.uniform(-2.0, 2.0)),
+                       keep=(('+z', '+x', '+y', '-y') if sgn_x > 0
+                             else ('+z', '-x', '+y', '-y')))
+            part(parts, 'plinth_block_x%d_%d' % (sgn_x, i), 'stone', v, f,
+                 jit=0.004, seed=130 + i + (0 if sgn_x > 0 else 5))
+    # мох на цоколе — как у ратуши: пятна по верху кладки
+    for i, (mx, my) in enumerate(((-1.20, 0.85), (1.28, 0.85), (1.32, -0.86),
+                                  (-1.30, -0.62), (1.36, 0.30))):
+        r = rng.uniform(0.07, 0.12)
+        v, f = box(mx, my, PL_H - 0.008, r * 2, r * 1.1, 0.032,
+                   rz=math.radians(rng.uniform(-25, 25)),
+                   keep=('+z', '+x', '-x', '+y', '-y'))
+        part(parts, 'moss_%d' % i, 'grass', v, f, jit=0.004, seed=150 + i)
+
+
+# --------------------------------------------------------------------------
+# ЯРУС 2: СТЕНЫ (обмазка) И ФРОНТОНЫ
+# --------------------------------------------------------------------------
+def build_walls(parts):
+    """Обмазанная стена: короб с наклоном 1.5 град (не «идеальная плоскость»)."""
+    lean = math.radians(1.4)
+    v, f = box(0.0, 0.0, WALL_Z0, WALL_X, WALL_Y, WALL_H,
+               keep=('+x', '-x', '+y', '-y', '+z'))
+    # верх чуть шире низа — дом «растёт»
+    v = [(p[0] * (1.0 + (p[2] - WALL_Z0) / WALL_H * math.tan(lean)),
+          p[1] * (1.0 + (p[2] - WALL_Z0) / WALL_H * math.tan(lean)),
+          p[2]) for p in v]
+    part(parts, 'wall_core', 'skin', v, f, jit=0.007, seed=201)
+
+    gable = [(HY, WALL_Z1), (0.0, z_under(0.0)), (-HY, WALL_Z1)]
+    for sgn in (1, -1):
+        v, f = prism_x(gable, sgn * (HX - 0.07), sgn * HX)
+        part(parts, 'gable_%d' % sgn, 'skin', v, f, jit=0.006, seed=203 + (sgn > 0))
+
+
+# --------------------------------------------------------------------------
+# ЯРУС 2b: КАРКАС
+# --------------------------------------------------------------------------
+def build_frame(parts):
+    """Стойки, обвязки, раскосы. Всё выступает за стену на FRAME_OUT."""
+    out = FRAME_OUT
+    yb = HY + out / 2.0                       # центр бруса на стене +Y
+    xb = HX + out / 2.0
+    # нижняя и верхняя обвязка
+    for z0, h, fam in ((WALL_Z0, 0.125, 'trunk'), (WALL_Z1 - 0.13, 0.13, 'trunk')):
+        for sgn in (1, -1):
+            v, f = box(0.0, sgn * yb, z0, WALL_X + 2 * out, 0.10, h,
+                       keep=(('+y' if sgn > 0 else '-y'), '+z', '-z'))
+            part(parts, 'plate_y%d_%d' % (sgn, int(z0 * 100)), fam, v, f)
+            v, f = box(sgn * xb, 0.0, z0, 0.10, WALL_Y + 2 * out, h,
+                       keep=(('+x' if sgn > 0 else '-x'), '+z', '-z'))
+            part(parts, 'plate_x%d_%d' % (sgn, int(z0 * 100)), fam, v, f)
+    # угловые стойки: обнимают угол
+    for sx_ in (1, -1):
+        for sy_ in (1, -1):
+            v, f = box(sx_ * (HX + out / 2 - 0.035), sy_ * (HY + out / 2 - 0.035),
+                       WALL_Z0, 0.16, 0.16, WALL_H,
+                       keep=(('+x' if sx_ > 0 else '-x'), ('+y' if sy_ > 0 else '-y'),
+                             '+z'))
+            part(parts, 'corner_%d%d' % (sx_, sy_), 'trunk', v, f)
+
+    # промежуточные стойки: фасад/тыл по X, торцы по Y
+    def stud(x, y, axis, name):
+        if axis == 'y':
+            keep = ('+y' if y > 0 else '-y', '+x', '-x', '+z')
+            v, f = box(x, y, WALL_Z0 + 0.10, FRAME_T, 0.11, WALL_H - 0.20, keep=keep)
+        else:
+            keep = ('+x' if x > 0 else '-x', '+y', '-y', '+z')
+            v, f = box(x, y, WALL_Z0 + 0.10, 0.11, FRAME_T, WALL_H - 0.20, keep=keep)
+        part(parts, name, 'trunk', v, f)
+
+    for sgn in (1, -1):
+        stud(sgn * STUD_X, sgn * yb, 'y', 'stud_fy%d' % sgn)
+        stud(sgn * STUD_X, -sgn * yb, 'y', 'stud_by%d' % sgn)
+        stud(sgn * 1.16, -sgn * yb, 'y', 'stud_by2%d' % sgn)
+        stud(sgn * xb, SIDE_STUD_Y * sgn, 'x', 'stud_xa%d' % sgn)
+        stud(sgn * xb, -SIDE_STUD_Y * sgn, 'x', 'stud_xb%d' % sgn)
+
+    # Раскосы фасада — в ВЕРХНИХ угловых панелях: прямой ход от стойки к
+    # углу проходит ровно сквозь окно (наступили: диагональ перечёркивала
+    # переплёт). Верхняя панель над ставней свободна, там раскос и стоит.
+    for sgn in (1, -1):
+        for sy_ in (1, -1):
+            p0 = (sgn * 0.78, sy_ * yb, WALL_Z0 + 0.84)
+            p1 = (sgn * (HX - 0.12), sy_ * yb, WALL_Z1 - 0.06)
+            v, f = bar(p0, p1, 0.10, 0.085, keep=('+z', '+y' if sy_ > 0 else '-y'))
+            part(parts, 'brace_f%d%d' % (sgn, sy_), 'trunk', v, f)
+    # раскосы торцов: угловая панель между промежуточной стойкой и углом
+    # (окно торца стоит по центру, |y| <= 0.14, — раскосу оно не мешает)
+    for sx_ in (1, -1):
+        for sg in (1, -1):
+            v, f = bar((sx_ * xb, sg * (SIDE_STUD_Y + 0.02), WALL_Z0 + 0.22),
+                       (sx_ * xb, sg * (HY - 0.05), WALL_Z1 - 0.18),
+                       0.085, 0.10, keep=('+z', '+x' if sx_ > 0 else '-x'))
+            part(parts, 'brace_s%d%d' % (sx_, sg), 'trunk', v, f)
+
+    # щипец: две стойки до кровли + раскосы вниз к обвязке
+    for sx_ in (1, -1):
+        out_x = ('+x' if sx_ > 0 else '-x')
+        for sg in (1, -1):
+            h = z_under(GABLE_STUD_Y) - WALL_Z1
+            v, f = box(sx_ * xb, sg * GABLE_STUD_Y, WALL_Z1, 0.10, 0.11, h,
+                       keep=(out_x, '+z'))
+            part(parts, 'gable_stud%d%d' % (sx_, sg), 'trunk', v, f)
+            p0 = (sx_ * xb, sg * (GABLE_STUD_Y + 0.03), WALL_Z1 + h - 0.06)
+            p1 = (sx_ * xb, sg * (HY - 0.02), WALL_Z1 + 0.18)
+            v, f = bar(p0, p1, 0.055, 0.10, keep=(out_x, '+z'))
+            part(parts, 'gable_brace%d%d' % (sx_, sg), 'trunk', v, f)
+        p0 = (sx_ * xb, -GABLE_STUD_Y, WALL_Z1 + 0.02)
+        p1 = (sx_ * xb, GABLE_STUD_Y, WALL_Z1 + 0.02)
+        v, f = bar(p0, p1, 0.10, 0.10, keep=(out_x, '+z'))
+        part(parts, 'gable_sill%d' % sx_, 'trunk', v, f)
+
+    # ригель над дверью
+    v, f = box(0.0, yb, 0.98, 0.62, 0.11, 0.10, keep=('+y', '+z', '-z'))
+    part(parts, 'lintel', 'trunk', v, f)
+
+
+# --------------------------------------------------------------------------
+# ЯРУС 3: ПРОЁМЫ
+# --------------------------------------------------------------------------
+def build_window(parts, cx, cy, cz, nx, ny, tag, shutters=False, size=None):
+    """Окно: рама-кольцо, тёмное стекло, переплёт 2 x 2, подоконник.
+
+    (nx, ny) — нормаль стены наружу (осевая). Стекло ТЁМНОЕ (канон §5).
+    """
+    win = size or WIN
+    fw = 0.05 if win > 0.25 else 0.04      # ширина рамы
+    out = 0.045                            # выступ рамы
+    half = win / 2.0
+    o = half + fw / 2.0                    # половина внешнего габарита рамы
+
+    if ny:                                 # стена по X, нормаль по Y
+        s = ny
+        y0 = cy
+        v, f = box(cx, y0 + s * (out / 2 - 0.01), cz - o, 2 * o, out, fw,
+                   keep=('+z', '-z'))      # нижняя планка рамы
+        part(parts, tag + '_fr_b', 'trunk', v, f)
+        v, f = box(cx, y0 + s * (out / 2 - 0.01), cz + half, 2 * o, out, fw,
+                   keep=('+z', '-z'))
+        part(parts, tag + '_fr_t', 'trunk', v, f)
+        for sgx in (1, -1):
+            v, f = box(cx + sgx * (half + fw / 2), y0 + s * (out / 2 - 0.01),
+                       cz - o, fw, out, 2 * o,
+                       keep=(('+y' if s > 0 else '-y'), '+x' if sgx > 0 else '-x',
+                             '+z', '-z'))
+            part(parts, tag + '_fr_%d' % sgx, 'trunk', v, f)
+        # стекло
+        v, f = box(cx, y0 + s * 0.006, cz - half, win, 0.012, win,
+                   keep=(('+y' if s > 0 else '-y'),))
+        part(parts, tag + '_glass', 'iron', v, f)
+        # переплёт 2 x 2
+        for sgx in (1, -1):
+            v, f = box(cx, y0 + s * 0.016, cz - half, 0.024, 0.022, win,
+                       keep=(('+y' if s > 0 else '-y'), '+x' if sgx > 0 else '-x'))
+            part(parts, tag + '_mul_v%d' % sgx, 'trunk', v, f)
+        v, f = box(cx, y0 + s * 0.016, cz - 0.012, win, 0.022, 0.024,
+                   keep=(('+y' if s > 0 else '-y'), '+z', '-z'))
+        part(parts, tag + '_mul_h', 'trunk', v, f)
+        # подоконник
+        v, f = box(cx, y0 + s * (0.03), cz - o - 0.035, 2 * o + 0.10, 0.13, 0.045,
+                   keep=(('+y' if s > 0 else '-y'), '+z'))
+        part(parts, tag + '_sill', 'stone', v, f)
+        if shutters:
+            for sgx in (1, -1):
+                v, f = box(cx + sgx * (o + 0.17), y0 + s * 0.055, cz - half - 0.02,
+                           0.32, 0.04, WIN + 0.06,
+                           rz=math.radians(-s * sgx * 13.0),
+                           keep=(('+y' if s > 0 else '-y'), '+z', '-z',
+                                 '+x' if sgx > 0 else '-x'))
+                part(parts, tag + '_shut%d' % sgx, 'trunk', v, f, jit=0.004,
+                     seed=310 + sgx)
+    else:                                  # стена по Y, нормаль по X
+        s = nx
+        x0 = cx
+        v, f = box(x0 + s * (out / 2 - 0.01), cy, cz - o, out, 2 * o, fw,
+                   keep=('+z', '-z'))
+        part(parts, tag + '_fr_b', 'trunk', v, f)
+        v, f = box(x0 + s * (out / 2 - 0.01), cy, cz + half, out, 2 * o, fw,
+                   keep=('+z', '-z'))
+        part(parts, tag + '_fr_t', 'trunk', v, f)
+        for sgy in (1, -1):
+            v, f = box(x0 + s * (out / 2 - 0.01), cy + sgy * (half + fw / 2),
+                       cz - o, out, fw, 2 * o,
+                       keep=(('+x' if s > 0 else '-x'), '+y' if sgy > 0 else '-y',
+                             '+z', '-z'))
+            part(parts, tag + '_fr_%d' % sgy, 'trunk', v, f)
+        v, f = box(x0 + s * 0.006, cy, cz - half, 0.012, win, win,
+                   keep=(('+x' if s > 0 else '-x'),))
+        part(parts, tag + '_glass', 'iron', v, f)
+        for sgy in (1, -1):
+            v, f = box(x0 + s * 0.016, cy, cz - half, 0.022, 0.024, win,
+                       keep=(('+x' if s > 0 else '-x'), '+y' if sgy > 0 else '-y'))
+            part(parts, tag + '_mul_v%d' % sgy, 'trunk', v, f)
+        v, f = box(x0 + s * 0.016, cy, cz - 0.012, 0.022, win, 0.024,
+                   keep=(('+x' if s > 0 else '-x'), '+z', '-z'))
+        part(parts, tag + '_mul_h', 'trunk', v, f)
+        v, f = box(x0 + s * 0.03, cy, cz - o - 0.035, 0.13, 2 * o + 0.10, 0.045,
+                   keep=(('+x' if s > 0 else '-x'), '+z'))
+        part(parts, tag + '_sill', 'stone', v, f)
+
+
+def build_door(parts):
+    """Дверь: тёмный проём, косяк, полотно из трёх досок, ручка, порог."""
+    y = HY
+    half = DOOR_W / 2.0
+    top = WALL_Z0 + DOOR_H
+    v, f = box(0.0, y + 0.006, WALL_Z0, DOOR_W, 0.012, DOOR_H, keep=('+y',))
+    part(parts, 'door_hole', 'leather', v, f)
+    # косяк
+    for sgx in (1, -1):
+        v, f = box(sgx * (half + 0.028), y + 0.025, WALL_Z0 - 0.01, 0.055, 0.055,
+                   DOOR_H + 0.06, keep=('+y', '+z', '+x' if sgx > 0 else '-x'))
+        part(parts, 'door_jamb%d' % sgx, 'trunk', v, f)
+    v, f = box(0.0, y + 0.025, top + 0.02, DOOR_W + 0.11, 0.055, 0.055,
+               keep=('+y', '+z'))
+    part(parts, 'door_lintel', 'trunk', v, f)
+    # полотно: три доски с разной глубиной (дощатость)
+    for i, (dx, dep) in enumerate(((-0.107, 0.018), (0.0, 0.010), (0.107, 0.022))):
+        v, f = box(dx, y + dep, WALL_Z0 + 0.012, 0.101, 0.03, DOOR_H - 0.03,
+                   keep=('+y', '+x', '-x', '+z'))
+        part(parts, 'door_leaf%d' % i, 'trunk', v, f, jit=0.003, seed=330 + i)
+    v, f = box(0.10, y + 0.045, WALL_Z0 + 0.38, 0.055, 0.035, 0.055,
+               keep=('+y', '+z', '-z', '+x'))
+    part(parts, 'door_handle', 'leather', v, f)
+    # порог и ступень
+    v, f = box(0.0, y + 0.06, 0.0, 0.46, 0.18, 0.075, keep=('+y', '+z', '+x', '-x'))
+    part(parts, 'door_step0', 'stone', v, f)
+    v, f = box(0.0, y + 0.105, 0.0, 0.54, 0.19, 0.042, keep=('+y', '+z', '+x', '-x'))
+    part(parts, 'door_step1', 'stone', v, f, jit=0.005, seed=340)
+    # навес-козырёк над дверью: соломенный, как свес кровли (не доска!)
+    ov, zb, zt = 0.24, 1.05, 1.31
+    v, f = prism_x([(y + ov, zb), (y - 0.03, zt), (y - 0.03, zt - 0.075),
+                    (y + ov, zb - 0.055), (y + ov - 0.05, zb - 0.055)],
+                   -0.43, 0.43)
+    part(parts, 'canopy', 'leaf_autumn', v, f, jit=0.004, seed=342)
+    v, f = bar((-0.43, y + ov - 0.03, zb - 0.03), (0.43, y + ov - 0.03, zb - 0.03),
+               0.05, 0.05, keep=('-z', '+y'))
+    part(parts, 'canopy_edge', 'trunk', v, f)
+    for sgx in (1, -1):
+        v, f = bar((sgx * 0.35, y + 0.01, 0.80), (sgx * 0.35, y + 0.20, 1.00),
+                   0.07, 0.06, keep=('+z', '+x' if sgx > 0 else '-x'))
+        part(parts, 'canopy_brace%d' % sgx, 'trunk', v, f)
+
+
+# --------------------------------------------------------------------------
+# ЯРУС 4: КРОВЛЯ — ПЛАСТЫ СОЛОМЫ
+# --------------------------------------------------------------------------
+def plast_bands(rng):
+    """Границы пластов по скату: у карниза шире, у конька уже + дрожь."""
+    w = []
+    for i in range(N_PLAST):
+        base = 1.0 + 0.42 * (N_PLAST - 1 - i) / (N_PLAST - 1.0)
+        w.append(base * rng.uniform(0.88, 1.12))
+    s = sum(w)
+    bounds = [EAVE_Y]
+    for wi in w:
+        bounds.append(bounds[-1] - wi / s * EAVE_Y)
+    bounds[-1] = 0.0
+    return bounds
+
+
+def build_roof(parts, rng):
+    """Тело кровли — пила из пластов соломы (канон §6: 6..14 пластов)."""
+    bounds = plast_bands(rng)
+    steps, tilts, mids = [], [], []
+    acc = 0.0
+    for i in range(N_PLAST):
+        acc += rng.uniform(0.020, 0.036)
+        steps.append(acc)
+        tilts.append((-1.0 if i % 2 else 1.0) * rng.uniform(0.012, 0.034))
+        mids.append((bounds[i] + bounds[i + 1]) / 2.0)
+
+    def top(i, y):
+        ay = abs(y)
+        return z_nom(ay) + steps[i] + tilts[i] * (ay - mids[i])
+
+    poly = [(EAVE_Y, z_under(EAVE_Y)), (EAVE_Y, top(0, EAVE_Y))]
+    for i in range(1, N_PLAST):
+        poly.append((bounds[i], top(i - 1, bounds[i])))
+        poly.append((bounds[i], top(i, bounds[i])))
+    poly.append((0.0, top(N_PLAST - 1, 0.0)))
+    for i in range(N_PLAST - 1, 0, -1):
+        poly.append((-bounds[i], top(i, bounds[i])))
+        poly.append((-bounds[i], top(i - 1, bounds[i])))
+    poly.append((-EAVE_Y, top(0, EAVE_Y)))
+    poly.append((-EAVE_Y, z_under(EAVE_Y)))
+    poly.append((0.0, z_under(0.0)))
+    v, f = prism_x(poly, -ROOF_X, ROOF_X)
+    part(parts, 'roof_plasts', 'leaf_autumn', v, f, jit=0.004, seed=401)
+
+    # оборванный край соломы по карнизу: 5 сегментов, низ неровный
+    seg = (2 * ROOF_X) / 5.0
+    for sy_ in (1, -1):
+        for i in range(5):
+            x0 = -ROOF_X + seg * i
+            drop = rng.uniform(0.03, 0.075)
+            v, f = box(x0 + seg / 2.0, sy_ * (EAVE_Y + 0.005),
+                       z_under(EAVE_Y) - drop, seg - 0.012, 0.07, drop + 0.02,
+                       keep=(('+y' if sy_ > 0 else '-y'), '+z', '-z'))
+            part(parts, 'eave_rag_y%d_%d' % (sy_, i), 'leaf_autumn', v, f,
+                 jit=0.006, seed=410 + i)
+    # конёк: соломенный гребень + брус с выпущенными концами + жерди
+    ridge_z = z_nom(0.0) + steps[-1]
+    cap = [(0.16, ridge_z - 0.10), (0.0, ridge_z + 0.055), (-0.16, ridge_z - 0.10)]
+    v, f = prism_x(cap, -ROOF_X + 0.005, ROOF_X - 0.005)
+    part(parts, 'ridge_cap', 'leaf_autumn', v, f, jit=0.005, seed=420)
+    v, f = bar((-ROOF_X, 0.0, ridge_z - 0.055),
+               (ROOF_X, 0.0, ridge_z - 0.055), 0.10, 0.10,
+               keep=('+z', '+y', '-y', '+x', '-x'))
+    part(parts, 'ridge_beam', 'trunk', v, f)
+    # прижимная жердь ВДОЛЬ конька: лежит на гребне, концы выпущены за торцы
+    v, f = bar((-ROOF_X - 0.02, 0.0, ridge_z + 0.045),
+               (ROOF_X + 0.02, 0.0, ridge_z + 0.045), 0.055, 0.055,
+               keep=('+z', '+y', '-y', '+x', '-x'))
+    part(parts, 'ridge_pole', 'trunk', v, f)
+
+
+    # лобовая доска по кромке торца
+    for sx_ in (1, -1):
+        for sy_ in (1, -1):
+            v, f = bar((sx_ * (ROOF_X - 0.02), sy_ * EAVE_Y, top(0, EAVE_Y) + 0.01),
+                       (sx_ * (ROOF_X - 0.02), 0.0, ridge_z + 0.005),
+                       0.055, 0.10, keep=('+x' if sx_ > 0 else '-x', '+z'))
+            part(parts, 'barge_%d%d' % (sx_, sy_), 'trunk', v, f)
+
+
+def build_chimney(parts, rng):
+    """Каменная труба на коньке (канон §7): блоки + козырёк."""
+    x, y = CHIMNEY_X, CHIMNEY_Y
+    z0 = 2.02
+    blocks = ((0.32, 0.32, 0.16), (0.28, 0.28, 0.16), (0.28, 0.28, 0.15),
+              (0.25, 0.25, 0.14))
+    z = z0
+    for i, (sx_, sy_, h) in enumerate(blocks):
+        v, f = box(x + rng.uniform(-0.012, 0.012), y + rng.uniform(-0.012, 0.012),
+                   z, sx_, sy_, h,
+                   rz=math.radians(rng.uniform(-4.0, 4.0)),
+                   keep=('+x', '-x', '+y', '-y', '+z'))
+        part(parts, 'chimney_%d' % i, 'stone', v, f, jit=0.005, seed=430 + i)
+        z += h
+    v, f = box(x, y, z, 0.36, 0.36, 0.055, keep=('+x', '-x', '+y', '-y', '+z'))
+    part(parts, 'chimney_cap', 'stone', v, f, jit=0.004, seed=436)
+    v, f = box(x, y, z + 0.055, 0.21, 0.21, 0.062,
+               keep=('+x', '-x', '+y', '-y', '+z'))
+    part(parts, 'chimney_neck', 'stone', v, f, jit=0.004, seed=437)
+    v, f = box(x, y, z + 0.117, 0.13, 0.13, 0.04, keep=('+z',))
+    part(parts, 'chimney_flue', 'leather', v, f)
+
+
+# --------------------------------------------------------------------------
+# ЯРУС 5: ДВОР (поленница, кадка)
+# --------------------------------------------------------------------------
+def build_yard(parts, rng):
+    """Двор: поленница у торца, кадка у крыльца. Ставится НА землю."""
+    # поленница у стены -X
+    x0, y0 = -HX + 0.02, -0.42
+    v, f = box(x0, y0, 0.0, 0.27, 0.50, 0.30, keep=('+x', '-x', '+y', '-y', '+z'))
+    part(parts, 'wood_base', 'trunk', v, f, jit=0.006, seed=440)
+    for i in range(6):
+        zz = 0.07 + (i // 3) * 0.10
+        yy = y0 - 0.16 + (i % 3) * 0.16
+        v, f = box(x0 - 0.135, yy, zz, 0.05, 0.13, 0.13,
+                   keep=('+x', '+z', '+y', '-y'))
+        part(parts, 'wood_end%d' % i, 'trunk', v, f)
+    for i in range(2):
+        yy = y0 - 0.11 + i * 0.22
+        v, f = box(x0, yy, 0.295, 0.26, 0.19, 0.155,
+                   rz=math.radians(rng.uniform(-6, 6)),
+                   keep=('+x', '-x', '+z', '+y', '-y'))
+        part(parts, 'log_top%d' % i, 'trunk', v, f, jit=0.006, seed=445 + i)
+    # кадка у крыльца
+    bx, by = HX - 0.34, HY + 0.06
+    hexa = [(math.cos(math.radians(60 * k + 30)) * 0.13,
+             math.sin(math.radians(60 * k + 30)) * 0.13) for k in range(6)]
+    poly = [(bx + p[0], by + p[1]) for p in hexa]
+    # три яруса радиуса: низ, обух, верх — кадка «с пузом» (обручи читаются)
+    r_mid = [(bx + (p[0] - bx) * 1.12, by + (p[1] - by) * 1.12) for p in poly]
+    v = ([(p[0], p[1], 0.0) for p in poly] + [(p[0], p[1], 0.10) for p in poly]
+         + [(p[0], p[1], 0.20) for p in r_mid] + [(p[0], p[1], 0.30) for p in poly])
+    f = []
+    for lvl in range(3):
+        a, b = lvl * 6, (lvl + 1) * 6
+        for k in range(6):
+            k2 = (k + 1) % 6
+            f.append((a + k, a + k2, b + k2, b + k))
+    f.append(tuple(range(5, -1, -1)))       # дно
+    f.append(tuple(range(18, 24)))          # верхняя крышка
+    part(parts, 'barrel', 'trunk', v, f, jit=0.004, seed=450)
+
+
+# --------------------------------------------------------------------------
+# СБОРКА
+# --------------------------------------------------------------------------
+def build(variant='a', seed=7):
+    """Собрать дом. Возвращает список деталей (dict name/family/verts/faces).
+
+    Варианты:
+        a — дом жителя: каркас + обмазка, солома, ставни, навес, труба, двор;
+        b — тот же дом с крыльцом: стенки-выступы, настил, односкатный навес;
+        c — тот же дом с высоким щипцом и слуховым окном (дом «побогаче»).
+    """
+    rng = random.Random(seed)
+    parts = []
+    build_plinth(parts, rng)
+    build_walls(parts)
+    build_frame(parts)
+    build_window(parts, -WIN_FRONT_X, HY, WIN_Z, 0.0, 1.0, 'win_f_l', shutters=True)
+    build_window(parts, WIN_FRONT_X, HY, WIN_Z, 0.0, 1.0, 'win_f_r', shutters=True)
+    if variant in ('a', 'c'):
+        build_window(parts, -WIN_BACK_X, -HY, WIN_Z, 0.0, -1.0, 'win_b_l')
+        build_window(parts, WIN_BACK_X, -HY, WIN_Z, 0.0, -1.0, 'win_b_r')
+    else:
+        build_window(parts, 0.0, -HY, WIN_Z, 0.0, -1.0, 'win_b_c')
+    if variant == 'b':
+        build_window(parts, -WIN_FRONT_X, HY, WIN_Z, 0.0, 1.0, 'win_f_l')
+        build_window(parts, WIN_FRONT_X, HY, WIN_Z, 0.0, 1.0, 'win_f_r')
+    build_window(parts, -HX, SIDE_WIN_Y, WIN_Z, -1.0, 0.0, 'win_s_l')
+    build_window(parts, HX, SIDE_WIN_Y, WIN_Z, 1.0, 0.0, 'win_s_r')
+    build_window(parts, -HX, 0.0, 1.93, -1.0, 0.0, 'win_g_l', size=0.23)
+    build_window(parts, HX, 0.0, 1.93, 1.0, 0.0, 'win_g_r', size=0.23)
+    build_door(parts)
+    build_roof(parts, rng)
+    build_chimney(parts, rng)
+    build_yard(parts, rng)
+
+    ground(parts)
+    if variant == 'b':                      # крыльцо с навесом (внутри пятна)
+        _porch(parts, rng)
+    if variant == 'c':                      # чердак: слуховое окно и лестница
+        v, f = box(-HX - 0.01, 0.0, z_under(0.0) - 0.52, 0.06, 0.26, 0.22,
+                   keep=('-x',))
+        part(parts, 'loft_hole', 'leather', v, f)
+        # Лестница к чердаку — ПРИСТАВНАЯ К СТЕНЕ (не откинутая): откинутая
+        # вылезает за пятно застройки на 0.12, а пятно в игре — закон.
+        for sg in (1, -1):
+            v, f = bar((-HX - 0.05, sg * 0.115, 0.18), (-HX - 0.05, sg * 0.115, 1.52),
+                       0.05, 0.05, keep=('-x', '+y' if sg > 0 else '-y'))
+            part(parts, 'ladder_rail%d' % sg, 'trunk', v, f)
+        for k, h in enumerate((0.42, 0.74, 1.06, 1.38)):
+            v, f = bar((-HX - 0.05, -0.125, h), (-HX - 0.05, 0.125, h),
+                       0.04, 0.04, keep=('-x', '+z'))
+            part(parts, 'ladder_rung%d' % k, 'trunk', v, f)
+        for sgy in (1, -1):
+            v, f = bar((-HX - 0.05, sgy * 0.155, z_under(0.0) - 0.55),
+                       (-HX - 0.05, sgy * 0.155, z_under(0.0) - 0.27),
+                       0.06, 0.07, keep=('-x', '+y' if sgy > 0 else '-y'))
+            part(parts, 'loft_jamb%d' % sgy, 'trunk', v, f)
+        v, f = bar((-HX - 0.05, -0.16, z_under(0.0) - 0.24),
+                   (-HX - 0.05, 0.16, z_under(0.0) - 0.24), 0.06, 0.07,
+                   keep=('-x', '+z'))
+        part(parts, 'loft_lintel', 'trunk', v, f)
+    return parts
+
+
+def ground(parts):
+    """Опора в (0,0,0): если дрожь утопила низ ниже нуля — приподнять всё.
+
+    Канон: «Z вверх, опора объекта в (0,0,0), низ на z = 0». Дрожь цоколя на
+    0.004..0.008 легко даёт -0.015, и дом утонул бы в карте.
+    """
+    lo = min(v[2] for p in parts for v in p['verts'])
+    if lo < 0.0:
+        for p in parts:
+            p['verts'] = [(v[0], v[1], v[2] - lo) for v in p['verts']]
+    return -lo if lo < 0.0 else 0.0
+
+
+def _porch(parts, rng):
+    """Крыльцо: две стенки-выступа, настил и односкатный навес.
+
+    Всё ВНУТРИ пятна 3 x 2: вынос 0.26 от стены при свесе кровли 0.18..1.03 —
+    крыльцо не выходит за кромку спрайта (канон: «габарит не выходит за пятно»).
+    """
+    y0 = HY
+    d = 0.20                                   # вынос крыльца
+    w = 0.44                                   # полуширина
+    h = 0.66                                   # высота стенок
+    for sgx in (1, -1):
+        v, f = box(sgx * (w + 0.07), y0 + d / 2.0, 0.0, 0.14, d, h,
+                   keep=('+y', ('+x' if sgx > 0 else '-x'), '+z'))
+        part(parts, 'porch_wall%d' % sgx, 'skin', v, f, jit=0.005, seed=470 + sgx)
+    v, f = box(0.0, y0 + d / 2.0, 0.0, 2 * (w + 0.07), d, 0.10,
+               keep=('+y', '+z', '+x', '-x'))
+    part(parts, 'porch_floor', 'trunk', v, f, jit=0.004, seed=474)
+    v, f = prism_x([(y0 + d + 0.04, h - 0.02), (y0 - 0.03, h + 0.30),
+                    (y0 - 0.03, h + 0.22), (y0 + d + 0.04, h - 0.10)],
+                   -(w + 0.11), (w + 0.11))
+    part(parts, 'porch_roof', 'leaf_autumn', v, f, jit=0.005, seed=476)
+    v, f = prism_x([(y0 + d + 0.04, h - 0.10), (y0 - 0.03, h + 0.22),
+                    (y0 - 0.03, h + 0.18), (y0 + d + 0.04, h - 0.14)],
+                   -(w + 0.11), (w + 0.11))
+    part(parts, 'porch_roof2', 'leaf_autumn', v, f, jit=0.004, seed=477)
+    # лавка у стенки крыльца
+    v, f = box(w - 0.02, y0 + 0.10, 0.10, 0.30, 0.13, 0.05,
+               keep=('+z', '+y', '-y', '+x'))
+    part(parts, 'porch_bench', 'trunk', v, f)
+    for sgy in (1, -1):
+        v, f = box(w - 0.02, y0 + 0.10 + sgy * 0.05, 0.10, 0.05, 0.05, 0.10,
+                   keep=('+z',))
+        part(parts, 'porch_leg%d' % sgy, 'trunk', v, f)
+
+
+def stats(parts):
+    return dict(verts=verts_of(parts), tris=tris_of(parts), parts=len(parts))
+
+
+if __name__ == '__main__':
+    for var in ('a', 'b', 'c'):
+        p = build(var)
+        print('%-3s %s' % (var, stats(p)))
