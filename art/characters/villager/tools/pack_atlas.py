@@ -1,6 +1,9 @@
 """pack_atlas.py — упаковка спрайтов жителя в атлас игры.
 
-    $PY3 tools/pack_atlas.py [--src out] [--dst out/villager] [--name villager]
+    $PY3 tools/pack_atlas.py [--src out] [--name villager]
+
+Пишет прямо в игру — `mapgen2/assets/villager/`, как и остальные упаковщики
+своего ассета (`pack_townhall.py`, `pack_waves.py`, `pack_lumbercamp.py`).
 
 Читает `out/<тег>_sprites.json` (его пишет tools/compose.py) и складывает кадры
 в `atlas.png` + `atlas.json` + `atlas.js` РОВНО в том формате, что
@@ -21,6 +24,10 @@ from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+# Корень 4tox — три уровня вверх от проекта: villager → characters → art
+# (docs/STRUCTURE.md). Атлас кладётся прямо в игру, а не в out/: так делают
+# все упаковщики, и не остаётся шага «скопировать руками», которого нет в коде.
+REPO = os.path.abspath(os.path.join(ROOT, '..', '..', '..'))
 PAD = 1
 # ВОСЕМЬ поворотов через 45°. Четырёх жителю мало: он ходит по прямой в любую
 # сторону (js/villager.js), и по диагонали ему нужен кадр, повёрнутый на 45°.
@@ -33,7 +40,7 @@ ROTATIONS = (0, 45, 90, 135, 180, 225, 270, 315)
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--src', default=os.path.join(ROOT, 'out'))
-    ap.add_argument('--dst', default=os.path.join(ROOT, 'out', 'villager'))
+    ap.add_argument('--dst', default=os.path.join(REPO, 'mapgen2', 'assets', 'villager'))
     ap.add_argument('--tag', default='vg')
     ap.add_argument('--name', default='villager')
     ap.add_argument('--js', default='VILLAGER', help='имя глобальной переменной')
