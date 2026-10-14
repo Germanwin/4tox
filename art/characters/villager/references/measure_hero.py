@@ -760,7 +760,10 @@ for rot in ROTS:
     )
 
 RESULT = dict(
-    source=dict(atlas=HERO + 'atlas.png', meta=HERO + 'atlas.json', ppu=meta['ppu'],
+    # Пути в отчёте — от корня 4tox, а не абсолютные: отчёт читают и переносят,
+    # и адрес домашней папки в нём бесполезен (docs/STRUCTURE.md §6.2).
+    source=dict(atlas=os.path.relpath(HERO + 'atlas.png', REPO),
+                meta=os.path.relpath(HERO + 'atlas.json', REPO), ppu=meta['ppu'],
                 mul=meta['mul'], frames=len(meta['frames']),
                 frame_px=[meta['cell'][0] - 2, meta['cell'][1] - 2],
                 anchor=[56.0, 106.0], camera=dict(az_deg=meta['az_deg'], el_deg=meta['el_deg']),

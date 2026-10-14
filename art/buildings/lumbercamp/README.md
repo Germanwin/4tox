@@ -78,7 +78,7 @@ sx = (wx - wy) * z / 2     sy = (wx + wy) * z / 4
 ```
 
 то есть смотрит со стороны `(+x, +y)` — **ось X зеркальна**. Пайплайн
-персонажей (`villager/tools/build.py`, `VIEW_FROM = (+cos EL cos AZ, +cos EL
+персонажей (`art/characters/villager/tools/build.py`, `VIEW_FROM = (+cos EL cos AZ, +cos EL
 sin AZ, sin EL)`) и ориентация героя (`js/hero.js`: «rot: 0 = +X вправо-вниз по
 кадру») согласны с картой, а не с рендером построек.
 

@@ -41,7 +41,7 @@
 ## Файлы
 
 ```
-townhall/
+art/buildings/townhall/
   tools/thpipe.py        сцена Blender: камера, свет, примитивы, отрисовка
   tools/townhall.py      геометрия: три варианта, палитра, детали
   tools/geom.py          конвенции кадра: проекция мира в пиксели, тень
@@ -59,7 +59,7 @@ townhall/
 ```bash
 # 1. рендер. Живая сессия (правило заказчика: форма — только в запущенном Blender):
 PY=/Users/hermmoment/.dsh/profiles/desktop/node_modules/dsh-blender/.venv/bin/python
-$PY shovel/tools/blmcp.py run townhall/tools/build_live.py
+$PY art/props/shovel/tools/blmcp.py run art/buildings/townhall/tools/build_live.py
 # пакетно, тем же кодом (для CI и когда сессии нет физически):
 /Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup \
     -P tools/build_townhall.py -- --variants a,b,c --rotations 0,90,180,270
@@ -142,7 +142,7 @@ scaleY = scaleX * sin(30°) / sin(el)            = (клетка / 4) / (sin(el)
 поэтому хижина встаёт в один ряд с остальными спрайтами атласа.
 
 ```
-townhall/
+art/buildings/townhall/
   tools/hut.py           геометрия хижины (размеры, палитра, детали)
   tools/build_hut.py     рендер: blender -b -P ... -> renders/hut_<поворот>_raw.png
   tools/compose_hut.py   пост-обработка: тень, контур, обрезка -> out/hut_<поворот>.png

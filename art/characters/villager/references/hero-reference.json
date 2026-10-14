@@ -1,7 +1,7 @@
 {
  "source": {
-  "atlas": "/Users/hermmoment/coding/4tox/mapgen2/assets/hero/atlas.png",
-  "meta": "/Users/hermmoment/coding/4tox/mapgen2/assets/hero/atlas.json",
+  "atlas": "mapgen2/assets/hero/atlas.png",
+  "meta": "mapgen2/assets/hero/atlas.json",
   "ppu": 96.0,
   "mul": 1.35,
   "frames": 88,

@@ -41,17 +41,17 @@
 ## Файлы
 
 ```
-townhall/tools/hut_rect.py         геометрия трёх вариантов (bmesh, thpipe)
-townhall/tools/build_hut_rect.py   рендер: варианты x повороты -> renders/*_raw.png
-townhall/tools/compose_hut_rect.py пост: тень, контур, обрезка -> out/hutrect_*.png
-townhall/tools/present_hut_rect.py листы: варианты, повороты, сверка с атласом
-townhall/tools/export_hut_rect.py  экспорт трёх .glb
-townhall/out/hutrect_<в>_<поворот>.png   12 спрайтов
-townhall/out/hutrect_sprites.json        точки опоры (центр пятна 3 x 2)
-townhall/out/hutrect_<в>.glb             модели для движка
-townhall/out/hutrect_variants.png        три варианта крупно
-townhall/out/hutrect_rotations.png       3 x 4 поворотов
-townhall/out/hutrect_style.png           сверка с деревьями атласа и ратушей
+art/buildings/townhall/tools/hut_rect.py         геометрия трёх вариантов (bmesh, thpipe)
+art/buildings/townhall/tools/build_hut_rect.py   рендер: варианты x повороты -> renders/*_raw.png
+art/buildings/townhall/tools/compose_hut_rect.py пост: тень, контур, обрезка -> out/hutrect_*.png
+art/buildings/townhall/tools/present_hut_rect.py листы: варианты, повороты, сверка с атласом
+art/buildings/townhall/tools/export_hut_rect.py  экспорт трёх .glb
+art/buildings/townhall/out/hutrect_<в>_<поворот>.png   12 спрайтов
+art/buildings/townhall/out/hutrect_sprites.json        точки опоры (центр пятна 3 x 2)
+art/buildings/townhall/out/hutrect_<в>.glb             модели для движка
+art/buildings/townhall/out/hutrect_variants.png        три варианта крупно
+art/buildings/townhall/out/hutrect_rotations.png       3 x 4 поворотов
+art/buildings/townhall/out/hutrect_style.png           сверка с деревьями атласа и ратушей
 
 mapgen2/assets/hut/atlas.png       атлас 4 x 3 кадра для генератора карт
 mapgen2/assets/hut/atlas.json      метаданные: ppu, камера, опоры, пятно
@@ -98,7 +98,7 @@ scaleY = z / (4 * sin(el) * cos(az) * ppu)
 ## Что осталось для игры
 
 `js/buildings.js` жёстко привязан к ратуше: константа `FOOTPRINT = 4x3`,
-загрузка `townhall/`, один `set` спрайтов. Чтобы хижина ставилась игроком на
+загрузка `art/buildings/townhall/`, один `set` спрайтов. Чтобы хижина ставилась игроком на
 карту, модуль надо обобщить на список типов зданий:
 
 1. `load()` — принимать `dir` и имя глобального мета-объекта (`HUT_ATLAS`)
@@ -108,7 +108,7 @@ scaleY = z / (4 * sin(el) * cos(az) * ppu)
 3. `Renderer.setBuildings(list)` и `drawBuilding` — читать `set` из `b.type`
    (сейчас `buildingSprites` — один атлас).
 4. Панель размещения в `js/app.js` — селектор типа здания.
-5. `index.html` — подключить `assets/hut/atlas.js` рядом с `townhall/atlas.js`.
+5. `index.html` — подключить `assets/hut/atlas.js` рядом с `assets/townhall/atlas.js`.
 
 Атлас уже в том же формате (`ppu`, `az_deg`, `el_deg`, `anchorX/anchorY`,
 `footprint`), так что пункты 1–4 — механическая правка, а не переделка.
