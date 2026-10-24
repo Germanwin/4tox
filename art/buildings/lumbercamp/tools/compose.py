@@ -9,6 +9,14 @@
 именно по точке опоры движок ставит его на карту, и именно контур отделяет
 постройку от фона.
 
+ТЕНИ У ПОСТРОЕК ЭТОЙ ИГРЫ НЕТ — правило заказчика (2026-10-17): «убери тени у
+зданий».  Кадры для атласа собираются с ключом `--no-shadow`: контур и точка
+опоры остаются канонными, а пятно под силуэтом не рисуется.  Рамка кадра и
+опора при этом НЕ меняются — спрайт стоит на карте там же, где стоял с тенью,
+и снятие тени не двигает постройку ни на пиксель.  Прежние кадры с тенью
+остаются в силе для тех, кому тень нужна (гейт кадра её по-прежнему умеет
+мерить); умолчание инструмента не тронуто.
+
 Порядок операций жёсткий:
     1) найти силуэт (альфа > 0) и обрезать кадр с полем `pad`;
     2) нарисовать контактную тень — эллипс в ПРОЕКЦИИ, а не круг: в изометрии
@@ -32,14 +40,8 @@ from PIL import Image, ImageFilter
 OUTLINE_RGB = (12, 16, 12)
 OUTLINE_DILATE = 1                 # px при 96 ppu
 SHADOW_RGB = (0, 0, 0)
-SHADOW = dict(a=1.40, b=0.35, angle_deg=8.0, alpha=0.44, blur=2.2,
+SHADOW = dict(a=1.35, b=0.36, angle_deg=8.0, alpha=0.40, blur=2.2,
               spread=0.55)         # a — ШИРИНА пятна в долях ширины силуэта
-# Для ЛАГЕРЯ пятно подобрано ЧИСЛОМ по ВСЕМ ЧЕТЫРЁМ поворотам, а не на глаз:
-# у постройки с разреженным двором силуэт широкий, и канонное 1.35 уходило
-# из-под предметов серым озером, а 1.00 не дотягивало до порога (замер 0.57).
-# Прогон 1.30/1.40/1.45/1.50 по кадрам 0/90/180/270 дал минимум 0.69/0.75/
-# 0.78/0.81 — взято 1.40: наименьшее, что проходит на ВСЕХ поворотах (у 90
-# силуэт уже, и по нему запас меньше).  Гейт: ширина пятна 0.70..2.0.
 # Гейт кадра требует ширину пятна 0.7..2.0 от ширины силуэта: при 0.62 он даёт
 # WARN «пятно есть, но не по канону».  b — полуось по Y в тех же долях.
 ELLIPSE_K = math.sin(math.radians(35.2644))     # сжатие круга в изометрии 2:1
@@ -65,21 +67,35 @@ def ellipse_mask(size, cx, cy, a, b, angle_deg, blur):
 
 
 def compose(raw_path, out_path, shadow_x=0.0, shadow_y=0.0, outline=True,
-            pad=3, ppu=96.0, scale_k=None, write_json=True, anchor_raw=None):
+            pad=3, ppu=96.0, scale_k=None, write_json=True, anchor_raw=None,
+            shadow_a=None, shadow_b=None, shadow_alpha=None, shadow=True):
     """Собрать спрайт.  Возвращает (путь, точка опоры X, Y, размеры).
 
     `anchor_raw = (x, y)` — точка опоры В СЫРОМ КАДРЕ, если её надо задать
     явно.  По умолчанию опора берётся по низу силуэта (низ, центр по X) — так
-    делали прежние постройки.  Но игра читает `anchorX/anchorY` как «пиксель
+    и делали прежние постройки.  Но игра читает `anchorX/anchorY` как «пиксель
     кадра, куда проецируется ЦЕНТР ПЯТНА застройки» (`js/buildings.js`,
-    `spriteFrom`), а это не низ силуэта: у лагеря низ силуэта — передний пень,
-    он на 2.2 клетки впереди центра пятна.
+    `spriteFrom`), а это не низ силуэта: у лагеря лесоруба низ силуэта —
+    передний пень, он на 2.2 клетки впереди центра пятна.
 
     Камера пайплайна ортографическая и смотрит в начало координат, поэтому
     центр пятна (0, 0, 0) проецируется ровно в центр кадра: (res_x/2, res_y/2)
-    — для кадра 512 x 640 это (256, 320).  Проверяется числом:
-    `tools/place_lumbercamp.py` сверяет габарит спрайта с проекцией габарита
-    модели и без явной опоры даёт расхождение 87..111 px.
+    — при кадре 512 x 640 это (256, 320).  Проверяется числом: сверка силуэта
+    спрайта с проекцией габарита модели без явной опоры даёт расхождение
+    87..111 px, с ней — 0.8..2.0 px (`references/case-lumbercamp.md`).
+
+    `shadow_a` — ШИРИНА пятна тени в долях ширины силуэта (канон 1.35 для
+    компактной постройки).  У дворов с разреженным широким силуэтом канонное
+    число уходит из-под предметов «серым озером», и его подбирают прогоном по
+    ВСЕМ четырём поворотам (лагерь: 1.40 — минимум, что проходит везде).
+    Гейт требует 0.70..2.0 и мерит пятно НИЖЕ силуэта.
+
+    `shadow = False` — пятна нет вовсе (правило заказчика: у зданий этой игры
+    тени нет).  Габарит кадра считается ТОЙ ЖЕ формулой, что с тенью: место
+    под пятно остаётся прозрачным, и кадр с `--no-shadow` отличается от кадра
+    с тенью ровно пикселями пятна — ни опора, ни рамка, ни посадка в игре не
+    меняются.  Поэтому тень можно снять с уже собранного атласа, не перемеряя
+    ни одного числа.
     """
     im = Image.open(raw_path).convert('RGBA')
     a = np.asarray(im)[:, :, :3].astype(np.float32)
@@ -88,7 +104,7 @@ def compose(raw_path, out_path, shadow_x=0.0, shadow_y=0.0, outline=True,
     if not len(xs):
         raise SystemExit('%s: пустой кадр (нет силуэта)' % raw_path)
     x0, x1, y0, y1 = xs.min(), xs.max(), ys.min(), ys.max()
-    # точка опоры: низ силуэта, центр по X, плюс сдвиг под тень
+    # точка опоры: низ силуэта, центр по X, плюс сдвиг под тень — либо явная
     if anchor_raw is None:
         ax = int(round((x0 + x1) / 2.0 + shadow_x * float(ppu)))
         ay = int(y1)
@@ -96,6 +112,9 @@ def compose(raw_path, out_path, shadow_x=0.0, shadow_y=0.0, outline=True,
         ax, ay = float(anchor_raw[0]), float(anchor_raw[1])
     k = 1.0 if scale_k is None else float(scale_k)
     dilate = max(1, int(round(OUTLINE_DILATE * k)))
+    sh_a = SHADOW['a'] if shadow_a is None else float(shadow_a)
+    sh_b = SHADOW['b'] if shadow_b is None else float(shadow_b)
+    sh_al = SHADOW['alpha'] if shadow_alpha is None else float(shadow_alpha)
 
     w, h = x1 - x0 + 1, y1 - y0 + 1
     sw = int(round(w * (1.0 + 2.0 * SHADOW['spread']))) + 2 * pad
@@ -109,13 +128,19 @@ def compose(raw_path, out_path, shadow_x=0.0, shadow_y=0.0, outline=True,
     rgb[oy:oy + h, ox:ox + w] = a[y0:y1 + 1, x0:x1 + 1]
     alpha[oy:oy + h, ox:ox + w] = al[y0:y1 + 1, x0:x1 + 1]
 
-    # 1) тень: эллипс под силуэтом, в проекции изометрии
-    cx = ox + w / 2.0 + shadow_x * float(ppu)
-    cy = oy + h - SHADOW['b'] * w * ELLIPSE_K * 0.5 + shadow_y * float(ppu)
-    m = ellipse_mask((W, H), cx, cy, SHADOW['a'] * w * 0.5,
-                     SHADOW['b'] * w * 0.5 * ELLIPSE_K, SHADOW['angle_deg'],
-                     SHADOW['blur'] * k)
-    out_a = np.maximum(alpha, m * SHADOW['alpha'])
+    # 1) тень: эллипс под силуэтом, в проекции изометрии.  `shadow=False` —
+    # пятна нет: маска не рисуется, а альфа остаётся силуэтной.  Рамка кадра
+    # (W, H) и опора считаются выше одной формулой на оба случая, поэтому
+    # спрайт без тени стоит на карте там же, где стоял с тенью.
+    if shadow:
+        cx = ox + w / 2.0 + shadow_x * float(ppu)
+        cy = oy + h - sh_b * w * ELLIPSE_K * 0.5 + shadow_y * float(ppu)
+        m = ellipse_mask((W, H), cx, cy, sh_a * w * 0.5,
+                         sh_b * w * 0.5 * ELLIPSE_K, SHADOW['angle_deg'],
+                         SHADOW['blur'] * k)
+        out_a = np.maximum(alpha, m * sh_al)
+    else:
+        out_a = alpha
     sh_rgb = np.array(SHADOW_RGB, np.float32)[None, None, :]
     out_rgb = np.where((alpha > 0.02)[:, :, None], rgb,
                        sh_rgb * np.ones((H, W, 1), np.float32))
@@ -156,8 +181,19 @@ def main():
     ap.add_argument('--shadow-x', type=float, default=0.0,
                     help='сдвиг тени и опоры по X в юнитах')
     ap.add_argument('--shadow-y', type=float, default=0.0)
+    ap.add_argument('--shadow-a', type=float, default=None,
+                    help='ширина пятна тени в долях ширины силуэта '
+                         '(канон 1.35; у дворов подбирается по 4 поворотам)')
+    ap.add_argument('--shadow-b', type=float, default=None,
+                    help='полуось пятна по Y в тех же долях (канон 0.36)')
+    ap.add_argument('--shadow-alpha', type=float, default=None,
+                    help='плотность пятна (канон 0.40)')
+    ap.add_argument('--no-shadow', action='store_true',
+                    help='не рисовать контактную тень вовсе (тени у зданий '
+                         'этой игры нет — правило заказчика)')
     ap.add_argument('--anchor-raw', default=None,
-                    help='точка опоры в сыром кадре, X,Y (умолчание — низ силуэта)')
+                    help='точка опоры в сыром кадре, X,Y: ЦЕНТР ПЯТНА '
+                         '(при 512x640 это 256,320).  Умолчание — низ силуэта')
     ap.add_argument('--no-outline', action='store_true')
     ap.add_argument('--json', dest='json_out')
     args = ap.parse_args()
@@ -166,7 +202,10 @@ def main():
         an = [float(v) for v in args.anchor_raw.split(',')]
     path, ax, ay, size = compose(args.raw, args.out, args.shadow_x,
                                  args.shadow_y, outline=not args.no_outline,
-                                 ppu=args.ppu, anchor_raw=an)
+                                 ppu=args.ppu, anchor_raw=an,
+                                 shadow_a=args.shadow_a, shadow_b=args.shadow_b,
+                                 shadow_alpha=args.shadow_alpha,
+                                 shadow=not args.no_shadow)
     print('%s  %dx%d  опора %d,%d' % (path, size[0], size[1], ax, ay))
     if args.json_out:
         with open(os.path.splitext(args.out)[0] + '.json', 'w',

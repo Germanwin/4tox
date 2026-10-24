@@ -1,0 +1,24 @@
+{
+ "scene": "warcamp",
+ "prefix": "wc_",
+ "variants": [
+  null
+ ],
+ "rotations": [
+  0,
+  90,
+  180,
+  270
+ ],
+ "ppu": 384.0,
+ "res": [
+  2048,
+  2560
+ ],
+ "samples": 64,
+ "export": false,
+ "save_blend": false,
+ "viewport": false,
+ "tag": "wc4x",
+ "closeups": false
+}

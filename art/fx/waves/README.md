@@ -61,9 +61,22 @@ art/fx/waves/
   tools/wave_models.py    геометрия вала и палитра
   tools/build_waves.py    рендер: blender -b -P ... -> renders/*_raw.png
   tools/compose_waves.py  пост-обработка: обрезка, опора -> out/*.png + sprites.json
+  tools/export_waves.py   выгрузка форм в out/wave_<форма>.glb (5 файлов)
   renders/                сырые рендеры Blender
-  out/                    готовые спрайты и sprites.json
+  out/                    готовые спрайты, sprites.json и .glb форм
 ```
+
+`export_waves.py` появился 2026-10-14: стенд моделей
+(`art/tools/model-stand`) умеет показывать только то, что выгружено в GLB, а
+волны до этого жили одними спрайтами. Выгружается поворот 0 (вал вдоль
+течения) — поворот вала выбирает игра, а не модель, поэтому в .glb он не
+запекается. Числа: формы 0/1/2 — 68 трис, 3 — 54, 4 — 40.
+
+**Грабля:** в `build_waves.py` путь до `thpipe` посчитан как
+`dirname(ROOT)/townhall/tools` — это осталось с тех пор, когда `townhall/`
+лежал в корне репозитория. После переезда в `art/buildings/townhall` импорт
+оттуда не находится; в `export_waves.py` путь считается от корня репозитория
+(`REPO/art/buildings/townhall/tools`).
 
 В игру это кладёт `mapgen2/tools/pack_waves.py` (атлас
 `mapgen2/assets/waves/`), а раскладывает по морю `mapgen2/js/waves.js`.

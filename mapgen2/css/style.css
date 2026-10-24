@@ -109,9 +109,25 @@ button {
   color: #dbe7ee;
   font: inherit;
   cursor: pointer;
+  position: relative;   /* накладка нажатия: ::before отсчитывается от кнопки */
+  --press: 1px;         /* ход утапливания */
 }
 button:hover { background: #234049; }
-button:active { transform: translateY(1px); }
+/* Подробный разбор — game/css/base.css, «нажатие у самой кромки кнопки»:
+   на :active коробка уезжает вниз на --press, курсор у верхней кромки
+   остаётся над кнопкой, и click до неё не доходит. Накладка ::before
+   прикрывает место, с которого кнопка уехала; она часть самой кнопки,
+   поэтому отпускание в полосе над ней снова попадает в кнопку. Полоса
+   живёт только пока кнопка нажата и ничего не рисует. */
+button:active { transform: translateY(var(--press)); }
+button:active::before {
+  content: '';
+  position: absolute;
+  left: -4px;                          /* рамка: коробка шире внутреннего края */
+  right: -4px;
+  top: calc(-1 * (var(--press) + 4px));
+  height: calc(var(--press) + 4px);
+}
 button:disabled { opacity: .45; cursor: default; }
 button:disabled:hover { background: #1a3038; }
 button:disabled:active { transform: none; }

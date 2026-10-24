@@ -1,0 +1,25 @@
+{
+ "ppu": 80.0,
+ "ortho": 8.0,
+ "res": [
+  512,
+  640
+ ],
+ "tag": "cal",
+ "el_deg": 35.264389682754654,
+ "az_deg": 45.0,
+ "frames": {
+  "cal_0": {
+   "tris": 802,
+   "verts": 836,
+   "objects": 1,
+   "parts": 104,
+   "size": 2.405,
+   "footprint": [
+    3.286,
+    3.516
+   ],
+   "rotation": 0
+  }
+ }
+}

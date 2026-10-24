@@ -1,0 +1,3 @@
+/Users/hermmoment/coding/4tox/art/buildings/warcamp/out/sheet_warcamp.png
+/Users/hermmoment/coding/4tox/art/buildings/warcamp/renders/closeups_warcamp.png
+/Users/hermmoment/coding/4tox/art/buildings/warcamp/out/warcamp_vs_village.png

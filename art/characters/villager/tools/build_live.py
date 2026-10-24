@@ -26,7 +26,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
-sys.path.append(os.path.join(os.path.dirname(ROOT), 'townhall', 'tools'))
+REPO = os.path.abspath(os.path.join(ROOT, '..', '..', '..'))
+sys.path.append(os.path.join(REPO, 'art', 'buildings', 'townhall', 'tools'))   # см. build.py: путь считается от корня репозитория
 
 import bpy                                                      # noqa: E402
 

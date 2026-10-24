@@ -1,0 +1,98 @@
+{
+ "name": "villager",
+ "parts": 23,
+ "verts": 384,
+ "tris": 670,
+ "families": {
+  "iron": {
+   "parts": 1,
+   "tris": 36
+  },
+  "leather": {
+   "parts": 2,
+   "tris": 72
+  },
+  "skin": {
+   "parts": 11,
+   "tris": 256
+  },
+  "stone": {
+   "parts": 3,
+   "tris": 112
+  },
+  "trunk": {
+   "parts": 6,
+   "tris": 194
+  }
+ },
+ "bbox": {
+  "x": [
+   -0.195,
+   0.419
+  ],
+  "y": [
+   -0.159,
+   0.159
+  ],
+  "z": [
+   0.0,
+   0.987
+  ]
+ },
+ "size": [
+  0.614,
+  0.318,
+  0.987
+ ],
+ "height": 0.987,
+ "head_share": 0.212,
+ "shoulder_share": 0.296,
+ "fingertip_share": 0.402,
+ "knee_share": 0.304,
+ "foot_offset": -0.041,
+ "sym_pairs": {
+  "mirrored": 0,
+  "broken": [
+   "thigh_l",
+   "shin_l",
+   "boot_l",
+   "uparm_l",
+   "forearm_l",
+   "sleeve_l",
+   "thumb_l",
+   "thigh_r",
+   "shin_r",
+   "boot_r",
+   "uparm_r",
+   "forearm_r",
+   "sleeve_r",
+   "thumb_r",
+   "ear_l",
+   "ear_r"
+  ]
+ },
+ "cloth_cover": [
+  0.08613763106301298,
+  0.496,
+  0.048
+ ],
+ "normal_issues": [],
+ "normal_issue_count": 0,
+ "too_small": [],
+ "axe": {
+  "angle_off": 0.0,
+  "fist_dist": 0.0,
+  "grip": [
+   0.082,
+   0.082
+  ],
+  "box": [
+   44.8,
+   -44.8,
+   8.5,
+   -97.0
+  ],
+  "tris": 670,
+  "verts": 384
+ }
+}

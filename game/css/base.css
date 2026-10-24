@@ -1,0 +1,359 @@
+/* base.css — фундамент интерфейса игры: палитра, шрифт и «деревянные» детали.
+
+   Палитра снята с самой игры, а не придумана: цвета взяты из текстур земли
+   (`mapgen2/assets/textures/*.png`) и из атласа ратуши. Поэтому кнопка цвета
+   травы стоит рядом с травой на карте и не спорит с ней.
+
+   Стиль — мультяшный low poly. Три правила, из которых тут всё:
+
+   1. ТОЛСТЫЙ ТЁМНЫЙ КОНТУР. У спрайтов в игре силуэт обведён тёмным, и
+      панель обведена им же — 3–4 пикселя тёмно-коричневого, не чёрного.
+   2. ЖЁСТКАЯ ТЕНЬ. Не размытая, а сдвинутая вниз: деталь лежит на экране,
+      а не парит. Мягкая тень сразу делает вид «веб-приложением».
+   3. ВЫПУКЛОСТЬ. Сверху светлая полоса, снизу тёмная — так плоский
+      прямоугольник читается дощечкой.
+
+   Шрифт — системный округлый: `ui-rounded` на macOS это SF Pro Rounded.
+   Он есть и в кириллице, а если система его не отдаст, цепочка падает на
+   Arial Rounded и Trebuchet — оба округлые и оба с кириллицей. */
+
+:root {
+  /* земля и растительность */
+  --grass:       #7dc75e;
+  --grass-lite:  #a6e37f;
+  --grass-mid:   #63b348;
+  --grass-dark:  #4e9a34;
+  --grass-deep:  #2f6420;
+  --leaf:        #3f8f2b;
+
+  /* песок и солома */
+  --sand:        #f0dca2;
+  --sand-lite:   #fdf3d3;
+  --sand-dark:   #d8bf80;
+  --thatch:      #c5b17f;
+  --thatch-dark: #91836e;
+
+  /* дерево */
+  --wood-lite:   #dcbe92;
+  --wood:        #c19a68;
+  --wood-mid:    #a97f4f;
+  --wood-dark:   #7a5533;
+  --wood-deep:   #4a3220;
+  --outline:     #3b2a19;
+
+  /* море и небо */
+  --sea:         #449dd1;
+  --sea-mid:     #2f86bd;
+  --sea-deep:    #2670a6;
+  --sea-abyss:   #164e80;
+  --foam:        #bae4ee;
+
+  /* текст */
+  --ink:         #3d2a17;
+  --ink-soft:    #6b5236;
+  --cream:       #fdf6e3;
+
+  --font: ui-rounded, 'SF Pro Rounded', 'Arial Rounded MT Bold', 'Trebuchet MS',
+          'Segoe UI', system-ui, sans-serif;
+
+  --r-sm: 10px;
+  --r-md: 16px;
+  --r-lg: 24px;
+
+  --drop: 0 10px 22px rgba(12, 32, 48, .38);
+
+  --ease-pop: cubic-bezier(.34, 1.56, .64, 1);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--sea-abyss);
+  color: var(--cream);
+  font: 15px/1.4 var(--font);
+  -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+#app { position: fixed; inset: 0; }
+
+#view {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+  touch-action: none;
+}
+#view.dragging { cursor: grabbing; }
+/* Над постройкой курсор прицельный: клик выбирает её, а не тянет карту.
+   Панорама при этом работает как обычно — как и в режиме размещения у
+   генератора карт. */
+#view.pick { cursor: pointer; }
+#view.pick.dragging { cursor: grabbing; }
+/* Взятая из меню постройка ходит за курсором: прицел говорит, что клик сейчас
+   ставит, а не выбирает. */
+#view.placing { cursor: crosshair; }
+#view.placing.dragging { cursor: grabbing; }
+
+.hidden { display: none !important; }
+
+/* Экраны (меню, пауза, загрузка) лежат поверх карты и друг друга. */
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+}
+
+/* ------------------------------ доска ------------------------------ *
+ * Основная деталь интерфейса: доска из светлого дерева. На ней стоит и
+ * меню, и пауза, и таблички партии. */
+
+.board {
+  position: relative;
+  border: 4px solid var(--wood-dark);
+  border-radius: var(--r-lg);
+  background:
+    /* свет сверху — выпуклость */
+    linear-gradient(180deg, rgba(255, 255, 255, .30), rgba(255, 255, 255, 0) 26%),
+    /* тень снизу */
+    linear-gradient(0deg, rgba(74, 50, 32, .22), rgba(74, 50, 32, 0) 20%),
+    /* волокна: частые вертикальные штрихи */
+    repeating-linear-gradient(90deg,
+      rgba(122, 85, 51, .09) 0 2px, rgba(122, 85, 51, 0) 2px 15px),
+    repeating-linear-gradient(90deg,
+      rgba(255, 255, 255, .16) 0 1px, rgba(255, 255, 255, 0) 1px 7px),
+    linear-gradient(180deg, var(--wood-lite), var(--wood) 58%, var(--wood-mid));
+  box-shadow:
+    inset 0 4px 0 rgba(255, 255, 255, .34),
+    inset 0 -8px 0 rgba(74, 50, 32, .20),
+    var(--drop);
+}
+
+/* Гвозди по углам доски: два штриха — шляпка и блик на ней. */
+.board::before,
+.board::after {
+  content: '';
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 30%, #f4e3c6, #a2805a 62%, #6b4a2c);
+  box-shadow: inset 0 -1px 1px rgba(0, 0, 0, .35), 0 1px 0 rgba(255, 255, 255, .35);
+  pointer-events: none;
+}
+.board::before { left: 13px; top: 13px; }
+.board::after { right: 13px; top: 13px; }
+
+.board-title {
+  margin: 0 0 16px;
+  text-align: center;
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--ink);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, .45);
+}
+
+/* ------------------------------ кнопки ------------------------------ */
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border: 0;
+  background: none;
+  position: relative;   /* накладка нажатия: ::before отсчитывается от кнопки */
+  --press: 0px;         /* ход утапливания; задаётся у каждой кнопки своё */
+}
+
+/* ------------------- нажатие у самой кромки кнопки ------------------- *
+ * Кнопка утапливается: на :active её коробка уезжает вниз на --press (см.
+ * `.play-btn`, `.wood-btn`, `.icon-btn` …). Вместе с коробкой уезжает и
+ * область попадания. Курсор, стоявший у верхней кромки, после нажатия
+ * оказывается уже НАД кнопкой, отпускание приходится на родителя, и click
+ * до кнопки не доходит. Снаружи это ровно то, на что жалуются: нажатие
+ * видно (:active держится, пока держится кнопка мыши), а действия нет —
+ * игра не начинается, карта не меняется, житель не нанимается.
+ *
+ * Лечится не отказом от утапливания, а невидимой накладкой: у нажатой
+ * кнопки появляется ::before высотой в ход, лежащая на том месте, с
+ * которого кнопка уехала. Псевдоэлемент — часть самой кнопки (отдельной
+ * целью события он не бывает), поэтому отпускание в полосе над кнопкой
+ * снова попадает в неё. Полоса живёт только пока кнопка нажата и ничего
+ * не рисует, а ход и накладка считаются от ОДНОЙ переменной --press,
+ * поэтому разойтись не могут.
+ *
+ * 4px в формуле — рамка: накладка отсчитывается от внутреннего края, а
+ * коробка кнопки начинается на толщину рамки выше (у здешних кнопок она
+ * не толще 4px). */
+button:active::before {
+  content: '';
+  position: absolute;
+  left: -4px;                          /* рамка: коробка шире внутреннего края */
+  right: -4px;
+  top: calc(-1 * (var(--press) + 4px));
+  height: calc(var(--press) + 4px);
+}
+/* Кольцо фокуса — своё, а не браузерное: точки обхода по Tab должны быть
+   видны так же чётко, как нажатие мышью. */
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid rgba(255, 253, 242, .9);
+  outline-offset: 3px;
+}
+
+/* Главная кнопка: цвет травы, снизу — толстая «пятка», как у кубика. */
+.play-btn {
+  --press: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  padding: 18px 30px;
+  border: 4px solid var(--grass-deep);
+  border-radius: 20px;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: .5px;
+  color: #fffdf2;
+  text-shadow: 0 2px 0 rgba(28, 74, 20, .55);
+  background: linear-gradient(180deg, var(--grass-lite), var(--grass) 46%, var(--grass-dark));
+  box-shadow:
+    inset 0 4px 0 rgba(255, 255, 255, .42),
+    inset 0 -6px 0 rgba(28, 74, 20, .30),
+    0 9px 0 var(--grass-deep),
+    0 16px 24px rgba(12, 32, 48, .34);
+  transition: transform .09s ease, box-shadow .09s ease, filter .15s ease;
+}
+.play-btn:hover { filter: brightness(1.06); }
+.play-btn:active {
+  transform: translateY(var(--press));
+  box-shadow:
+    inset 0 4px 0 rgba(255, 255, 255, .34),
+    inset 0 -4px 0 rgba(28, 74, 20, .28),
+    0 2px 0 var(--grass-deep),
+    0 6px 12px rgba(12, 32, 48, .3);
+}
+.play-btn.compact { padding: 13px 22px; font-size: 19px; }
+.play-btn .play-icon { font-size: .78em; transform: translateY(-1px); }
+
+/* Вторая кнопка: деревянная, для действий помельче. */
+.wood-btn {
+  --press: 4px;
+  padding: 12px 20px;
+  border: 3px solid var(--wood-dark);
+  border-radius: var(--r-md);
+  font-size: 16px;
+  font-weight: 700;
+  color: #43301c;
+  background: linear-gradient(180deg, var(--sand-lite), var(--sand) 55%, var(--sand-dark));
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, .55),
+    inset 0 -4px 0 rgba(122, 85, 51, .22),
+    0 5px 0 var(--wood-dark);
+  transition: transform .09s ease, box-shadow .09s ease, filter .15s ease;
+}
+.wood-btn:hover { filter: brightness(1.04); }
+.wood-btn:active {
+  transform: translateY(var(--press));
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .45), 0 1px 0 var(--wood-dark);
+}
+
+/* Круглые кнопки партии — в углу экрана, поверх карты. */
+.icon-btn {
+  --press: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 44px;
+  height: 44px;
+  padding: 0 12px;
+  border: 3px solid var(--wood-dark);
+  border-radius: 14px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #43301c;
+  background: linear-gradient(180deg, var(--sand-lite), var(--sand) 55%, var(--sand-dark));
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, .55),
+    0 4px 0 var(--wood-dark),
+    0 8px 14px rgba(12, 32, 48, .26);
+  transition: transform .09s ease, box-shadow .09s ease, filter .15s ease;
+}
+.icon-btn:hover { filter: brightness(1.05); }
+.icon-btn:active {
+  transform: translateY(var(--press));
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .45), 0 1px 0 var(--wood-dark);
+}
+.icon-btn.active {
+  color: #f4fff0;
+  border-color: var(--grass-deep);
+  background: linear-gradient(180deg, var(--grass-lite), var(--grass) 50%, var(--grass-dark));
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, .40),
+    0 4px 0 var(--grass-deep),
+    0 8px 14px rgba(12, 32, 48, .26);
+}
+
+/* Табличка: маленькая деревянная плашка со сведениями. */
+.plaque {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 16px 9px 9px;
+  border: 3px solid var(--wood-dark);
+  border-radius: var(--r-md);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .28), rgba(255, 255, 255, 0) 40%),
+    linear-gradient(180deg, var(--wood-lite), var(--wood) 70%, var(--wood-mid));
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, .30),
+    0 5px 0 rgba(74, 50, 32, .55),
+    0 10px 18px rgba(12, 32, 48, .30);
+}
+.plaque-icon {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: radial-gradient(circle at 50% 30%, rgba(255, 255, 255, .5), rgba(255, 255, 255, 0) 70%),
+              linear-gradient(180deg, #6d512f, #4a3220);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .12);
+  overflow: hidden;
+}
+.plaque-icon.tall {
+  width: 50px;
+  height: 66px;
+  /* Портрет жителя — на светлом: у человечка свой тёмный контур, и на тёмном
+     фоне он сливался бы в пятно. Земля внизу — та же трава, по которой он
+     ходит: портрет получается маленькой сценкой, а не иконкой. */
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0) 0 72%, rgba(125, 199, 94, .95) 72% 100%),
+    linear-gradient(180deg, #d9f0fb, #9fd2ea);
+}
+/* Канвас в табличке занимает её целиком: герб и портрет считают свой размер
+   от CSS, а не от атрибутов width/height в разметке. Без этого портрет
+   рисовался бы в 64 пикселя и обрезался рамкой в 44. */
+.plaque-icon canvas { display: block; width: 100%; height: 100%; }
+.plaque-text { display: flex; flex-direction: column; line-height: 1.25; }
+.plaque-text b { font-size: 16px; color: #fdf3d9; text-shadow: 0 1px 0 rgba(40, 24, 10, .6); }
+.plaque-text i { font-style: normal; font-size: 12px; color: #f0dcb4; opacity: .85; }
+.plaque-text .score { font-size: 12px; color: #f0dcb4; opacity: .9; }
+.plaque-text .score b { font-size: 14px; color: #fff6d8; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+}

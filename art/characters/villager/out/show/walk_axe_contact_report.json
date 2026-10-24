@@ -1,0 +1,387 @@
+{
+  "schema": "animation_contact_sheet_report.v1",
+  "frames": [
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_0_0.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_1_0.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_2_0.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_3_0.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_4_0.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_5_0.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_6_0.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_7_0.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_0_45.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_1_45.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_2_45.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_3_45.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_4_45.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_5_45.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_6_45.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_7_45.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_0_90.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_1_90.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_2_90.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_3_90.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_4_90.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_5_90.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_6_90.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_7_90.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_0_135.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_1_135.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_2_135.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_3_135.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_4_135.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_5_135.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_6_135.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_7_135.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_0_180.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_1_180.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_2_180.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_3_180.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_4_180.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_5_180.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_6_180.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_7_180.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_0_225.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_1_225.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_2_225.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_3_225.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_4_225.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_5_225.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_6_225.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_7_225.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_0_270.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_1_270.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_2_270.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_3_270.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_4_270.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_5_270.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_6_270.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_7_270.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_0_315.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_1_315.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_2_315.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_3_315.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_4_315.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_5_315.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_6_315.png",
+    "/Users/hermmoment/coding/4tox/art/characters/villager/out/vg_walk_axe_7_315.png"
+  ],
+  "frame_diff": [
+    {
+      "from": "vg_walk_axe_0_0.png",
+      "to": "vg_walk_axe_1_0.png",
+      "mean_rgb_diff": 2.77536525974026
+    },
+    {
+      "from": "vg_walk_axe_1_0.png",
+      "to": "vg_walk_axe_2_0.png",
+      "mean_rgb_diff": 3.1894390331890334
+    },
+    {
+      "from": "vg_walk_axe_2_0.png",
+      "to": "vg_walk_axe_3_0.png",
+      "mean_rgb_diff": 2.698029401154401
+    },
+    {
+      "from": "vg_walk_axe_3_0.png",
+      "to": "vg_walk_axe_4_0.png",
+      "mean_rgb_diff": 3.079477813852814
+    },
+    {
+      "from": "vg_walk_axe_4_0.png",
+      "to": "vg_walk_axe_5_0.png",
+      "mean_rgb_diff": 3.4288645382395386
+    },
+    {
+      "from": "vg_walk_axe_5_0.png",
+      "to": "vg_walk_axe_6_0.png",
+      "mean_rgb_diff": 3.309027777777778
+    },
+    {
+      "from": "vg_walk_axe_6_0.png",
+      "to": "vg_walk_axe_7_0.png",
+      "mean_rgb_diff": 2.771780303030303
+    },
+    {
+      "from": "vg_walk_axe_7_0.png",
+      "to": "vg_walk_axe_0_45.png",
+      "mean_rgb_diff": 6.889407467532468
+    },
+    {
+      "from": "vg_walk_axe_0_45.png",
+      "to": "vg_walk_axe_1_45.png",
+      "mean_rgb_diff": 2.383567821067821
+    },
+    {
+      "from": "vg_walk_axe_1_45.png",
+      "to": "vg_walk_axe_2_45.png",
+      "mean_rgb_diff": 1.8687770562770563
+    },
+    {
+      "from": "vg_walk_axe_2_45.png",
+      "to": "vg_walk_axe_3_45.png",
+      "mean_rgb_diff": 1.625721500721501
+    },
+    {
+      "from": "vg_walk_axe_3_45.png",
+      "to": "vg_walk_axe_4_45.png",
+      "mean_rgb_diff": 2.1498015873015874
+    },
+    {
+      "from": "vg_walk_axe_4_45.png",
+      "to": "vg_walk_axe_5_45.png",
+      "mean_rgb_diff": 2.15232683982684
+    },
+    {
+      "from": "vg_walk_axe_5_45.png",
+      "to": "vg_walk_axe_6_45.png",
+      "mean_rgb_diff": 1.8563311688311688
+    },
+    {
+      "from": "vg_walk_axe_6_45.png",
+      "to": "vg_walk_axe_7_45.png",
+      "mean_rgb_diff": 1.5082972582972582
+    },
+    {
+      "from": "vg_walk_axe_7_45.png",
+      "to": "vg_walk_axe_0_90.png",
+      "mean_rgb_diff": 5.338812229437228
+    },
+    {
+      "from": "vg_walk_axe_0_90.png",
+      "to": "vg_walk_axe_1_90.png",
+      "mean_rgb_diff": 3.167049963924964
+    },
+    {
+      "from": "vg_walk_axe_1_90.png",
+      "to": "vg_walk_axe_2_90.png",
+      "mean_rgb_diff": 2.6761138167388165
+    },
+    {
+      "from": "vg_walk_axe_2_90.png",
+      "to": "vg_walk_axe_3_90.png",
+      "mean_rgb_diff": 2.3933531746031744
+    },
+    {
+      "from": "vg_walk_axe_3_90.png",
+      "to": "vg_walk_axe_4_90.png",
+      "mean_rgb_diff": 3.5971094877344876
+    },
+    {
+      "from": "vg_walk_axe_4_90.png",
+      "to": "vg_walk_axe_5_90.png",
+      "mean_rgb_diff": 2.7510371572871573
+    },
+    {
+      "from": "vg_walk_axe_5_90.png",
+      "to": "vg_walk_axe_6_90.png",
+      "mean_rgb_diff": 2.566941738816739
+    },
+    {
+      "from": "vg_walk_axe_6_90.png",
+      "to": "vg_walk_axe_7_90.png",
+      "mean_rgb_diff": 2.235750360750361
+    },
+    {
+      "from": "vg_walk_axe_7_90.png",
+      "to": "vg_walk_axe_0_135.png",
+      "mean_rgb_diff": 6.605136183261183
+    },
+    {
+      "from": "vg_walk_axe_0_135.png",
+      "to": "vg_walk_axe_1_135.png",
+      "mean_rgb_diff": 2.730632215007215
+    },
+    {
+      "from": "vg_walk_axe_1_135.png",
+      "to": "vg_walk_axe_2_135.png",
+      "mean_rgb_diff": 3.4844426406926403
+    },
+    {
+      "from": "vg_walk_axe_2_135.png",
+      "to": "vg_walk_axe_3_135.png",
+      "mean_rgb_diff": 3.0496482683982684
+    },
+    {
+      "from": "vg_walk_axe_3_135.png",
+      "to": "vg_walk_axe_4_135.png",
+      "mean_rgb_diff": 3.6106827200577203
+    },
+    {
+      "from": "vg_walk_axe_4_135.png",
+      "to": "vg_walk_axe_5_135.png",
+      "mean_rgb_diff": 2.1112012987012987
+    },
+    {
+      "from": "vg_walk_axe_5_135.png",
+      "to": "vg_walk_axe_6_135.png",
+      "mean_rgb_diff": 3.18459145021645
+    },
+    {
+      "from": "vg_walk_axe_6_135.png",
+      "to": "vg_walk_axe_7_135.png",
+      "mean_rgb_diff": 2.800369769119769
+    },
+    {
+      "from": "vg_walk_axe_7_135.png",
+      "to": "vg_walk_axe_0_180.png",
+      "mean_rgb_diff": 7.043492965367965
+    },
+    {
+      "from": "vg_walk_axe_0_180.png",
+      "to": "vg_walk_axe_1_180.png",
+      "mean_rgb_diff": 3.12536075036075
+    },
+    {
+      "from": "vg_walk_axe_1_180.png",
+      "to": "vg_walk_axe_2_180.png",
+      "mean_rgb_diff": 2.9224837662337664
+    },
+    {
+      "from": "vg_walk_axe_2_180.png",
+      "to": "vg_walk_axe_3_180.png",
+      "mean_rgb_diff": 2.4804518398268396
+    },
+    {
+      "from": "vg_walk_axe_3_180.png",
+      "to": "vg_walk_axe_4_180.png",
+      "mean_rgb_diff": 2.930645743145743
+    },
+    {
+      "from": "vg_walk_axe_4_180.png",
+      "to": "vg_walk_axe_5_180.png",
+      "mean_rgb_diff": 2.516955266955267
+    },
+    {
+      "from": "vg_walk_axe_5_180.png",
+      "to": "vg_walk_axe_6_180.png",
+      "mean_rgb_diff": 2.4547934704184704
+    },
+    {
+      "from": "vg_walk_axe_6_180.png",
+      "to": "vg_walk_axe_7_180.png",
+      "mean_rgb_diff": 2.112012987012987
+    },
+    {
+      "from": "vg_walk_axe_7_180.png",
+      "to": "vg_walk_axe_0_225.png",
+      "mean_rgb_diff": 6.224499458874459
+    },
+    {
+      "from": "vg_walk_axe_0_225.png",
+      "to": "vg_walk_axe_1_225.png",
+      "mean_rgb_diff": 1.9769119769119767
+    },
+    {
+      "from": "vg_walk_axe_1_225.png",
+      "to": "vg_walk_axe_2_225.png",
+      "mean_rgb_diff": 1.9912518037518037
+    },
+    {
+      "from": "vg_walk_axe_2_225.png",
+      "to": "vg_walk_axe_3_225.png",
+      "mean_rgb_diff": 1.5828598484848486
+    },
+    {
+      "from": "vg_walk_axe_3_225.png",
+      "to": "vg_walk_axe_4_225.png",
+      "mean_rgb_diff": 2.0378787878787876
+    },
+    {
+      "from": "vg_walk_axe_4_225.png",
+      "to": "vg_walk_axe_5_225.png",
+      "mean_rgb_diff": 1.791418650793651
+    },
+    {
+      "from": "vg_walk_axe_5_225.png",
+      "to": "vg_walk_axe_6_225.png",
+      "mean_rgb_diff": 1.7533820346320346
+    },
+    {
+      "from": "vg_walk_axe_6_225.png",
+      "to": "vg_walk_axe_7_225.png",
+      "mean_rgb_diff": 1.3798024891774892
+    },
+    {
+      "from": "vg_walk_axe_7_225.png",
+      "to": "vg_walk_axe_0_270.png",
+      "mean_rgb_diff": 4.568610209235209
+    },
+    {
+      "from": "vg_walk_axe_0_270.png",
+      "to": "vg_walk_axe_1_270.png",
+      "mean_rgb_diff": 3.2398989898989896
+    },
+    {
+      "from": "vg_walk_axe_1_270.png",
+      "to": "vg_walk_axe_2_270.png",
+      "mean_rgb_diff": 2.4976776695526692
+    },
+    {
+      "from": "vg_walk_axe_2_270.png",
+      "to": "vg_walk_axe_3_270.png",
+      "mean_rgb_diff": 2.2972357503607506
+    },
+    {
+      "from": "vg_walk_axe_3_270.png",
+      "to": "vg_walk_axe_4_270.png",
+      "mean_rgb_diff": 3.2116026334776335
+    },
+    {
+      "from": "vg_walk_axe_4_270.png",
+      "to": "vg_walk_axe_5_270.png",
+      "mean_rgb_diff": 3.229640151515151
+    },
+    {
+      "from": "vg_walk_axe_5_270.png",
+      "to": "vg_walk_axe_6_270.png",
+      "mean_rgb_diff": 2.179586038961039
+    },
+    {
+      "from": "vg_walk_axe_6_270.png",
+      "to": "vg_walk_axe_7_270.png",
+      "mean_rgb_diff": 1.9921987734487736
+    },
+    {
+      "from": "vg_walk_axe_7_270.png",
+      "to": "vg_walk_axe_0_315.png",
+      "mean_rgb_diff": 5.369025072150072
+    },
+    {
+      "from": "vg_walk_axe_0_315.png",
+      "to": "vg_walk_axe_1_315.png",
+      "mean_rgb_diff": 2.610953282828283
+    },
+    {
+      "from": "vg_walk_axe_1_315.png",
+      "to": "vg_walk_axe_2_315.png",
+      "mean_rgb_diff": 3.4666080447330447
+    },
+    {
+      "from": "vg_walk_axe_2_315.png",
+      "to": "vg_walk_axe_3_315.png",
+      "mean_rgb_diff": 3.078959235209235
+    },
+    {
+      "from": "vg_walk_axe_3_315.png",
+      "to": "vg_walk_axe_4_315.png",
+      "mean_rgb_diff": 3.1351686507936507
+    },
+    {
+      "from": "vg_walk_axe_4_315.png",
+      "to": "vg_walk_axe_5_315.png",
+      "mean_rgb_diff": 2.9342532467532467
+    },
+    {
+      "from": "vg_walk_axe_5_315.png",
+      "to": "vg_walk_axe_6_315.png",
+      "mean_rgb_diff": 3.450081168831169
+    },
+    {
+      "from": "vg_walk_axe_6_315.png",
+      "to": "vg_walk_axe_7_315.png",
+      "mean_rgb_diff": 3.0762761544011545
+    }
+  ],
+  "warnings": []
+}

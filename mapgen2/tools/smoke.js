@@ -1,8 +1,8 @@
 /* smoke.js — прогон генератора без браузера.
    Проверяет инварианты, которые легко сломать при правке: доля суши,
-   связность материка, объекты не в воде. */
+   связность материка, объекты не в воде и то, что coast 1 даёт берег
+   длиннее (по числу рёбер), чем coast 0. */
 
-const path = require('path');
 const WG = require('./load-worldgen.js');
 
 let fails = 0;
@@ -24,8 +24,8 @@ function run(seed, size, over) {
   // и «без камня» — это осознанные настройки, а не поломка генератора.
   const k = (size * size) / (64 * 64);
   // Деревьев не может быть больше, чем позволяет суша: на карте с 35 %
-  // суши их и должно быть примерно вдвое меньше, чем на 72 %.
-  const landFactor = Math.min(1, s.landShare / 0.72);
+  // суши их и должно быть примерно вдвое меньше, чем на 62 %.
+  const landFactor = Math.min(1, s.landShare / 0.62);
   const wantTrees = (p.forest === 0 || p.trees === 0) ? 0 : Math.round(120 * k * landFactor);
   const wantRocks = (p.rock === 0) ? 0 : Math.max(6, Math.round(15 * k * landFactor));
 
@@ -89,6 +89,25 @@ function components(w) {
   return count;
 }
 
+// Периметр берега в 4-соседних рёбрах «суша/вода». Нужен как ЧИСЛО, а не
+// «на глаз»: ползунок coast обязан увеличивать изрезанность, а не только
+// менять картинку. За кромкой карты — вода (её там и так нет).
+function perimeter(w) {
+  const { width: W, height: H, isLand } = w;
+  let p = 0;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      if (!isLand[i]) continue;
+      if (x === 0 || !isLand[i - 1]) p++;
+      if (x === W - 1 || !isLand[i + 1]) p++;
+      if (y === 0 || !isLand[i - W]) p++;
+      if (y === H - 1 || !isLand[i + W]) p++;
+    }
+  }
+  return p;
+}
+
 // Во сколько раз плотность деревьев в рощах выше, чем на остальной суше
 function forestContrast(w) {
   const { width: W, tile, forestness, objects } = w;
@@ -118,8 +137,14 @@ for (const size of [48, 96, 128]) run('размер-' + size, size);
 console.log('\n=== крайности ползунков ===');
 run('мало-суши', 64, { land: 0.35 });
 run('много-суши', 64, { land: 0.9 });
-run('ровный-берег', 64, { coast: 0 });
-run('рваный-берег', 64, { coast: 1 });
+const smoothCoast = run('ровный-берег', 64, { coast: 0 });
+const roughCoast = run('рваный-берег', 64, { coast: 1 });
+// coast 0 — гладкий овал, coast 1 — рваный берег. Проверяем именно число:
+// рваный берег обязан дать заметно больше рёбер «суша/вода», иначе ползунок
+// «изрезанность» снова управляет квадратностью, а не берегом.
+const per0 = perimeter(smoothCoast), per1 = perimeter(roughCoast);
+check('coast 1 даёт периметр больше coast 0 (≥ 15 %)', per1 >= per0 * 1.15,
+  per0 + ' → ' + per1 + ' (' + ((per1 / per0 - 1) * 100).toFixed(1) + ' %)');
 run('без-леса', 64, { forest: 0, trees: 0 });
 run('без-камня', 64, { rock: 0 });
 run('всё-по-максимуму', 64, { forest: 1, trees: 1, rock: 1, rocks: 1 });

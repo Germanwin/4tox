@@ -1,13 +1,18 @@
 """gate.py — стиль-гейт по ВСЕМ кадрам атласа, одной командой.
 
-    $PY tools/gate.py                 # 176 кадров 1x + 176 кадров @4x
+    $PY tools/gate.py                 # 336 кадров 1x + 336 кадров @4x = 672
     $PY tools/gate.py --anims walk    # только ходьба
     $PY tools/gate.py --tag vg --ppu 96
 
-В README приёмка записана как «352 из 352 кадров: 0 FAIL, 0 WARN», но запускался
+В README приёмка записана как «672 из 672 кадров: 0 FAIL, 0 WARN», но запускался
 гейт по одному кадру руками (`4tox-lowpoly-3d/scripts/audit.py --mine ...`), и
 повторить эту строку было нечем. Здесь то же самое циклом: кадр за кадром, с
 итогом и кодом возврата 1, если хоть один кадр не прошёл.
+
+В СПИСКЕ АНИМАЦИЙ ПО УМОЛЧАНИЮ — ВСЕ ШЕСТЬ. Было пять: `carry_put` (4 кадра x 8
+поворотов = 32 кадра на масштаб) в список не попал, и «672 из 672» из README
+получалось только руками — умолчание давало 608. Кадры, которых нет, цикл и так
+пропускает (сдача короче остальных), поэтому цена включения — ноль.
 
 Класс объекта — `hero`: житель того же роста и той же клетки атласа, что
 персонаж-лесоруб, и бюджет полигонажа у них общий (300..700 трис).
@@ -44,13 +49,30 @@ def verdict(out):
     return fails, warns, ok
 
 
+def tris_of(anim):
+    """Трис кадра — ПО ГЕОМЕТРИИ этой анимации, а не одной цифрой на все.
+
+    Было `--tris 670` на весь прогон: 598 в покое/ходьбе и 670 в рубке, и гейт
+    проверял бюджет по числу, которое ему назвали. С появлением анимаций с
+    охапкой (678 трис) и с топором на ходу (670) одна цифра на все кадры — это
+    уже враньё в отчёте: кадр с охапкой уходил бы в бюджет как 670.
+    """
+    if HERE not in sys.path:
+        sys.path.insert(0, HERE)
+    import person as H
+    import poses as PO
+    parts = H.build(variant='m', pose=PO.pose(anim, 0), **PO.props(anim))
+    return sum(sum(len(f) - 2 for f in p['faces']) for p in parts)
+
+
 def main():
     ap = argparse.ArgumentParser(description='стиль-гейт по всем кадрам')
-    ap.add_argument('--anims', default='idle,walk,work')
-    # Трис в кадре: 598 в покое и ходу, 670 в рубке (топор в кулаке, +72 трис).
-    # По умолчанию берётся БОЛЬШЕЕ число: бюджет класса проверяется по худшему
-    # кадру, а не по среднему.
-    ap.add_argument('--tris', type=int, default=670)
+    ap.add_argument('--anims',
+                    default='idle,walk,work,carry,walk_axe,carry_put')
+    # Трис в кадре: 598 в покое и ходу, 670 в рубке и с топором на ходу, 678 с
+    # охапкой. По умолчанию число берётся ИЗ ГЕОМЕТРИИ (tris_of): бюджет класса
+    # проверяется по худшему кадру, а не по среднему, и не по подсказке.
+    ap.add_argument('--tris', type=int, default=None)
     ap.add_argument('--json', default=os.path.join(ROOT, 'out', 'gate.json'))
     a = ap.parse_args()
 
@@ -61,17 +83,18 @@ def main():
         k = ppu / 96.0
         anchor = '%.0f,%.0f' % (ANCHOR[0] * k, ANCHOR[1] * k)
         for anim in a.anims.split(','):
+            tris = a.tris if a.tris else tris_of(anim)
             for fr in range(8):
                 for rot in ROTS:
                     png = os.path.join(ROOT, out_dir,
                                        '%s_%s_%d_%d.png' % (tag, anim, fr, rot))
                     if not os.path.exists(png):
                         continue
-                    out, code = run_one(png, ppu, anchor, a.tris)
+                    out, code = run_one(png, ppu, anchor, tris)
                     total += 1
                     fails, warns, ok = verdict(out)
                     report[os.path.basename(png)] = dict(
-                        fails=fails, warns=warns, code=code, ok=ok)
+                        fails=fails, warns=warns, code=code, ok=ok, tris=tris)
                     if fails or code != 0:
                         bad.append((png, fails))
                         print('FAIL %-28s %s' % (os.path.basename(png), '; '.join(fails)))

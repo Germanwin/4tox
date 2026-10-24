@@ -1,0 +1,100 @@
+{
+  "source": "art/textures/plot_grass/renders/plot_grass_flat_1024_raw.png",
+  "game": "mapgen2/assets/textures/plot_grass.png",
+  "mode": "flat emission: no lights, no cast shadows (atlas style)",
+  "seed": 20261024,
+  "palette": {
+    "ground": [
+      106,
+      168,
+      80
+    ],
+    "leaf_deep": [
+      94,
+      152,
+      70
+    ],
+    "leaf_mid": [
+      118,
+      180,
+      88
+    ],
+    "leaf_light": [
+      140,
+      200,
+      104
+    ],
+    "leaf_tip": [
+      158,
+      214,
+      116
+    ]
+  },
+  "sizes": {
+    "raw": [
+      1024,
+      1024
+    ],
+    "game": [
+      512,
+      512
+    ],
+    "tile_cells": 2,
+    "px_per_cell": 256
+  },
+  "color": {
+    "mean": [
+      111.1,
+      172.0,
+      83.1
+    ],
+    "p10": [
+      94,
+      152,
+      70
+    ],
+    "p50": [
+      107,
+      169,
+      81
+    ],
+    "p90": [
+      130,
+      190,
+      97
+    ]
+  },
+  "map_grass_color": {
+    "mean": [
+      122.4,
+      195.7,
+      92.1
+    ],
+    "p10": [
+      118,
+      191,
+      89
+    ],
+    "p50": [
+      122,
+      196,
+      92
+    ],
+    "p90": [
+      127,
+      201,
+      95
+    ]
+  },
+  "seam": {
+    "vertical": 3.21,
+    "vertical_inner": 2.69,
+    "horizontal": 2.68,
+    "horizontal_inner": 2.64
+  },
+  "bytes": {
+    "/Users/hermmoment/coding/4tox/art/textures/plot_grass/out/plot_grass_512.png": 271215,
+    "/Users/hermmoment/coding/4tox/art/textures/plot_grass/out/plot_grass_1024.png": 828364,
+    "/Users/hermmoment/coding/4tox/mapgen2/assets/textures/plot_grass.png": 271215
+  }
+}

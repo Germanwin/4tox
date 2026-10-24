@@ -1,0 +1,16 @@
+{
+ "raw": "rn_barracks_180_raw.png",
+ "anchor": [
+  484,
+  520
+ ],
+ "size": [
+  949,
+  886
+ ],
+ "ppu": 96.0,
+ "mul": 0.7667,
+ "outline": true,
+ "shadow": false,
+ "target_frame": "br_a_180"
+}

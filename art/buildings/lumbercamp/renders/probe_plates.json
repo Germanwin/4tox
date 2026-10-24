@@ -1,0 +1,178 @@
+{
+ "paints": [
+  "dark",
+  "iron",
+  "plank",
+  "stone",
+  "thatch",
+  "thatch2",
+  "timber"
+ ],
+ "passes": {
+  "0.30": {
+   "frame": "/Users/hermmoment/coding/4tox/art/buildings/lumbercamp/renders/probe_c30_raw.png",
+   "at": {
+    "dark": [
+     350,
+     326
+    ],
+    "iron": [
+     318,
+     308
+    ],
+    "plank": [
+     287,
+     290
+    ],
+    "stone": [
+     256,
+     272
+    ],
+    "thatch": [
+     225,
+     254
+    ],
+    "thatch2": [
+     194,
+     236
+    ],
+    "timber": [
+     162,
+     218
+    ]
+   }
+  },
+  "0.45": {
+   "frame": "/Users/hermmoment/coding/4tox/art/buildings/lumbercamp/renders/probe_c45_raw.png",
+   "at": {
+    "dark": [
+     350,
+     329
+    ],
+    "iron": [
+     318,
+     311
+    ],
+    "plank": [
+     287,
+     293
+    ],
+    "stone": [
+     256,
+     275
+    ],
+    "thatch": [
+     225,
+     257
+    ],
+    "thatch2": [
+     194,
+     239
+    ],
+    "timber": [
+     162,
+     221
+    ]
+   }
+  },
+  "0.60": {
+   "frame": "/Users/hermmoment/coding/4tox/art/buildings/lumbercamp/renders/probe_c60_raw.png",
+   "at": {
+    "dark": [
+     350,
+     332
+    ],
+    "iron": [
+     318,
+     314
+    ],
+    "plank": [
+     287,
+     296
+    ],
+    "stone": [
+     256,
+     278
+    ],
+    "thatch": [
+     225,
+     260
+    ],
+    "thatch2": [
+     194,
+     242
+    ],
+    "timber": [
+     162,
+     224
+    ]
+   }
+  },
+  "0.75": {
+   "frame": "/Users/hermmoment/coding/4tox/art/buildings/lumbercamp/renders/probe_c75_raw.png",
+   "at": {
+    "dark": [
+     350,
+     336
+    ],
+    "iron": [
+     318,
+     318
+    ],
+    "plank": [
+     287,
+     299
+    ],
+    "stone": [
+     256,
+     281
+    ],
+    "thatch": [
+     225,
+     263
+    ],
+    "thatch2": [
+     194,
+     245
+    ],
+    "timber": [
+     162,
+     227
+    ]
+   }
+  },
+  "0.90": {
+   "frame": "/Users/hermmoment/coding/4tox/art/buildings/lumbercamp/renders/probe_c90_raw.png",
+   "at": {
+    "dark": [
+     350,
+     340
+    ],
+    "iron": [
+     318,
+     322
+    ],
+    "plank": [
+     287,
+     304
+    ],
+    "stone": [
+     256,
+     286
+    ],
+    "thatch": [
+     225,
+     268
+    ],
+    "thatch2": [
+     194,
+     249
+    ],
+    "timber": [
+     162,
+     231
+    ]
+   }
+  }
+ }
+}

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд моделей — 4tox</title>
+<link rel="stylesheet" href="css/stand.css">
+</head>
+<body>
+
+<header id="top">
+  <h1>Стенд моделей <span>4tox</span></h1>
+  <div id="counts" class="counts">—</div>
+  <input id="search" type="search" spellcheck="false" autocomplete="off"
+         placeholder="поиск: имя или путь  ( / )">
+  <div class="chips" id="filters">
+    <button class="chip active" data-filter="all">Всё</button>
+    <button class="chip" data-filter="game">В игре</button>
+    <button class="chip" data-filter="models">Модели</button>
+    <button class="chip" data-filter="atlases">Атласы</button>
+  </div>
+  <button id="helpBtn" class="chip" title="Клавиши (?)">?</button>
+</header>
+
+<div id="layout">
+
+  <aside id="list" class="panel"></aside>
+
+  <main id="stage">
+    <div id="viewWrap">
+      <canvas id="view"></canvas>
+      <div id="quadLabels" class="hidden"></div>
+      <div id="viewBar">
+        <button class="chip" data-act="iso" title="Камера рендера спрайтов: азимут 45°, подъём 35.2644°, ортография (I)">Изометрия</button>
+        <button class="chip" data-act="quad" title="Четыре поворота модели, как кадры атласа (4)">4 поворота</button>
+        <button class="chip" data-act="cam" title="Из какого квадранта смотрит камера. У каждой модели своя — так её рисовал Blender. Клик — следующая (C)">камера</button>
+        <button class="chip" data-act="wire" title="Каркас (W)">Каркас</button>
+        <button class="chip active" data-act="grid" title="Сетка, клетка = 1 клетка карты (G)">Сетка</button>
+        <button class="chip" data-act="box" title="Габаритный ящик (B)">Габарит</button>
+        <button class="chip" data-act="spin" title="Вращение (пробел)">Вращение</button>
+        <button class="chip" data-act="reset" title="Сброс камеры (R)">Сброс</button>
+      </div>
+      <div id="viewNote"></div>
+    </div>
+
+    <section id="sprites">
+      <div id="spriteBar"></div>
+      <div id="spriteGrid"></div>
+    </section>
+  </main>
+
+  <aside id="card" class="panel"></aside>
+
+</div>
+
+<div id="help" class="hidden">
+  <div class="help-box">
+    <h2>Клавиши</h2>
+    <dl>
+      <dt>← →</dt><dd>предыдущая / следующая модель</dd>
+      <dt>1 … 9</dt><dd>модель по номеру в списке</dd>
+      <dt>I</dt><dd>камера как в игре: азимут 45°, подъём 35.2644°, ортография</dd>
+      <dt>4</dt><dd>четыре поворота рядом — сверить с кадрами атласа</dd>
+      <dt>C</dt><dd>камера рендера: своя у модели → канон игры → камера разбора</dd>
+      <dt>F</dt><dd>развернуть лист кадров во весь экран</dd>
+      <dt>W</dt><dd>каркас</dd>
+      <dt>G</dt><dd>сетка</dd>
+      <dt>B</dt><dd>габаритный ящик</dd>
+      <dt>пробел</dt><dd>вращение модели</dd>
+      <dt>R</dt><dd>сброс камеры</dd>
+      <dt>/</dt><dd>поиск</dd>
+      <dt>?</dt><dd>эта справка, Esc — закрыть</dd>
+    </dl>
+    <p class="hint">
+      Стенд читает репозиторий, но ничего в нём не меняет. Каталог моделей и
+      байты GLB лежат в <code>data/</code> и собираются
+      <code>tools/build_catalog.py</code> — после правки модели каталог надо
+      пересобрать, иначе стенд покажет старое.
+    </p>
+  </div>
+</div>
+
+<script src="data/catalog.js"></script>
+<script src="data/meshes.js"></script>
+<script src="vendor/three.min.js"></script>
+<script src="vendor/OrbitControls.js"></script>
+<script src="vendor/GLTFLoader.js"></script>
+<script src="js/stand.js"></script>
+</body>
+</html>

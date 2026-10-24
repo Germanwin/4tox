@@ -1,0 +1,168 @@
+{
+ "_": "ПАЛИТРА РУИН: краски ратуши + два угольных тона. Тона посчитаны той же формулой, что village_probe.py: sRGB(base * (SUN_K*c + SKY_K)), c = 0.9/0.6/0.3 (грань в небо / на солнце / в тень). Тень у зданий снята правилом 2026-10-17, поэтому строка ТЕНЬ стиль-гейта падает намеренно.",
+ "version": 1,
+ "source": "art/buildings/ruins/tools/ruin_palette.py (краски: townhall/tools/townhall.py::palette(); char/ash — новые тёмные)",
+ "probe": {
+  "sun": [
+   -0.36,
+   0.3,
+   0.88
+  ],
+  "sun_energy": 2.05,
+  "ambient": [
+   0.62,
+   0.66,
+   0.72
+  ],
+  "ambient_strength": 0.42,
+  "ppu": 96.0,
+  "res": [
+   512,
+   640
+  ],
+  "c": [
+   0.3,
+   0.45,
+   0.6,
+   0.75,
+   0.9
+  ]
+ },
+ "outline": [
+  "#0C100C",
+  "#0D120D",
+  "#0E130E",
+  "#0B0F0B"
+ ],
+ "shadow": {
+  "w_over_sil": [
+   0.7,
+   2.0
+  ],
+  "h_over_w": [
+   0.04,
+   0.4
+  ],
+  "max_alpha": [
+   0.25,
+   0.9
+  ],
+  "p90_alpha": [
+   0.08,
+   0.7
+  ],
+  "rgb": "#000000"
+ },
+ "tones": {
+  "ash": {
+   "light": "#696661",
+   "mid": "#5D5A56",
+   "dark": "#4E4C49"
+  },
+  "beam": {
+   "light": "#B69D7B",
+   "mid": "#A28B6D",
+   "dark": "#89765D"
+  },
+  "board": {
+   "light": "#B69D7B",
+   "mid": "#A28B6D",
+   "dark": "#89765D"
+  },
+  "board2": {
+   "light": "#997E5C",
+   "mid": "#887051",
+   "dark": "#725E45"
+  },
+  "char": {
+   "light": "#4F4232",
+   "mid": "#453A2C",
+   "dark": "#393024"
+  },
+  "dark": {
+   "light": "#544A3F",
+   "mid": "#4A4137",
+   "dark": "#3D362E"
+  },
+  "dirt": {
+   "light": "#AC9D87",
+   "mid": "#998B78",
+   "dark": "#817666"
+  },
+  "iron": {
+   "light": "#7B7B81",
+   "mid": "#6C6D73",
+   "dark": "#5B5C62"
+  },
+  "moss": {
+   "light": "#86A377",
+   "mid": "#76916A",
+   "dark": "#647B5A"
+  },
+  "plank": {
+   "light": "#C3AF8E",
+   "mid": "#AD9B7E",
+   "dark": "#92846C"
+  },
+  "stone": {
+   "light": "#B9BDC2",
+   "mid": "#A4A8AD",
+   "dark": "#8B8F94"
+  },
+  "stone2": {
+   "light": "#A4A9B0",
+   "mid": "#92969D",
+   "dark": "#7B8086"
+  },
+  "thatch": {
+   "light": "#C7B27F",
+   "mid": "#B19E71",
+   "dark": "#968660"
+  },
+  "thatch2": {
+   "light": "#B9A46E",
+   "mid": "#A49262",
+   "dark": "#8B7B53"
+  },
+  "timber": {
+   "light": "#997E5C",
+   "mid": "#887051",
+   "dark": "#725E45"
+  },
+  "wall": {
+   "light": "#BBA78C",
+   "mid": "#A6957D",
+   "dark": "#8D7E6A"
+  }
+ },
+ "budget": {
+  "building": {
+   "tris": [
+    300,
+    1500
+   ],
+   "verts": [
+    200,
+    800
+   ]
+  }
+ },
+ "zones": {
+  "ash": "ash",
+  "beam": "beam",
+  "board": "beam",
+  "board2": "timber",
+  "char": "char",
+  "dark": "dark",
+  "dirt": "dirt",
+  "iron": "iron",
+  "moss": "moss",
+  "plank": "plank",
+  "stone": "stone",
+  "stone2": "stone2",
+  "thatch": "thatch",
+  "thatch2": "thatch2",
+  "timber": "timber",
+  "wall": "wall"
+ }
+}

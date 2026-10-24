@@ -1,5 +1,5 @@
 {
- "path": "out/lc_0@4x.png",
+ "raw": "lc4x_x_0_raw.png",
  "anchor": [
   1412,
   1549
@@ -8,5 +8,7 @@
   2973,
   2528
  ],
- "ppu": 384.0
+ "ppu": 384.0,
+ "outline": true,
+ "dilate": 1
 }

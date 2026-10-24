@@ -1,0 +1,1392 @@
+/* hud.css — то, что лежит поверх карты во время партии: таблички, обзор,
+   подсказки, всплывающие сообщения и меню паузы.
+
+   Правило этого файла: интерфейс НЕ ЗАКРЫВАЕТ игру. Всё, что можно убрать с
+   дороги, убрано по углам, а подсказки сами уезжают через полминуты. */
+
+#hud {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  padding: 0;
+  animation: hud-in .45s ease both;
+}
+
+/* ------------------- HUD не ест клики по карте ---------------------- *
+ * Правило заказчика (2026-10-24): «у друзей на Windows тупо ЛКМ не
+ * работает». Одна из причин — вот эта строка, стоявшая здесь раньше:
+ *     #hud > * { pointer-events: auto; }
+ * Она делала целью мыши КАЖДЫЙ контейнер HUD, а не только кнопки: левый
+ * столбец (с табличками), правый угол, полоса подсказок внизу. Пустое место
+ * между табличками и вокруг них съедало клик — карта под ним не получала
+ * ничего. На маке окно большое и мёртвые поля незаметны; на ноутбуке с
+ * масштабом Windows 125–150 % их доля доходила до трети экрана, и это
+ * выглядело как «ЛКМ не работает».
+ *
+ * Теперь мышь пропускают ВСЕ контейнеры и подписи, а ловят только настоящие
+ * цели: кнопки, панели с прокруткой, обзор и поля ввода. Правило с id, потому
+ * что спорить приходится с `#hud > *`. */
+#hud > * { pointer-events: none; }
+#hud .plaque,
+#hud .build-menu,
+#hud .place-bar,
+#hud .edit-bar,
+#hud .debug-drawer.open,
+#hud .minimap-frame,
+#hud button,
+#hud input,
+#hud select,
+#hud textarea,
+#hud a { pointer-events: auto; }
+
+@keyframes hud-in { from { opacity: 0; } to { opacity: 1; } }
+
+.hud-top-left {
+  position: absolute;
+  left: 16px;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+  max-height: calc(100% - 24px);
+  padding-right: 4px;
+}
+
+/* Верхняя строка левого угла: добытые ресурсы и кнопка сведений. Она одна
+   стоит всегда — остальные таблички (выбранная постройка, наём) появляются
+   под ней и не двигают счётчик. */
+.hud-left-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/* Правая колонка под строкой ресурсов: табличка выбранной постройки и панель
+   найма. Прокручивается отдельно, чтобы в низком окне панель найма не уехала
+   за край. */
+.hud-left-col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+  padding-bottom: 2px;
+}
+
+/* --------------------------- добытые ресурсы --------------------------- *
+ * Строка ресурсов — единственное, что осталось от прежней таблички деревни
+ * на виду. Пока ресурс один — брёвна; рядом с числом стоит не значок из
+ * библиотеки, а настоящая охапка из игры: её собрал
+ * `game/tools/make_wood_icon.py` из той же геометрии, которую житель несёт из
+ * леса. Стиль — та же дощечка, что у табличек. */
+
+.res-bar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 13px 6px 9px;
+  border: 3px solid var(--wood-dark);
+  border-radius: 15px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .28), rgba(255, 255, 255, 0) 40%),
+    linear-gradient(180deg, var(--wood-lite), var(--wood) 70%, var(--wood-mid));
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, .30),
+    0 5px 0 rgba(74, 50, 32, .55),
+    0 10px 18px rgba(12, 32, 48, .30);
+}
+.res-title {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: #f0dcb4;
+  opacity: .9;
+}
+.res-icon {
+  display: block;
+  width: 43px;
+  height: 34px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 0 rgba(40, 24, 10, .35));
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.res-count {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 74px;
+  white-space: nowrap;
+}
+.res-count b {
+  display: inline-block;
+  font-size: 21px;
+  font-weight: 800;
+  color: #fff6d8;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 0 rgba(40, 24, 10, .55);
+}
+.res-count i {
+  font-style: normal;
+  font-size: 11.5px;
+  color: #f0dcb4;
+  opacity: .92;
+}
+/* Трата видна и без цифры: дощечка коротко вспыхивает. Рост числа и так
+   подпрыгивает (hud.js: paintLogs), а вот убыль заметить было бы нечем. */
+.res-bar.spend { animation: res-spend .38s ease; }
+@keyframes res-spend {
+  0%   { filter: none; }
+  35%  { filter: brightness(1.18) saturate(1.2); }
+  100% { filter: none; }
+}
+
+.drawer-btn { flex: 0 0 auto; }
+
+.hud-top-right {
+  position: absolute;
+  right: 16px;
+  top: 16px;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.net-badge {
+  align-self: flex-start;
+  padding: 6px 10px 5px;
+  border: 2px solid var(--wood-dark);
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 800;
+  line-height: 1;
+  color: #3f2c19;
+  background: linear-gradient(180deg, var(--sand-lite), var(--sand));
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .5), 0 3px 0 rgba(122, 85, 51, .45);
+  white-space: nowrap;
+  user-select: none;
+}
+.net-badge.bad {
+  color: #5b1e14;
+  background: linear-gradient(180deg, #ffc9a8, #e59b7c);
+  animation: net-badge-pulse 1.1s ease-in-out infinite;
+}
+@keyframes net-badge-pulse {
+  50% { filter: brightness(1.14); }
+}
+
+/* Наблюдатель: своя ратуша пала, партия идёт. Тот же размер, что у бейджа
+   связи, но спокойный серый — это не тревога. */
+.spectator-badge {
+  align-self: flex-start;
+  padding: 6px 10px 5px;
+  border: 2px solid var(--wood-dark);
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 800;
+  line-height: 1;
+  color: #3f2c19;
+  background: linear-gradient(180deg, #e8e0cf, #c9bda5);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .5), 0 3px 0 rgba(122, 85, 51, .45);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.hud-bottom-left {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+}
+
+/* ------------------------- клетка под курсором ------------------------- *
+ * Строка «12, 34 · Трава · роща» — то же самое, что генератор карт пишет в
+ * углу кадра. Стоит по низу посередине: там её видно и она никому не мешает —
+ * подсказки слева, обзор справа. Появляется только когда мышь над картой. */
+
+.cell-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border: 3px solid rgba(74, 50, 32, .8);
+  border-radius: 12px;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: #f3e6c8;
+  background: rgba(24, 19, 12, .52);
+  box-shadow: 0 6px 16px rgba(6, 24, 40, .3);
+}
+/* Строка ничего не перехватывает: полоска внизу не цель, под ней должно быть
+   можно и вести подсветку, и начать панораму. Правило оставлено явным, хотя
+   контейнеры HUD теперь и так пропускают мышь (см. шапку файла). */
+#hud > .cell-bar { pointer-events: none; }
+
+/* --------------------------- выбранная постройка --------------------------- *
+ * Табличка выбранного здания встаёт третьей в левой колонке — под жителем.
+ * Портрет в ней тот же кадр атласа, что стоит на карте, и это не украшение:
+ * у постройки три варианта и четыре поворота, и по картинке сразу видно, какая
+ * именно выбрана. */
+
+.build-plaque .plaque-icon {
+  /* Постройка выше человечка: под ней та же трава, но фон светлее неба —
+     крыша читается силуэтом, а не тонет в тёмном. */
+  width: 56px;
+  height: 56px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0) 0 76%, rgba(125, 199, 94, .95) 76% 100%),
+    linear-gradient(180deg, #e7f4fb, #b6dcef);
+}
+.build-plaque {
+  animation: plaque-in .26s var(--ease-pop) both;
+}
+/* «Править» в табличке: третий вход в правку (кроме удержания и двойного
+   клика). Кнопка не растягивает табличку на пол-экрана и стоит у правого края;
+   на узком окне текст таблички сжимается, а кнопка остаётся целой. */
+.plaque-edit {
+  flex: 0 0 auto;
+  align-self: center;
+  margin-left: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.build-plaque .plaque-text {
+  min-width: 0;         /* длинное имя сжимается, а не выдавливает кнопку */
+}
+@keyframes plaque-in {
+  from { transform: translateX(-14px) scale(.96); opacity: 0; }
+  to   { transform: translateX(0) scale(1); opacity: 1; }
+}
+
+/* -------------------------- сведения о деревне ------------------------- *
+ * Сид, портрет острова и список жителей — отладочная информация. Раньше она
+ * лежала в левом верхнем углу и закрывала карту; теперь живёт в выезжающей
+ * панели. Панель выезжает слева по кнопке «Деревня» или клавише T, а её
+ * содержимое — то же, что было на виду: имя острова, герб, все жители
+ * строками и кнопки «Следить» / «К жителю».
+ *
+ * Панель НЕ получает display: none в закрытом виде: ширина строк жителей
+ * должна оставаться настоящей (по ней приёмка ловит «список не разъехался»),
+ * а прячет её visibility и сдвиг. */
+
+.debug-drawer {
+  position: absolute;
+  left: 0;
+  top: 74px;
+  bottom: 16px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(334px, 88vw);
+  padding: 12px 12px 14px;
+  border: 4px solid var(--wood-dark);
+  border-left: 0;
+  border-radius: 0 20px 20px 0;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .26), rgba(255, 255, 255, 0) 26%),
+    repeating-linear-gradient(90deg,
+      rgba(122, 85, 51, .08) 0 2px, rgba(122, 85, 51, 0) 2px 15px),
+    linear-gradient(180deg, var(--wood-lite), var(--wood) 62%, var(--wood-mid));
+  box-shadow:
+    inset 0 4px 0 rgba(255, 255, 255, .30),
+    inset 0 -8px 0 rgba(74, 50, 32, .18),
+    10px 14px 28px rgba(6, 24, 40, .42);
+  transform: translateX(calc(-100% - 8px));
+  visibility: hidden;
+  pointer-events: none;
+  transition: transform .30s var(--ease-pop), visibility .30s;
+}
+.debug-drawer.open {
+  transform: none;
+  visibility: visible;
+  pointer-events: auto;
+}
+/* Панель выше подсказок и строки клетки, но ниже меню и паузы. */
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 2px;
+}
+.drawer-head b {
+  font-size: 17px;
+  font-weight: 800;
+  color: #3f2c19;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, .45);
+}
+.drawer-head .mini-btn { flex: 0 0 auto; }
+.debug-drawer .island-plaque {
+  width: 100%;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .30), rgba(255, 255, 255, 0) 40%),
+    linear-gradient(180deg, #f6e4c2, #e2c798 70%, #d3b381);
+}
+/* Сид на светлой дощечке — тёмным: в партии имя острова было светлым на
+   тёмном дереве, а здесь фон нарочно светлее, чтобы герб читался. */
+.debug-drawer .island-plaque .plaque-text b {
+  color: #3f2c19;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, .45);
+}
+.debug-drawer .island-plaque .plaque-text i {
+  color: #6b5236;
+  opacity: 1;
+}
+.drawer-actions {
+  display: flex;
+  gap: 8px;
+}
+.drawer-actions .icon-btn {
+  flex: 1;
+  height: 40px;
+  font-size: 14.5px;
+  padding: 0 8px;
+}
+/* Ниже кнопок — список жителей во всю высоту панели. Прокрутка своя: жителей
+   может стать больше, чем помещается, а панель не должна вылезать за экран. */
+.drawer-villagers {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+.drawer-sub {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 3px;
+}
+.drawer-sub b {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: #4a3220;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, .35);
+}
+.drawer-sub span {
+  padding: 1px 8px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #f0dcb4;
+  background: rgba(24, 19, 12, .38);
+}
+
+.villager-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 2px 2px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-height: 0;
+  flex: 1 1 auto;
+  max-height: none;
+  overflow-y: auto;
+}
+.villager-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 5px;
+  border-radius: 10px;
+  background: rgba(74, 50, 32, .20);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14);
+  transition: background .18s ease, box-shadow .18s ease;
+}
+/* Выбранный житель: тот, к кому ведут клавиши H и C (js/play.js: focus). */
+.villager-row.focused {
+  background: rgba(125, 199, 94, .38);
+  box-shadow: inset 0 0 0 2px rgba(255, 253, 242, .55);
+}
+.villager-row .face-wrap {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 38px;
+  border-radius: 8px;
+  overflow: hidden;
+  /* Та же сценка, что у большого портрета жителя: небо и трава под ногами. */
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0) 0 72%, rgba(125, 199, 94, .95) 72% 100%),
+    linear-gradient(180deg, #d9f0fb, #9fd2ea);
+  box-shadow: inset 0 0 0 2px rgba(74, 50, 32, .30);
+}
+.villager-row canvas { display: block; width: 100%; height: 100%; }
+.villager-who { display: flex; flex-direction: column; min-width: 0; line-height: 1.22; }
+.villager-who b { font-size: 13px; color: #fdf3d9; text-shadow: 0 1px 0 rgba(40, 24, 10, .6); }
+.villager-who i {
+  font-style: normal;
+  font-size: 11.5px;
+  color: #f0dcb4;
+  opacity: .92;
+  /* Состояние — одна строка: у «рубит дерево · 3.2 с» хвост важнее начала. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ------------------------- панель найма в лагере ------------------------- *
+ * Появляется, когда выбран лагерь лесоруба. Список жителей деревни с кнопкой
+ * на каждого: «Нанять» или «Уволить», а у кого нанять нельзя — выключенная
+ * кнопка и рядом причина словами из движка (Session.canHire). Молчащая
+ * выключенная кнопка — это загадка, а не интерфейс. */
+
+.hire-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  /* Ширина выбрана по строке, а не на глаз: имя жителя + пометка «здесь
+     работает» + кнопка — это 264 пикселя в самой длинной строке. Уже — и имя
+     обрезается многоточием («Житель …»), а это первое, что игрок читает. */
+  min-width: 252px;
+  max-width: 304px;
+  padding: 10px 12px 11px;
+  animation: plaque-in .26s var(--ease-pop) both;
+}
+.hire-head {
+  display: flex;
+  flex-wrap: wrap;               /* счётчик переезжает на вторую строку целиком */
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2px 10px;
+  margin-bottom: 8px;
+}
+.hire-head b {
+  font-size: 15px;
+  color: #fdf3d9;
+  text-shadow: 0 1px 0 rgba(40, 24, 10, .6);
+  white-space: nowrap;           /* «Лагерь / лесоруба» врозь не читается */
+}
+.hire-slots {
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #f0dcb4;
+  white-space: nowrap;
+  background: rgba(24, 19, 12, .34);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, .3);
+}
+/* Пакетные действия — в шапке панели, отдельной строкой на всю ширину. Это те
+   же кнопки, что у строк: --press и накладка :active::before общие
+   (css/base.css), поэтому у кромки они срабатывают так же. */
+.hire-batch {
+  flex: 1 0 100%;
+  display: flex;
+  gap: 6px;
+  margin: 2px 0 0;
+}
+.hire-batch-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 6px 7px;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.hire-batch-note {
+  flex: 1 0 100%;
+  margin: 0;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #7a4a20;
+}
+/* Заголовок группы в списке найма: «служат здесь», «свободны», «заняты».
+   Он не строка жителя и мышь не ловит — это подпись к следующим строкам. */
+.hire-group {
+  list-style: none;
+  margin: 2px 0 -2px;
+  padding: 0 3px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: #7b6142;
+  pointer-events: none;
+}
+.hire-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 38vh;
+  overflow-y: auto;
+}
+/* Строка панели — две полосы: сверху имя жителя и кнопка, снизу во всю ширину
+   прописка с занятием, под ней — причина отказа. В одну полосу «числится в доме
+   · рубит дерево» рядом с кнопкой не влезает и обрезается многоточием, а ради
+   этого текста панель и открывают. */
+.hire-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 3px 6px;
+  padding: 6px 7px;
+  border-radius: 11px;
+  background: rgba(255, 250, 238, .30);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .30);
+}
+/* Нанятый — зеленее: «здесь работает» видно и по строке, а не только по
+   подписи. */
+.hire-row.worker { background: rgba(125, 199, 94, .38); }
+/* Выбранный на карте житель подсвечен и здесь: строки пересобираются после
+   найма, и подсветка обязана пережить пересортировку. */
+.hire-row.focused {
+  outline: 2px solid rgba(255, 246, 216, .85);
+  outline-offset: -2px;
+  background: rgba(255, 250, 238, .52);
+}
+.hire-row.worker.focused { background: rgba(125, 199, 94, .55); }
+
+/* ------------------------------ войска -------------------------------- *
+ * Панель — такая же дощечка, как найм, но собрана в СТОЛБИК: шапка, список
+ * групп, кнопки приказа. Раньше у неё не было flex-direction: column, и дети
+ * .plaque (у него display:flex) выстраивались в строку — «Приказ» уезжал за
+ * правую кромку, список групп схлопывался в ноль, а «Стоп» пропадал.
+ *
+ * В шапке три кнопки выбора: «Всех», «Половина», «Сброс». Они делят ширину
+ * поровну (flex:1 1 0), поэтому ни одна не выходит за дощечку даже в узком
+ * окне. Строка группы — имя и «сколько есть / мест», ниже счётчик и «½
+ * группы»: половина от одной группы, а не от всего отряда. */
+.squad-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  min-width: 276px;
+  max-width: 328px;
+  padding: 9px 11px 11px;
+  animation: plaque-in .26s var(--ease-pop) both;
+}
+.squad-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 4px 6px;
+  margin-bottom: 8px;
+}
+.squad-head > b {
+  font-size: 15px;
+  color: #fdf3d9;
+  text-shadow: 0 1px 0 rgba(40, 24, 10, .6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.squad-head .hire-slots { justify-self: end; }
+.squad-close {
+  width: 24px;
+  height: 24px;
+  font-size: 14px;
+  border-radius: 8px;
+}
+.squad-batch {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+.squad-batch .hire-batch-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 6px 3px;
+  font-size: 11px;
+  letter-spacing: 0;
+}
+.squad-head .hire-batch-note {
+  grid-column: 1 / -1;
+  padding: 2px 7px;
+  border-radius: 7px;
+  font-size: 11px;
+  color: #3f2c19;
+  background: rgba(255, 250, 238, .34);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45);
+}
+.squad-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 2px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-height: 0;
+  max-height: 32vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.squad-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  gap: 2px 8px;
+  padding: 6px 7px;
+  border-radius: 11px;
+  background: rgba(255, 250, 238, .30);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .30);
+}
+.squad-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #fdf3d9;
+  text-shadow: 0 1px 0 rgba(40, 24, 10, .55);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.squad-total {
+  padding: 1px 6px;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff2c4;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: right;
+  background: rgba(24, 19, 12, .20);
+}
+.squad-controls {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+}
+.squad-controls .mini-btn { width: 30px; height: 28px; font-size: 16px; }
+.squad-controls .squad-half {
+  width: auto;
+  padding: 0 8px;
+  font-size: 11.5px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.squad-num {
+  min-width: 26px;
+  text-align: center;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  color: #fff2c4;
+  text-shadow: 0 1px 0 rgba(40, 24, 10, .6);
+}
+/* Приказ — главная кнопка строки, но не во всю ширину (иначе «Стоп» уезжает):
+   зелёная кнопка тянется, деревянная стоит по своему тексту. */
+.squad-actions {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  margin-top: 9px;
+}
+.squad-actions .play-btn.compact {
+  --press: 4px;
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  padding: 8px 10px;
+  font-size: 14px;
+  border-width: 3px;
+  border-radius: 11px;
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, .42),
+    inset 0 -5px 0 rgba(28, 74, 20, .30),
+    0 5px 0 var(--grass-deep);
+}
+.squad-actions .play-btn:active {
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, .34),
+    inset 0 -4px 0 rgba(28, 74, 20, .28),
+    0 1px 0 var(--grass-deep);
+}
+.squad-actions .hire-btn {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  font-size: 12.5px;
+}
+.squad-panel .squad-hint {
+  margin: 8px 0 0;
+  padding: 4px 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.3;
+  color: #fff4d6;
+  background: rgba(24, 19, 12, .34);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08);
+}
+#view.ordering { cursor: crosshair; }
+.hire-name {
+  grid-column: 1;
+  grid-row: 1;
+  font-size: 13px;
+  color: #3f2c19;
+  /* Имя не наезжает на пометку и кнопку справа: в узкой панели оно обрезается
+     многоточием, а не уезжает под них. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hire-info {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  font-style: normal;
+  font-size: 11px;
+  line-height: 1.25;
+  color: #6b5236;
+}
+.hire-mark {
+  padding: 1px 6px;
+  border-radius: 7px;
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 800;
+  color: #f4fff0;
+  white-space: nowrap;
+  background: linear-gradient(180deg, var(--grass), var(--grass-dark));
+  box-shadow: 0 1px 0 rgba(47, 100, 32, .6);
+}
+/* Пометка и кнопка стоят рядом справа от имени: «здесь работает [Уволить]». */
+.hire-actions { grid-column: 2; grid-row: 1; display: flex; align-items: center; gap: 6px; }
+/* Причина отказа: словами движка, а не «кнопка серая и всё». */
+.hire-why {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #7a4a20;
+}
+.hire-btn {
+  --press: 3px;
+  flex: 0 0 auto;
+  padding: 6px 11px;
+  font-size: 12.5px;
+  border-width: 3px;
+  border-radius: 11px;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .55), 0 3px 0 var(--wood-dark);
+}
+.hire-btn:active { transform: translateY(var(--press)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), 0 1px 0 var(--wood-dark); }
+/* Выключенная кнопка отличается не только курсором: у неё и цвет другой —
+   «нанять нельзя» видно с одного взгляда, а причина написана рядом. */
+.hire-btn:disabled {
+  cursor: not-allowed;
+  color: #8a7358;
+  border-color: rgba(122, 85, 51, .55);
+  background: linear-gradient(180deg, #efe4cb, #d9cbaa 60%, #cbbb98);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .35), 0 3px 0 rgba(74, 50, 32, .35);
+  transform: none;
+}
+.hire-note {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: #7a4a20;
+}
+
+/* --------------------------- меню построек --------------------------- *
+ * Список того, что можно купить за брёвна. Карточка — портрет постройки из её
+ * атласа (тот кадр, который встанет на карту), имя, пятно, цена и кнопка.
+ * Сколько стоит и хватает ли брёвен, решает `Play.buildOptions`, а не HUD:
+ * здесь только раскладка готового ответа по экрану.
+ *
+ * Меню висит справа, под кнопкой «Стройка», и не перекрывает обзор: обзор
+ * внизу справа, а меню выше него. */
+
+.build-menu {
+  position: absolute;
+  right: 16px;
+  top: 74px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  width: min(348px, 92vw);
+  max-height: calc(100% - 100px);
+  padding: 12px 12px 11px;
+  border: 4px solid var(--wood-dark);
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .26), rgba(255, 255, 255, 0) 26%),
+    repeating-linear-gradient(90deg,
+      rgba(122, 85, 51, .08) 0 2px, rgba(122, 85, 51, 0) 2px 15px),
+    linear-gradient(180deg, var(--wood-lite), var(--wood) 62%, var(--wood-mid));
+  box-shadow:
+    inset 0 4px 0 rgba(255, 255, 255, .30),
+    inset 0 -8px 0 rgba(74, 50, 32, .18),
+    0 10px 24px rgba(6, 24, 40, .40);
+  animation: build-in .24s var(--ease-pop) both;
+}
+@keyframes build-in {
+  from { opacity: 0; transform: translateX(16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.build-menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 2px;
+}
+.build-menu-head b {
+  font-size: 17px;
+  font-weight: 800;
+  color: #3f2c19;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, .45);
+}
+.build-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 2px 2px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+}
+.build-card {
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  gap: 2px 9px;
+  align-items: center;
+  padding: 7px 8px;
+  border-radius: 13px;
+  background: rgba(255, 250, 238, .34);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .34);
+}
+.build-card.poor { background: rgba(255, 250, 238, .20); }
+.build-preview {
+  grid-column: 1;
+  grid-row: 1 / 3;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 68px;
+  height: 52px;
+  border-radius: 10px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0) 0 74%, rgba(125, 199, 94, .95) 74% 100%),
+    linear-gradient(180deg, #d9f0fb, #9fd2ea);
+  box-shadow: inset 0 0 0 2px rgba(74, 50, 32, .24);
+}
+.build-preview canvas { display: block; width: 100%; height: 100%; }
+.build-info { grid-column: 2; grid-row: 1; min-width: 0; }
+.build-info b {
+  display: block;
+  font-size: 14px;
+  line-height: 1.2;
+  color: #3f2c19;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.build-info i {
+  display: block;
+  font-style: normal;
+  font-size: 11px;
+  line-height: 1.25;
+  color: #6b5236;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.build-price {
+  grid-column: 3;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px 2px 3px;
+  border-radius: 9px;
+  background: rgba(24, 19, 12, .28);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, .26);
+}
+.build-price img { width: 25px; height: 20px; object-fit: contain; }
+.build-price b {
+  font-size: 14px;
+  font-weight: 800;
+  color: #fff6d8;
+  font-variant-numeric: tabular-nums;
+}
+.build-card .build-btn {
+  grid-column: 2 / 4;
+  grid-row: 2;
+  justify-self: stretch;
+  padding: 7px 10px;
+  font-size: 13px;
+  border-width: 3px;
+  border-radius: 10px;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .55), 0 3px 0 var(--wood-dark);
+}
+.build-card .build-btn:active {
+  transform: translateY(var(--press));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), 0 1px 0 var(--wood-dark);
+}
+.build-card .build-btn:disabled {
+  cursor: not-allowed;
+  color: #8a7358;
+  border-color: rgba(122, 85, 51, .55);
+  background: linear-gradient(180deg, #efe4cb, #d9cbaa 60%, #cbbb98);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .35), 0 3px 0 rgba(74, 50, 32, .35);
+  transform: none;
+}
+.build-menu-note {
+  margin: 0;
+  padding: 0 3px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: #4a3220;
+  opacity: .88;
+}
+
+/* ------------------------- полоса размещения ------------------------- *
+ * Постройка взята из меню и ходит за курсором. Полоса внизу по центру — там же,
+ * где полоса правки: игрок смотрит на низ экрана, ведя пятно мышью. Здесь
+ * только то, что относится к покупке: имя, цена и поворот/отмена. */
+
+.place-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 56px;
+  z-index: 5;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: min(420px, 90vw);
+  max-width: min(520px, 94vw);
+  padding: 9px 12px 11px;
+  border: 4px solid var(--wood-dark);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .30), rgba(255, 255, 255, 0) 42%),
+    linear-gradient(180deg, var(--wood-lite), var(--wood) 62%, var(--wood-mid));
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, .28),
+    0 8px 0 rgba(74, 50, 32, .5),
+    0 16px 26px rgba(6, 24, 40, .38);
+  animation: edit-in .24s var(--ease-pop) both;
+}
+.place-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 3px;
+}
+.place-head > b {
+  font-size: 15.5px;
+  font-weight: 800;
+  color: #fff6d8;
+  text-shadow: 0 2px 0 rgba(40, 26, 12, .55);
+  white-space: nowrap;
+}
+.place-price {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px 2px 4px;
+  border-radius: 9px;
+  background: rgba(24, 19, 12, .30);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, .28);
+}
+.place-price img { width: 25px; height: 20px; object-fit: contain; }
+.place-price b {
+  font-size: 15px;
+  font-weight: 800;
+  color: #fff6d8;
+  font-variant-numeric: tabular-nums;
+}
+.place-state {
+  padding: 0 3px;
+  font-size: 11.5px;
+  font-style: normal;
+  line-height: 1.3;
+  color: #f0dcb4;
+  text-shadow: 0 1px 0 rgba(40, 26, 12, .5);
+}
+.place-state.bad { color: #ffd0c2; }
+.place-actions {
+  display: flex;
+  gap: 8px;
+}
+.place-actions .wood-btn {
+  flex: 1;
+  padding: 8px 13px;
+  font-size: 13.5px;
+  border-radius: 11px;
+}
+
+/* --------------------------- «+4» над лагерем --------------------------- *
+ * Сдача брёвен: над лагерем всплывает «+4» и уезжает вверх. Это DOM поверх
+ * канваса, а не рисунок на нём: цифра живёт меньше секунды, и рисовать её в
+ * движке значило бы учить мир тому, что видно только игроку. */
+
+.gain {
+  position: absolute;
+  font-size: 22px;
+  font-weight: 800;
+  color: #fff6d8;
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+  text-shadow:
+    -2px 0 0 var(--outline), 2px 0 0 var(--outline),
+    0 -2px 0 var(--outline), 0 2px 0 var(--outline),
+    0 6px 12px rgba(6, 24, 40, .5);
+  animation: gain-rise .95s ease-out both;
+}
+/* Всплывашка «+4» — не цель для мыши: она висит над картой и сама улетает. */
+#hud > .gain { pointer-events: none; }
+@keyframes gain-rise {
+  0%   { opacity: 0; transform: translate(-50%, -30%) scale(.72); }
+  22%  { opacity: 1; transform: translate(-50%, -62%) scale(1.16); }
+  60%  { opacity: 1; transform: translate(-50%, -120%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -190%) scale(1); }
+}
+
+/* ----------------------------- подсказки ----------------------------- *
+ * Полоса клавиш. Она нужна первые полминуты, а потом только мешает: уезжает
+ * сама и возвращается, когда игрок ведёт мышью по низу экрана. */
+
+.hint-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  max-width: 460px;
+  /* Подсказки — текст, а не кнопки: клик по ним должен достаться карте.
+     Раньше полоса была целью мыши, и на неё уходили клики в нижнем левом углу;
+     на ноутбуке с масштабом Windows это до четверти экрана. */
+  pointer-events: none;
+  padding: 9px 14px;
+  border: 3px solid rgba(74, 50, 32, .8);
+  border-radius: 14px;
+  font-size: 12.5px;
+  color: #f3e6c8;
+  background: rgba(24, 19, 12, .52);
+  box-shadow: 0 6px 16px rgba(6, 24, 40, .3);
+  transition: opacity .5s ease, transform .5s ease;
+}
+.hint-bar b {
+  color: #fff6d8;
+  padding: 1px 6px;
+  margin-right: 2px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .14);
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .3);
+}
+.hint-bar.faded { opacity: 0; transform: translateY(14px); pointer-events: none; }
+
+/* ------------------------------ обзор ------------------------------ */
+
+.minimap-frame {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  padding: 8px 8px 4px;
+  border: 4px solid var(--wood-dark);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .26), rgba(255, 255, 255, 0) 40%),
+    linear-gradient(180deg, var(--wood-lite), var(--wood) 62%, var(--wood-mid));
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, .3),
+    0 8px 0 rgba(74, 50, 32, .5),
+    0 16px 26px rgba(6, 24, 40, .38);
+}
+#mm {
+  display: block;
+  width: 192px;
+  height: 192px;
+  border: 3px solid var(--wood-deep);
+  border-radius: 12px;
+  background: var(--sea-deep);
+  cursor: crosshair;
+  box-shadow: inset 0 3px 10px rgba(4, 18, 32, .55);
+}
+/* Строка под обзором: приблизить, надпись, отдалить. Кнопки зума стоят
+   здесь, а не в верхнем углу: обзор — это про «где я и как близко», и
+   управление близостью логично лежит там же. */
+.mm-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 5px;
+}
+.mm-caption {
+  flex: 1;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: #4a3220;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, .35);
+}
+.mini-btn {
+  --press: 2px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--wood-dark);
+  border-radius: 9px;
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1;
+  color: #43301c;
+  background: linear-gradient(180deg, var(--sand-lite), var(--sand) 60%, var(--sand-dark));
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .55), 0 3px 0 var(--wood-dark);
+  transition: transform .09s ease, box-shadow .09s ease, filter .15s ease;
+}
+.mini-btn:hover { filter: brightness(1.06); }
+.mini-btn:active { transform: translateY(var(--press)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), 0 1px 0 var(--wood-dark); }
+
+/* --------------------------- правка постройки --------------------------- *
+ * Полоса правки: низ по центру, над строкой клетки. Место выбрано по руке —
+ * игрок только что вёл постройку мышью по низу экрана, и кнопки должны быть
+ * там же, где было действие; слева таблички, справа обзор, и обоих полоса не
+ * касается. Собрана она как остальные «дощечки»: толстый тёмно-коричневый
+ * контур, жёсткая тень вниз, светлая полоса сверху. */
+
+.edit-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 56px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 9px 12px 11px;
+  border: 4px solid var(--wood-dark);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .3), rgba(255, 255, 255, 0) 42%),
+    linear-gradient(180deg, var(--wood-lite), var(--wood) 62%, var(--wood-mid));
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, .28),
+    0 8px 0 rgba(74, 50, 32, .5),
+    0 16px 26px rgba(6, 24, 40, .38);
+  /* Своя анимация, а не общая plaque-in: та анимирует transform, а у полосы
+     transform — это центрирование (translateX(-50%)). С общей анимацией
+     полоса съезжала вправо на половину своей ширины, и «Отменить» уходила за
+     край экрана. */
+  animation: edit-in .24s var(--ease-pop) both;
+}
+@keyframes edit-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+.edit-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 0 4px;
+}
+.edit-head b {
+  font-size: 15px;
+  font-weight: 800;
+  color: #fff6d8;
+  text-shadow: 0 2px 0 rgba(40, 26, 12, .55);
+}
+/* Строка состояния — что сейчас с постройкой: ведут её или она стоит, есть ли
+   правки и что мешает их применить. Числом и словами движка, не нашими. */
+.edit-head i {
+  font-size: 11.5px;
+  font-style: normal;
+  color: #f0dcb4;
+  text-shadow: 0 1px 0 rgba(40, 26, 12, .5);
+}
+.edit-actions {
+  display: flex;
+  gap: 8px;
+}
+/* Кнопки полосы мельче обычных «дощечек»: их пять в ряд, и крупные не влезли
+   бы в узкое окно. */
+.edit-btn {
+  padding: 9px 13px;
+  font-size: 14px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+.edit-actions .play-btn.compact {
+  width: auto;
+  padding: 9px 15px;
+  font-size: 15px;
+  border-width: 3px;
+  border-radius: 12px;
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, .42),
+    inset 0 -5px 0 rgba(28, 74, 20, .30),
+    0 5px 0 var(--grass-deep);
+}
+/* Кнопка, которой действие запрещено (ратушу снести нельзя). Она не выключена
+   молча: нажатие объясняет причину словами движка, поэтому у неё только
+   приглушённый вид и aria-disabled, а не disabled. */
+.edit-btn[aria-disabled="true"] {
+  filter: saturate(.55) brightness(.92);
+  opacity: .78;
+}
+.edit-btn.active { filter: brightness(1.12); }
+/* Предупреждение (растительность рядом) — жёлтая строка внизу полосы. Это не
+   запрет: применить правку она не мешает. */
+.edit-note {
+  margin: 0;
+  padding: 5px 9px;
+  border-radius: 9px;
+  font-size: 11.5px;
+  color: #4a3220;
+  background: rgba(255, 214, 128, .9);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .45);
+}
+
+/* --------------------------- всплывашки --------------------------- */
+
+#toasts {
+  position: absolute;
+  left: 50%;
+  top: 18px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 6;
+  pointer-events: none;
+}
+.toast {
+  padding: 10px 20px;
+  border: 3px solid var(--wood-dark);
+  border-radius: 14px;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #3f2c19;
+  white-space: nowrap;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .5), rgba(255, 255, 255, 0) 46%),
+    linear-gradient(180deg, var(--sand-lite), var(--sand) 60%, var(--sand-dark));
+  box-shadow: inset 0 3px 0 rgba(255, 255, 255, .55), 0 5px 0 rgba(122, 85, 51, .6), 0 12px 20px rgba(6, 24, 40, .3);
+  animation: toast-in .34s var(--ease-pop) both;
+}
+.toast.out { animation: toast-out .3s ease forwards; }
+@keyframes toast-in {
+  from { transform: translateY(-18px) scale(.94); opacity: 0; }
+  to   { transform: translateY(0) scale(1); opacity: 1; }
+}
+@keyframes toast-out {
+  to { transform: translateY(-14px) scale(.96); opacity: 0; }
+}
+
+/* ------------------------------ пауза ------------------------------ */
+
+#pause { z-index: 7; }
+/* Итог боя и экран потери хоста лежат поверх меню партии: игрок должен
+   увидеть, что случилось, даже если меню было открыто. */
+#result { z-index: 8; }
+#pause::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 60% 55% at 50% 45%, rgba(9, 30, 48, .55), rgba(6, 22, 36, .86) 85%);
+  backdrop-filter: blur(2px);
+  animation: veil-in .3s ease both;
+}
+
+.pause-board {
+  position: relative;
+  width: min(460px, 92vw);
+  padding: 26px 30px 28px;
+  animation: board-rise .34s var(--ease-pop) both;
+}
+
+.pause-stats {
+  display: grid;
+  gap: 7px;
+  margin: 0 0 22px;
+  padding: 14px 16px;
+  border: 3px solid rgba(122, 85, 51, .5);
+  border-radius: 14px;
+  background: rgba(255, 250, 238, .45);
+  box-shadow: inset 0 2px 6px rgba(122, 85, 51, .18);
+}
+.pause-stats > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  font-size: 14px;
+  color: #6b5236;
+}
+.pause-stats b { color: #3f2c19; font-weight: 800; }
+
+/* Строка под заголовком «Меню»: объясняет, что это не остановка. */
+.pause-note {
+  margin: -8px 0 16px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  text-align: center;
+  color: #6b5236;
+}
+
+.pause-buttons { display: grid; gap: 12px; }
+
+/* --------------------------- мелкие экраны --------------------------- */
+
+@media (max-width: 900px) {
+  #mm { width: 132px; height: 132px; }
+  .hint-bar { display: none; }
+  /* Строка клетки встаёт над обзором и не наезжает на него. */
+  .cell-bar { bottom: 12px; font-size: 11.5px; padding: 5px 10px; }
+  /* Полоса правки и полоса размещения: в узком окне кнопки переносятся на
+     вторую строку, а сами полосы поднимаются выше — строка клетки тут ниже. */
+  .edit-bar { bottom: 46px; padding: 8px 10px 9px; }
+  .edit-actions { flex-wrap: wrap; justify-content: center; max-width: 78vw; }
+  .edit-btn { padding: 7px 10px; font-size: 12.5px; }
+  .place-bar { bottom: 46px; padding: 8px 10px 9px; min-width: min(360px, 92vw); }
+  /* Выезжающая панель на узком окне занимает почти всю ширину: строка жителя
+     должна оставаться читаемой. */
+  .debug-drawer { width: 92vw; top: 70px; padding: 10px 10px 12px; }
+  .villager-row { padding: 2px 4px; }
+  .villager-row .face-wrap { width: 26px; height: 33px; }
+  .villager-who b { font-size: 12.5px; }
+  .villager-who i { font-size: 11px; }
+  /* Шире, чем в полном окне, быть не может (колонка узкая), а уже — имя жителя
+     уезжает под пометку «здесь работает»: 256 хватает и имени, и пометке, и
+     кнопке. */
+  .hire-panel { min-width: 256px; max-width: 286px; padding: 9px 10px 10px; }
+  .hire-row { gap: 2px 6px; padding: 5px 6px; }
+  .hire-head b { font-size: 14px; }
+  .hire-slots { font-size: 11px; }
+  .hire-info { font-size: 10.5px; }
+  .hire-list { max-height: 34vh; }
+  .build-menu { right: 10px; width: 92vw; top: 70px; }
+  .res-bar { padding: 5px 10px 5px 7px; gap: 7px; }
+  .res-icon { width: 37px; height: 30px; }
+  .res-count b { font-size: 19px; }
+  .res-count { min-width: 66px; }
+  .drawer-btn { padding: 0 9px; font-size: 14px; }
+}
+
+/* Низкое окно: колонка табличек выше экрана — списки поджимаются, у каждого
+   своя прокрутка. Панель найма при этом видна целиком: она за тем и нужна.
+   Порог 660, а не 720: при 720 колонка из четырёх табличек ещё помещается
+   (проверено приёмкой в окне 760 x 720), и поджимать там нечего. */
+@media (max-height: 660px) {
+  .hire-list { max-height: 24vh; }
+  .debug-drawer { top: 66px; bottom: 10px; gap: 7px; }
+  .drawer-actions .icon-btn { height: 36px; }
+  .build-menu { top: 66px; max-height: calc(100% - 82px); }
+}

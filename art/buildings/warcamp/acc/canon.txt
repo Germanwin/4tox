@@ -1,0 +1,96 @@
+{
+ "parts": 57,
+ "verts": 670,
+ "tris": 978,
+ "families": {
+  "beam": {
+   "parts": 6,
+   "tris": 128
+  },
+  "dark": {
+   "parts": 7,
+   "tris": 124
+  },
+  "dirt": {
+   "parts": 1,
+   "tris": 44
+  },
+  "iron": {
+   "parts": 12,
+   "tris": 231
+  },
+  "plank": {
+   "parts": 6,
+   "tris": 100
+  },
+  "stone": {
+   "parts": 5,
+   "tris": 61
+  },
+  "stone2": {
+   "parts": 5,
+   "tris": 52
+  },
+  "thatch": {
+   "parts": 3,
+   "tris": 56
+  },
+  "timber": {
+   "parts": 12,
+   "tris": 182
+  }
+ },
+ "bbox": {
+  "x": [
+   -1.254,
+   1.254
+  ],
+  "y": [
+   -1.254,
+   1.254
+  ],
+  "z": [
+   0.0,
+   2.525
+  ]
+ },
+ "size": [
+  2.508,
+  2.508,
+  2.525
+ ],
+ "tiers": {
+  "plinth_top": 0.055,
+  "wall_top": 1.12,
+  "ridge": null,
+  "roof_top": 2.525
+ },
+ "pitch_deg": null,
+ "over_slope": 0.0,
+ "over_end": 0.0,
+ "over_slope_ratio": 0.0,
+ "over_end_ratio": 0.0,
+ "roof_wall_ratio": null,
+ "box": {
+  "x": [
+   -1.2542330364981813,
+   1.2542330364981813
+  ],
+  "y": [
+   -1.2542330364981813,
+   1.2542330364981813
+  ],
+  "z": [
+   0.0,
+   2.525
+  ]
+ },
+ "normal_issues": [],
+ "normal_issue_count": 0
+}
+--- канон ---
+OK   полигонаж 978 в бюджете класса yard 300..1500
+OK   высота постройки 2.52 (канон 1.50..2.60)
+OK   габарит 2.51 x 2.51 в пятне 2x2 (запас 0.03)
+OK   деталей мельче 0.02 — 0
+ИТОГ: ПРИНЯТО

@@ -1,0 +1,14 @@
+{
+ "raw": "sh4x_x_0_raw.png",
+ "anchor": [
+  1453,
+  1936
+ ],
+ "size": [
+  2906,
+  3106
+ ],
+ "ppu": 384.0,
+ "outline": true,
+ "dilate": 1
+}

@@ -1,0 +1,3 @@
+{"variant": "k", "anims": "idle", "frames": [0],
+ "rotations": [0, 90, 180, 270], "samples": 32, "ppu": 96, "res": [144, 192],
+ "export": true, "save_blend": true, "viewport": true, "tag": "av"}

@@ -1,0 +1,25 @@
+{
+ "scene": "ruins",
+ "prefix": "rn_",
+ "frames": {
+  "house": {
+   "ppu": 96.0,
+   "parts": 88,
+   "objects": 88
+  }
+ },
+ "el_deg": 35.264389682754654,
+ "az_deg": 45.0,
+ "sun": [
+  -0.36108487844467163,
+  0.3009040653705597,
+  0.8826518654823303
+ ],
+ "ppu": {
+  "townhall": 80.0,
+  "house": 96.0,
+  "lumbercamp": 96.0,
+  "barracks": 96.0,
+  "warcamp": 96.0
+ }
+}

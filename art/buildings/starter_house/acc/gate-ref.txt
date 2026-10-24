@@ -1,0 +1,45 @@
+17:30:01 | INFO: Data are loaded, start creating Blender stuff
+17:30:01 | INFO: Blender create Mesh node belfry_bell
+17:30:01 | INFO: Blender create Mesh node belfry_dark
+17:30:01 | INFO: Blender create Mesh node belfry_frame
+17:30:01 | INFO: Blender create Mesh node door_arch
+17:30:01 | INFO: Blender create Mesh node door_hole
+17:30:01 | INFO: Blender create Mesh node door_leaf
+17:30:01 | INFO: Blender create Mesh node door_ring
+17:30:01 | INFO: Blender create Mesh node frame
+17:30:01 | INFO: Blender create Mesh node gable
+17:30:01 | INFO: Blender create Mesh node plinth
+17:30:01 | INFO: Blender create Mesh node plinth_moss
+17:30:01 | INFO: Blender create Mesh node plinth_top
+17:30:01 | INFO: Blender create Mesh node ridge
+17:30:01 | INFO: Blender create Mesh node roof
+17:30:01 | INFO: Blender create Mesh node roof_battens
+17:30:01 | INFO: Blender create Mesh node roof_end
+17:30:01 | INFO: Blender create Mesh node roof_patch
+17:30:01 | INFO: Blender create Mesh node stones
+17:30:01 | INFO: Blender create Mesh node walls
+17:30:01 | INFO: Blender create Mesh node win_hole
+17:30:01 | INFO: Blender create Mesh node win_hole.001
+17:30:01 | INFO: Blender create Mesh node win_shut
+17:30:01 | INFO: Blender create Mesh node win_shut.001
+17:30:01 | INFO: glTF import finished in 0.01s
+/Users/hermmoment/.dsh/skills/3d-model-acceptance/scripts/gate.py:611: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+  if not mat or not mat.use_nodes:
+Blender 5.2.0 LTS (hash fbe6228777e7 built 2026-07-14 01:31:22)
+[ info ] C1_INVENTORY   деталей 575, трис 1124, материалов 10, габарит 4.251 x 3.579 x 3.203, земля z=-0.265
+[ info ] C1_INVENTORY   порог примыкания 0.0425, порог «висит» 0.1063, земля 0.000, коридор проёма 0.120
+[ info ] C3_GROUND      на земле 244 деталей из 575
+[  ok  ] C2_PRIMITIVES  остатков примитивов и дефолтных материалов нет
+[ info ] C12_GROUPS     тел в модели: 1; главное — 575 деталей; отдельно: нет
+[  ok  ] C4_HANGING     все 575 деталей на земле или примкнуты к опоре (зазор <= 0.043)
+[ WARN ] C5_PLINTH      наземные детали (178, по именам) выходят за стены (порог не задан): -X 0.078, +X 0.192, -Y 0.481, +Y 0.201
+      виновники: plinth#1 (+0.195), plinth#2 (+0.190), plinth#4 (+0.195), plinth#5 (+0.152), plinth#6 (+0.179), plinth#7 (+0.179), plinth#8 (+0.171), plinth#11 (+0.179), plinth#12 (+0.167), plinth#14 (+0.191) | порог не задан в spec: смотреть глазами
+[ info ] C7_OPENINGS    проёмы канона на месте: door_arch#0, door_arch#1, door_arch#2, door_arch#3, door_arch#4, door_arch#5
+[  ok  ] C7_OPENINGS    у каждого полотна (door_leaf#1, door_leaf#2, door_leaf#4, door_leaf#5, door_leaf#7, door_leaf#8) есть проём и примыкание к стене
+[  ok  ] C8_COPLANAR    совпадающих плоскостей нет
+[  ok  ] C9_MESH        нулевых граней и висячих вершин нет
+[ WARN ] C9_MESH        вывернутые замкнутые детали (нормали внутрь): belfry_bell#2, belfry_bell#4, belfry_bell#9, belfry_bell#10, belfry_bell#11, belfry_bell#12, belfry_bell#14, belfry_bell#15
+[  ok  ] C10_PALETTE    все 10 материалов в палитре канона (Δ <= 26, пространство raw)
+[ WARN ] C11_FOOTPRINT  основание стоит не по середине пятна: смещение 0.107
+
+GATE: PASS — проверок 14, провалов 0, предупреждений 3

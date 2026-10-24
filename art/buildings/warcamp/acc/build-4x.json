@@ -1,0 +1,86 @@
+{
+ "ppu": 384.0,
+ "res": [
+  2048,
+  2560
+ ],
+ "scene": "warcamp",
+ "prefix": "wc_",
+ "el_deg": 35.264389682754654,
+ "az_deg": 45.0,
+ "sun": [
+  -0.36108487844467163,
+  0.3009040653705597,
+  0.8826518654823303
+ ],
+ "frames": {
+  "wc4x_x_0": {
+   "variant": null,
+   "rotation": 0,
+   "raw": "/Users/hermmoment/coding/4tox/art/buildings/warcamp/renders/wc4x_x_0_raw.png",
+   "tris": 978,
+   "verts": 670,
+   "parts": 57,
+   "size": [
+    2.508,
+    2.508,
+    2.525
+   ],
+   "footprint": [
+    2.508,
+    2.508
+   ]
+  },
+  "wc4x_x_90": {
+   "variant": null,
+   "rotation": 90,
+   "raw": "/Users/hermmoment/coding/4tox/art/buildings/warcamp/renders/wc4x_x_90_raw.png",
+   "tris": 978,
+   "verts": 670,
+   "parts": 57,
+   "size": [
+    2.508,
+    2.508,
+    2.525
+   ],
+   "footprint": [
+    2.508,
+    2.508
+   ]
+  },
+  "wc4x_x_180": {
+   "variant": null,
+   "rotation": 180,
+   "raw": "/Users/hermmoment/coding/4tox/art/buildings/warcamp/renders/wc4x_x_180_raw.png",
+   "tris": 978,
+   "verts": 670,
+   "parts": 57,
+   "size": [
+    2.508,
+    2.508,
+    2.525
+   ],
+   "footprint": [
+    2.508,
+    2.508
+   ]
+  },
+  "wc4x_x_270": {
+   "variant": null,
+   "rotation": 270,
+   "raw": "/Users/hermmoment/coding/4tox/art/buildings/warcamp/renders/wc4x_x_270_raw.png",
+   "tris": 978,
+   "verts": 670,
+   "parts": 57,
+   "size": [
+    2.508,
+    2.508,
+    2.525
+   ],
+   "footprint": [
+    2.508,
+    2.508
+   ]
+  }
+ }
+}

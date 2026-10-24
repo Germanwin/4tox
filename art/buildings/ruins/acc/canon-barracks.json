@@ -1,0 +1,98 @@
+{
+ "parts": 74,
+ "verts": 658,
+ "tris": 959,
+ "families": {
+  "ash": {
+   "parts": 2,
+   "tris": 33
+  },
+  "beam": {
+   "parts": 2,
+   "tris": 24
+  },
+  "char": {
+   "parts": 15,
+   "tris": 170
+  },
+  "iron": {
+   "parts": 4,
+   "tris": 54
+  },
+  "moss": {
+   "parts": 3,
+   "tris": 28
+  },
+  "plank": {
+   "parts": 6,
+   "tris": 52
+  },
+  "stone": {
+   "parts": 16,
+   "tris": 163
+  },
+  "stone2": {
+   "parts": 4,
+   "tris": 21
+  },
+  "thatch": {
+   "parts": 4,
+   "tris": 80
+  },
+  "timber": {
+   "parts": 9,
+   "tris": 122
+  },
+  "wall": {
+   "parts": 9,
+   "tris": 212
+  }
+ },
+ "bbox": {
+  "x": [
+   -1.996,
+   1.996
+  ],
+  "y": [
+   -1.451,
+   1.483
+  ],
+  "z": [
+   0.0,
+   2.072
+  ]
+ },
+ "size": [
+  3.992,
+  2.934,
+  2.072
+ ],
+ "tiers": {
+  "plinth_top": 0.15,
+  "wall_top": 2.05,
+  "ridge": null,
+  "roof_top": 2.072
+ },
+ "pitch_deg": null,
+ "over_slope": 0.0,
+ "over_end": 0.0,
+ "over_slope_ratio": 0.0,
+ "over_end_ratio": 0.0,
+ "roof_wall_ratio": null,
+ "box": {
+  "x": [
+   -1.996,
+   1.996
+  ],
+  "y": [
+   -1.4506266344449725,
+   1.483338102732012
+  ],
+  "z": [
+   0.0,
+   2.072330781863075
+  ]
+ },
+ "normal_issues": [],
+ "normal_issue_count": 0
+}

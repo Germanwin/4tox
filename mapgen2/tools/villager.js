@@ -1,34 +1,32 @@
-/* villager.js — приёмка жителя в игре (нужен Chrome).
+/* villager.js — приёмка жителей в игре (нужен Chrome).
 
  * Проверяет то, что обещано игроку, а не то, что удобно проверить:
- *   1) атлас жителя загрузился и разобран: idle 6, walk 8, work 8 на ВОСЕМЬ
- *      поворотов (через 45°), общая с лесорубом клетка и общая крупность мира;
- *   2) житель в игре есть: один, на суше, вне пятна ратуши;
- *   3) его двигает сам игровой цикл, а не только тест;
- *   4) он идёт к БЛИЖАЙШЕМУ ДОСТИЖИМОМУ дереву и доходит до клетки рядом с
- *      ним — и за весь путь ни разу не встаёт ни в воду, ни в дерево, камень
- *      или дом: не «в конце пути», а на каждом шаге симуляции;
- *   5) идёт ПО ПРЯМОЙ, а не зигзагом по клеткам: если ничто не мешает, след
- *      отклоняется от прямой меньше чем на треть клетки, а если мешает — путь
- *      всё равно не длиннее кратчайшего клеточного (то есть обход ближайший,
- *      а не «какой-нибудь»);
- *   6) курс свободный (не только четыре оси), а кадр берётся ближайший из
- *      восьми: у курса 20° это поворот 0°, у 70° — поворот 45°;
- *   7) дойдя, он ПОВОРАЧИВАЕТСЯ НА ДЕРЕВО и больше не двигается — это
- *      отдельный прогон на 5 минут после остановки;
- *   8) ратушу он ОБХОДИТ: если ближайшее дерево лежит за ней, ни один шаг не
- *      попадает в её пятно, а путь не длиннее кратчайшего обхода;
- *   9) он НАРИСОВАН: сравнение кадра с выключенным слоем даёт пиксели ровно
- *      в том месте, где стоит спрайт, земля под ногами попадает в силуэт,
- *      и в экспорт PNG он тоже попадает;
- *  10) порядок глубины общий с деревьями и ратушей: в потоке отрисовки
- *      ключи x + y не убывают;
- *  11) тот же сид — тот же путь; после перегенерации карты он идёт к дереву
- *      НОВОГО острова, а не по клеткам старого.
+ *   1) атлас жителя загрузился и разобран: idle 6, walk 8, work 8, carry 8,
+ *      walk_axe 8 и carry_put 4 на ВОСЕМЬ поворотов (через 45°), общая с
+ *      лесорубом клетка и общая крупность мира; carry и walk_axe — циклы 12 к/с,
+ *      carry_put — не цикл (им житель сдаёт брёвна в лагере);
+ *   2) в начале партии РОВНО ТРИ жителя, у всех разные id («Житель №1», «№2»,
+ *      «№3»), все появились на суше, не в воде и не в пятне постройки;
+ *   3) прописка: вместимость дома жителя 4, трое в нём числятся, и список
+ *      жильцов сходится с v.home; когда жителей больше, чем мест (count = 6),
+ *      лишние остаются БЕЗДОМНЫМИ, и партия от этого не ломается;
+ *   4) за N смоделированных минут НИ ОДИН житель не срубил дерево: счётчик
+ *      деревьев в мире не менялся, анимации work не было ни кадра, дерево
+ *      целью не выбиралось, а состояние всё время wander (или stand — если
+ *      идти некуда);
+ *   5) каждый житель ни разу не отошёл от СВОЕГО ЯКОРЯ дальше WANDER_R = 10
+ *      клеток — замер максимума по кадрам, а не «на глаз»;
+ *   6) ни одного шага в воду, в дерево, камень или постройку — для всех трёх,
+ *      на каждом шаге симуляции (шаг — тот же, что в игровом цикле);
+ *   7) тот же сид — та же прогулка: у всех трёх;
+ *   8) скорость шага и рост человечка не изменились;
+ *   9) все три живые попадают в общий поток отрисовки по глубине, и все три
+ *      действительно нарисованы (пиксели кадра в габарите каждого спрайта);
+ *  10) после перегенерации карты жителей снова трое, и гуляют они по НОВОЙ
+ *      суше, а не по клеткам старого острова.
 
- * Кадры для глаза: крупный план жителя с сеткой, он рядом с ратушей и
- * деревьями, он под своим деревом, весь остров с нарисованным путём и путь
- * в обход ратуши.
+ * Кадры для глаза: крупный план жителя с сеткой, трое у своего дома, весь
+ * остров с тремя прогулками и кругом радиуса 10 вокруг якоря.
 
  * Запуск: node tools/villager.js [url]
  *        VILLAGER_MINUTES=2 node tools/villager.js     # короткий прогон
@@ -49,8 +47,9 @@ const OUT = path.join(__dirname, 'out');
 const PORT = 9700 + (process.pid % 200);
 const PROFILE = '/tmp/dsh-villager-' + process.pid;
 
-// Потолок прогона: житель идёт к дереву один раз и встаёт, поэтому это не
-// «сколько он гуляет», а «сколько ждём, если путь длинный». Шаги по 1/60 с.
+/* Сколько минут партии прожить в главном прогоне. Житель гуляет всё это время
+   и не делает ничего другого, поэтому «долго» здесь дешёвое: 10 минут втроих
+   — около четверти секунды счёта (замер без браузера: 224 мс). Шаги по 1/60 с. */
 const MINUTES = +(process.env.VILLAGER_MINUTES || 10);
 const DT = 1 / 60;
 
@@ -65,7 +64,26 @@ const chrome = spawn(CHROME, [
   '--headless=new', '--remote-debugging-port=' + PORT, '--user-data-dir=' + PROFILE,
   '--no-first-run', '--allow-file-access-from-files', '--hide-scrollbars',
   '--window-size=1400,900', 'about:blank'
-], { stdio: 'ignore' });
+], { stdio: 'ignore', detached: true });
+
+/* Гасим Chrome ЦЕЛОЙ ГРУППОЙ процессов.
+
+   kill по одному pid убивает только сам браузер, а его хелперы — рендерер,
+   GPU, утилиты — остаются жить: страница в них продолжает крутиться на 60
+   кадрах в секунду и есть процессор. Один прогон приёмки оставляет восемь
+   таких процессов, пять прогонов — сорок, и машина занята целиком: композитор
+   системы не успевает, и тормозит всё, включая игру в соседнем окне. Поэтому
+   браузер запускается отдельной группой (detached), а гасится её номер. */
+function killChrome() {
+  try { process.kill(-chrome.pid, 'SIGKILL'); } catch (e) { /* уже погашен */ }
+}
+
+/* И на прерывании тоже: Ctrl-C по длинной приёмке не должен оставлять
+   браузер работать. */
+['SIGINT', 'SIGTERM'].forEach(function (sig) {
+  process.on(sig, function () { killChrome(); process.exit(130); });
+});
+
 
 const getJSON = (u) => new Promise((res, rej) => {
   http.get(u, (r) => { let b = ''; r.on('data', (c) => b += c); r.on('end', () => res(JSON.parse(b))); }).on('error', rej);
@@ -114,7 +132,7 @@ const getJSON = (u) => new Promise((res, rej) => {
   await send('Page.navigate', { url });
   await new Promise(r => setTimeout(r, 3600));
 
-  console.log('житель в игре:');
+  console.log('жители в игре:');
 
   /* --- 1. атлас ------------------------------------------------------ */
   const atlas = await js(`(() => {
@@ -141,9 +159,17 @@ const getJSON = (u) => new Promise((res, rej) => {
   })()`);
   check('атлас жителя загрузился', !!atlas, atlas ? atlas.img.join('×') : 'нет');
   if (!atlas) { finish(); return; }
-  check('кадров 176: idle 6, walk 8, work 8 на восемь поворотов',
-    atlas.frames === 176 && atlas.idle === 6 && atlas.walk === 8 && atlas.rots.length === 8,
-    `${atlas.frames} кадров, поворотов ${atlas.rots.length}: ${atlas.rots.join('/')}`);
+  check('кадров 336: idle 6, walk 8, work 8, carry 8, walk_axe 8, carry_put 4 на восемь поворотов',
+    atlas.frames === 336 && atlas.idle === 6 && atlas.walk === 8 &&
+    !!(atlas.anims.carry && atlas.anims.carry.frames === 8 &&
+       atlas.anims.carry.loop === true && atlas.anims.carry.fps === 12 &&
+       atlas.anims.walk_axe && atlas.anims.walk_axe.frames === 8 &&
+       atlas.anims.walk_axe.loop === true &&
+       atlas.anims.carry_put && atlas.anims.carry_put.frames === 4 &&
+       atlas.anims.carry_put.loop === false) &&
+    atlas.rots.length === 8,
+    `${atlas.frames} кадров, поворотов ${atlas.rots.length}: ${atlas.rots.join('/')}, ` +
+    `анимации ${Object.keys(atlas.anims).map(k => k + ' ' + atlas.anims[k].frames).join(', ')}`);
   check('повороты идут через 45° — диагонали хода есть',
     atlas.rots.join(',') === '0,45,90,135,180,225,270,315', atlas.rots.join('/'));
   check('клетка и опора — как у лесоруба', atlas.cell.join('×') === '112×132' &&
@@ -158,14 +184,26 @@ const getJSON = (u) => new Promise((res, rej) => {
     '45° не совпал ни с 0°, ни с 90°');
   check('фаза меняет кадр внутри поворота', atlas.f0 !== atlas.f1, atlas.f0 + ' -> ' + atlas.f1);
 
-  /* --- 1b. рост человечка в игре ------------------------------------ *
+  /* --- 1b. рост и шаг человечка в игре ------------------------------- *
+   * Рост проверяется ЗАМЕРОМ, а не сверкой с константой: силуэт берётся из
+   * самого кадра атласа (верхняя непрозрачная строка против пикселя опоры), а
+   * рост переводится в клетки тем же scaleAt, которым рисует игра. Так одна и
+   * та же проверка поймает и правку атласа, и правку масштаба.
+   *
    * Заказчик (2026-10-13): «персонаж в игре слишком большой, уменьшить его в
-   * масштабе в 2.2 раза». Проверяется ЗАМЕРОМ, а не сверкой с константой:
-   * силуэт берётся из самого кадра атласа (верхняя непрозрачная строка против
-   * пикселя опоры), а рост переводится в клетки тем же scaleAt, которым рисует
-   * игра. Так одна и та же проверка поймает и правку атласа, и правку масштаба.
-   * Раньше (крупность растительности, 1.35) он был 1.18 клетки — выше дверного
-   * проёма дома (0.70) и вровень с карнизом (1.51). */
+   * масштабе в 2.2 раза». Тогда рост стал 0.54 клетки. Скорость шага —
+   * 1.26 кл/с из анимации, делённая на тот же множитель: 0.573. Оба числа
+   * решение игры, и прогулка их не меняет.
+   *
+   * 1.26 — ИЗМЕРЕННОЕ число, а не допущение (2026-10-16). Замер шага
+   * (villager/tools/gait_probe.py): опорная ступня проходит под тазом
+   * 0.286 юнита за полуцикл = 1.143 юн/с; 1 юнит = 78.4 px атласа, клетка =
+   * 96 px при крупности 1, значит 1 юнит = 78.4·1.35/96 = 1.102 клетки,
+   * отсюда 1.143·1.102 = 1.26. До этой правки замер давал 0.253 юнита и
+   * 0.51 кл/с — игра шла на 13% быстрее рисунка (ступни подъезжали); шаг
+   * анимации расширили и выровняли, а не подогнали скорость. Связь
+   * «шаг <-> SPEED» проверяет МАШИНА: gait_probe читает строку SPEED прямо из
+   * js/villager.js и падает при расхождении больше 3%. */
   const size = await js(`(() => {
     const g = window.__mapgen, V = window.Villagers, set = g.renderer.villagerSprites;
     const spr = V.sprite(set, { anim: 'idle', phase: 0, rot: 0 });
@@ -191,468 +229,314 @@ const getJSON = (u) => new Promise((res, rej) => {
   check('рост человечка — 0.54 клетки, в 2.2 раза мельче прежнего',
     size.shrink === 2.2 && Math.abs(size.now - 0.537) < 0.02 && Math.abs(size.was / size.now - 2.2) < 0.01,
     `${size.now.toFixed(3)} клетки (было ${size.was.toFixed(2)}, силуэт ${size.body} px из ${size.cell[1]})`);
+  /* Скорость: 1.26 кл/с — замер шага (ступня не едет), 1.1 — правило заказчика
+     «быстрее на 10% без ускорения анимации» (js/villager.js: SPEED_BOOST). Оба
+     множителя видны в коде игры, и оба тут проверяются: если кто-то поправит
+     один, приёмка покраснеет. Связь «замер шага <-> SPEED_STEP» машинно
+     проверяет villager/tools/gait_probe.py — он читает эти числа из файла. */
+  check('скорость шага — из анимации, +10% заказчика, замедлена тем же множителем',
+    Math.abs(size.speed - 1.26 * 1.1 / 2.2) < 1e-9, size.speed.toFixed(3) + ' клетки/с');
 
-  /* --- 2. житель в игре --------------------------------------------- */
+  /* --- 2. начало партии: три жителя ---------------------------------- *
+   * Требование заказчика (2026-10-16): «в начале партии появляются ТРИ жителя,
+   * у каждого есть идентификатор и прописка в доме». Проверяется всё, что тут
+   * сказано, и порознь: число, разные id, суша под ногами, отсутствие воды и
+   * пятна постройки под ними, дом как вместилище и прописка как поле жителя. */
   const born = await js(`(() => {
-    const g = window.__mapgen, w = g.getWorld(), list = g.getVillagers();
-    const v = list[0];
-    if (!v) return { n: 0 };
-    const B = window.Buildings, home = g.getBuildings()[0];
-    const cx = Math.floor(v.x), cy = Math.floor(v.y);
-    const inside = (b) => {
-      const bb = B.bounds(b);
-      return v.x >= bb.x0 && v.x < bb.x1 && v.y >= bb.y0 && v.y < bb.y1;
-    };
+    const g = window.__mapgen, w = g.getWorld(), B = window.Buildings, S = window.Session;
+    /* Жители появляются ЗАНОВО прямо здесь: страница открыта уже несколько
+       секунд, и за это время те, что вышли при загрузке, успели отойти от
+       дома. Проверка про появление обязана смотреть на появление, а не на
+       «где их застали». */
+    g.spawnVillagers(g.getBuildings()[0]);
+    const list = g.getVillagers(), builds = g.getBuildings();
+    const house = S.houseOf(builds);
+    const door = house ? B.frontSpot(house) : null;
+    const solid = window.Villagers.blockedMap(w, builds);
+    const cellsIn = new Set();
+    for (const b of builds) for (const c of B.cells(b)) cellsIn.add(c.x + ',' + c.y);
+    const cell = (v) => [Math.floor(v.x), Math.floor(v.y)];
     return {
-      n: list.length, pos: [v.x, v.y], cell: [cx, cy], rot: v.rot, anim: v.anim,
-      state: v.state,
-      // Цель выбрана СРАЗУ при появлении: дерево и путь к нему, без паузы.
-      tree: v.tree ? [v.tree.x, v.tree.y] : null,
-      goal: v.goal ? [v.goal.x, v.goal.y] : null,
-      points: v.path ? v.path.length : 0,
-      land: !!w.isLand[cy * w.width + cx],
-      water: w.distWater[cy * w.width + cx],
-      home: home ? [home.x, home.y] : null,
-      underHome: home ? inside(home) : false,
-      block: window.Villagers.blockedMap(w, g.getBuildings())[cy * w.width + cx],
-      speed: v.speed
+      n: list.length,
+      ids: list.map(v => v.id),
+      distinct: new Set(list.map(v => v.id)).size,
+      names: list.map(v => S.villagerName(v)),
+      states: list.map(v => v.state),
+      cells: list.map(cell),
+      distinctCells: new Set(list.map(v => cell(v).join(','))).size,
+      onLand: list.filter(v => w.isLand[cell(v)[1] * w.width + cell(v)[0]]).length,
+      inWater: list.filter(v => w.distWater[cell(v)[1] * w.width + cell(v)[0]] < 1).length,
+      blocked: list.filter(v => solid[cell(v)[1] * w.width + cell(v)[0]]).length,
+      inBuilding: list.filter(v => cellsIn.has(cell(v).join(','))).length,
+      houseType: house ? B.typeOf(house) : null,
+      capacity: B.housingCapacity(house),
+      housed: list.filter(v => v.home === house).length,
+      homeless: list.filter(v => v.home === null).length,
+      residents: S.residentsOf(house, list).length,
+      residentsMatch: S.residentsOf(house, list).every(v => v.home === house),
+      door: door ? [door.x, door.y] : null,
+      atDoor: list.filter(v => v.anchor &&
+        Math.abs(v.anchor.x - (door.x + 0.5)) < 1e-9 &&
+        Math.abs(v.anchor.y - (door.y + 0.5)) < 1e-9).length,
+      anchors: list.map(v => [v.anchor.x, v.anchor.y]),
+      trees: list.filter(v => !!v.tree).length,
+      walking: list.filter(v => v.path && v.path.length > 1).length,
+      radius: window.Villagers.WANDER_R
     };
   })()`);
-  check('в игре ровно один житель', born.n === 1, born.n + ' шт.');
-  check('он появился на суше', born.land === true, 'клетка ' + born.cell.join(','));
-  check('он не в воде и не в занятой клетке', born.block === 0 && born.water >= 1,
-    'вода на расстоянии ' + born.water + ' клеток');
-  check('он появился во дворе ратуши, а не в её пятне', born.underHome === false,
-    'ратуша ' + (born.home || []).join(',') + ', житель ' + born.cell.join(','));
-  check('цель выбрана сразу при появлении — дерево и путь к нему',
-    !!born.tree && (born.state !== 'toward' || born.points >= 2),
-    born.tree
-      ? `дерево ${born.tree.map(n => n.toFixed(1)).join(',')}, точек пути ${born.points}, состояние ${born.state}`
-      : 'дерева нет');
-  check('скорость шага — из анимации и замедлена тем же множителем',
-    Math.abs(born.speed - 1.26 / 2.2) < 1e-9, born.speed.toFixed(3) + ' клетки/с');
+  check('в начале партии ровно ТРИ жителя', born.n === 3, born.n + ' шт.');
+  check('у всех разные id, и зовут их «Житель №1», «№2», «№3»',
+    born.distinct === 3 && born.ids.join(',') === '1,2,3' &&
+      born.names.join(' · ') === 'Житель №1 · Житель №2 · Житель №3',
+    born.ids.join(',') + ' — ' + born.names.join(' · '));
+  check('все появились на суше, не в воде и не в пятне постройки',
+    born.onLand === 3 && born.inWater === 0 && born.blocked === 0 && born.inBuilding === 0,
+    `на суше ${born.onLand}, в воде ${born.inWater}, в занятой ${born.blocked}, в постройке ${born.inBuilding}`);
+  check('все трое вышли из дома и встали в разные клетки',
+    born.distinctCells === 3 && born.cells.every(c => Math.abs(c[0] - born.door[0]) <= 2 && Math.abs(c[1] - born.door[1]) <= 2),
+    'клетки ' + born.cells.map(c => c.join(',')).join(' · ') + ' против двери ' + born.door.join(','));
+  check('прописка: дом жителя вмещает 4 и трое в нём числятся',
+    born.houseType === 'house' && born.capacity === 4 && born.housed === 3 && born.residents === 3 &&
+      born.residentsMatch && born.homeless === 0,
+    `дом ${born.houseType}, вместимость ${born.capacity}, прописано ${born.housed}, ` +
+    `жильцов по выборке ${born.residents}, бездомных ${born.homeless}`);
+  check('якорь прогулки у каждого — клетка перед дверью своего дома',
+    born.atDoor === 3,
+    born.anchors.map(a => a.map(n => n.toFixed(1)).join(',')).join(' · ') +
+    ' против двери ' + born.door.join(','));
+  check('житель без работы дерево не ищет: цели нет ни у кого, а путь — прогулочный',
+    born.trees === 0 && born.walking === 3 && born.states.every(s => s === 'wander'),
+    `дерево-цель у ${born.trees}, путь есть у ${born.walking}, состояния ${born.states.join(',')}`);
+  check('радиус прогулки — правило заказчика: ' + born.radius + ' клеток', born.radius === 10, String(born.radius));
 
-  /* --- 3. его двигает сам игровой цикл ------------------------------- *
-   * Прогон ниже шагает симуляцию руками, и без этой проверки опечатка в
-   * вызове stepVillagers из loop() осталась бы незамеченной: житель стоял бы
-   * на месте в игре и ходил только в тесте. Если он уже успел дойти до дерева,
-   * его отправляют к дальней свободной клетке тем же путём, каким он ходит
-   * сам, — и смотрят, сдвинет ли его игровой цикл. */
+  /* --- 2б. вместимость и бездомные ----------------------------------- *
+   * Требование заказчика: дом первого уровня вмещает четырёх, и это свойство
+   * ПОСТРОЙКИ (Buildings.housingCapacity), а не жителя. Проверяется тем, что
+   * жителей ставят больше, чем мест: лишние обязаны остаться бездомными
+   * (v.home = null), а партия — не сломаться: они так же гуляют и так же не
+   * заходят в воду. */
+  const over = await js(`(() => {
+    const g = window.__mapgen, w = g.getWorld(), B = window.Buildings, S = window.Session;
+    const builds = g.getBuildings(), home = builds[0], house = S.houseOf(builds);
+    const six = S.spawnVillagers(w, g.renderer, builds, home, { count: 6 });
+    const solid = window.Villagers.blockedMap(w, builds);
+    const cell = (v) => [Math.floor(v.x), Math.floor(v.y)];
+    // Проживаем немного: бездомный — не «выключенный», он гуляет как все.
+    const before = six.map(v => [v.x, v.y]);
+    for (let i = 0; i < 60 * 20; i++) S.stepVillagers(six, w, g.renderer, ${DT}, builds);
+    const moved = six.map((v, i) => Math.hypot(v.x - before[i][0], v.y - before[i][1]));
+    const out = {
+      n: six.length,
+      entities: {
+        capacity: B.housingCapacity(house), houseType: B.typeOf(house),
+        townhall: B.housingCapacity(builds[0]), camp: B.housingCapacity(builds[2]),
+        junk: B.housingCapacity({ type: 'barn', level: 1 })
+      },
+      housed: six.filter(v => v.home === house).length,
+      homeless: six.filter(v => v.home === null).length,
+      homeIsHouse: six.filter(v => v.home && B.typeOf(v.home) === 'house').length,
+      homeowners: six.map(v => !!v.home),
+      anchors: six.map(v => [v.anchor.x, v.anchor.y]),
+      water: six.filter(v => !w.isLand[cell(v)[1] * w.width + cell(v)[0]] ||
+        solid[cell(v)[1] * w.width + cell(v)[0]]).length,
+      states: six.map(v => v.state),
+      moved: moved, minMoved: Math.min.apply(null, moved),
+      grew: six.map(v => v.id)
+    };
+    // Партия продолжается обычными тремя: шесть были проверкой, а не новым миром.
+    g.spawnVillagers(home);
+    return out;
+  })()`);
+  check('дом первого уровня вмещает ровно 4, остальные типы — 0',
+    over.entities.capacity === 4 && over.entities.townhall === 0 && over.entities.camp === 0 &&
+      over.entities.junk === 0,
+    `дом ${over.entities.capacity}, ратуша ${over.entities.townhall}, лагерь ${over.entities.camp}, ` +
+    `неизвестный тип ${over.entities.junk}`);
+  check('жителей больше, чем мест: лишние остаются бездомными (count = 6 → 4 + 2)',
+    over.n === 6 && over.housed === 4 && over.homeless === 2 && over.homeIsHouse === 4,
+    `${over.n} жителей: в доме ${over.housed}, бездомных ${over.homeless}, ` +
+    `прописка ${over.homeowners.map(h => h ? 'дом' : 'нет').join('/')}`);
+  check('бездомный не сломал партию: он живёт и гуляет как все',
+    over.water === 0 && over.minMoved > 0.5 && over.states.every(s => s === 'wander' || s === 'stand'),
+    `за 20 с сдвинулись на ${over.moved.map(m => m.toFixed(1)).join('/')} клетки, ` +
+    `в воде или занятом ${over.water}, состояния ${over.states.join(',')}`);
+  check('id идут по порядку появления и не повторяются',
+    over.grew.join(',') === '1,2,3,4,5,6', over.grew.join(','));
+  check('дом и после лишних жителей — по-прежнему дом',
+    (await js(`(() => {
+      const g = window.__mapgen, S = window.Session;
+      const list = g.getVillagers(), house = S.houseOf(g.getBuildings());
+      return list.length === 3 && S.residentsOf(house, list).length === 3;
+    })()`)),
+    'в партии снова трое, все прописаны');
+
+  /* --- 3. их двигает сам игровой цикл -------------------------------- *
+   * Прогоны ниже шагают симуляцию руками, и без этой проверки опечатка в
+   * вызове stepVillagers из цикла осталась бы незамеченной: жители стояли бы
+   * на месте в игре и ходили только в тесте. */
   const live = await js(`(async () => {
-    const g = window.__mapgen, V = window.Villagers, v = g.getVillagers()[0], w = g.getWorld();
-    // Он мог уже дойти и рубить: тогда его отправляют к дальней свободной
-    // клетке тем же путём, каким он ходит сам, — и смотрят, сдвинет ли его
-    // игровой цикл. Это проверка про ЦИКЛ, а не про состояние.
-    if (v.state !== 'toward') {
-      const solid = V.blockedMap(w, g.getBuildings());
-      const W = w.width, H = w.height;
-      for (let k = 0; k < W * H; k++) {
-        const x = k % W, y = (k / W) | 0;
-        if (Math.hypot(x - v.x, y - v.y) < 12) continue;
-        if (!V.walkable(w, solid, x, y)) continue;
-        if (V.routeTo(v, w, solid, x + 0.5, y + 0.5)) break;
-      }
-    }
-    const a = [v.x, v.y];
-    const anims = new Set([v.anim]);
-    let moved = 0;
+    const g = window.__mapgen, list = g.getVillagers();
+    const from = list.map(v => [v.x, v.y]);
+    const anims = new Set(list.map(v => v.anim));
+    let moved = [0, 0, 0];
     for (let i = 0; i < 48; i++) {
       await new Promise(r => setTimeout(r, 250));
-      anims.add(v.anim);
-      moved = Math.hypot(v.x - a[0], v.y - a[1]);
-      if (moved > 0.5) break;
+      for (let k = 0; k < list.length; k++) anims.add(list[k].anim);
+      moved = list.map((v, k) => Math.hypot(v.x - from[k][0], v.y - from[k][1]));
+      if (Math.min.apply(null, moved) > 0.5) break;
     }
-    return { moved: moved, anims: [...anims], walked: v.walked, state: v.state };
+    return { moved: moved, anims: [...anims], walked: list.map(v => v.walked),
+             states: list.map(v => v.state) };
   })()`);
-  check('его двигает сам игровой цикл, без вмешательства теста', live.moved > 0.5,
-    `сдвинулся на ${live.moved.toFixed(2)} клетки, анимации: ${live.anims.join(', ')}`);
+  check('всех трёх двигает сам игровой цикл, без вмешательства теста',
+    live.moved.every(m => m > 0.5),
+    `сдвинулись на ${live.moved.map(m => m.toFixed(2)).join('/')} клетки, анимации: ${live.anims.join(', ')}`);
 
-  /* --- 4. путь к дереву и остановка ---------------------------------- *
-   * Прогон шагает симуляцию сам (stepVillagers — тот же код, что в игровом
-   * цикле) и на КАЖДОМ шаге смотрит клетку под жителем: вода, дерево/камень и
-   * пятно постройки считаются отдельно, и ни одного такого шага быть не
-   * должно. Он это делает не потому, что «проверяем на каждом шаге», а потому
-   * что путь так посчитан: прямая не задевает занятых клеток (lineClear), а
-   * между точками пути живёт ровно одна прямая. */
+  /* --- 4. прогулка: N минут без рубки, в круге, по суше -------------- *
+   * Главный прогон. Шагает симуляцию сам (stepVillagers — тот же код, что в
+   * игровом цикле) и на КАЖДОМ шаге смотрит клетку под каждым жителем: вода,
+   * дерево/камень и пятно постройки считаются отдельно, и ни одного такого
+   * шага быть не должно. Он это делает не потому, что «проверяем на каждом
+   * шаге», а потому что путь так посчитан: прямая не задевает занятых клеток
+   * (lineClear), а между точками пути живёт ровно одна прямая.
+   *
+   * Здесь же меряется удаление от ЯКОРЯ (клетка перед дверью дома): требование
+   * заказчика — не дальше WANDER_R клеток. Меряется максимум по кадрам, а не
+   * «на глаз»: круг выпуклый, поэтому достаточно, чтобы в нём лежали точки
+   * маршрута (planWander), но проверить это обязан тест, а не рассуждение.
+   *
+   * Третье число — самое близкое расстояние до ствола за весь прогон. Рубка
+   * подходит к дереву на STAND_OFF = 0.30 (житель придвигается к коре), и
+   * «не подходил вплотную» значит «не подходил так, как подходит рубящий»:
+   * гуляющий ходит по свободным клеткам, а ствол стоит в СВОЕЙ клетке. */
   const STEPS = Math.round(MINUTES * 60 / DT);
   const sim = await js(`(() => {
-    const g = window.__mapgen, V = window.Villagers, w = g.getWorld();
-    // Начинаем с свежего жителя: иначе прогон зависит от того, сколько он уже
-    // прошёл в живом цикле, и числа не сравнить между запусками.
-    g.spawnVillagers(g.getBuildings()[0]);
-    const v = g.getVillagers()[0];
-    const solid = V.blockedMap(w, g.getBuildings());
-    const W = w.width, H = w.height;
-    const start = [v.x, v.y], startCell = [Math.floor(v.x), Math.floor(v.y)];
-    let water = 0, blocked = 0, outside = 0, badRot = 0, badAnim = 0, badPhase = 0;
-    let steps = 0;
-    const trail = [];
-    const dt = ${DT};
-    // Идёт он, пока состояние toward. Дошёл — состояние меняется (chop), и
-    // прогон останавливается на ПЕРВОМ приходе: дальше начинается рубка, и
-    // она меряется отдельно, ниже.
-    while (steps < ${STEPS} && v.state === 'toward') {
-      g.stepVillagers(dt);
-      steps++;
-      const cx = Math.floor(v.x), cy = Math.floor(v.y);
-      if (cx < 0 || cy < 0 || cx >= W || cy >= H) outside++;
-      else if (!w.isLand[cy * W + cx]) water++;
-      else if (solid[cy * W + cx]) blocked++;
-      if (!(v.rot >= 0 && v.rot < 360)) badRot++;
-      // work — это рубка, и она тут не «попалась»: житель дошёл и рубит.
-      if (v.anim !== 'idle' && v.anim !== 'walk' && v.anim !== 'work') badAnim++;
-      if (!(v.phase >= 0 && v.phase < 1)) badPhase++;
-      if (steps % 6 === 0) trail.push([v.x, v.y]);
+    const g = window.__mapgen, V = window.Villagers, S = window.Session, B = window.Buildings;
+    g.newGame();                       // свежая партия: жители только что вышли из дома
+    const w = g.getWorld(), list = g.getVillagers(), builds = g.getBuildings();
+    const solid = V.blockedMap(w, builds);
+    const trees0 = w.stats ? w.stats.trees : null;
+    // Деревья в круге прогулки (±2 клетки запаса): житель дальше круга не
+    // уходит, поэтому «ближайшее дерево» ищется по ним, а не по всему лесу.
+    const near = list.map(v => w.objects.filter(o => o.kind === 'tree' &&
+      Math.hypot(o.x - v.anchor.x, o.y - v.anchor.y) < V.WANDER_R + 2));
+    const st = list.map(() => ({ max: 0, minTree: Infinity, states: {}, anims: {},
+                                 stand: 0, trips: 0, walked: 0 }));
+    const trail = list.map(() => []);
+    let water = 0, blocked = 0, outside = 0, badRot = 0, badPhase = 0;
+    let work = 0, badState = 0, picked = 0, felled = 0;
+    for (let s = 0; s < ${STEPS}; s++) {
+      g.stepVillagers(${DT});
+      for (let i = 0; i < list.length; i++) {
+        const v = list[i], one = st[i];
+        const cx = Math.floor(v.x), cy = Math.floor(v.y);
+        if (cx < 0 || cy < 0 || cx >= w.width || cy >= w.height) outside++;
+        else if (!w.isLand[cy * w.width + cx]) water++;
+        else if (solid[cy * w.width + cx]) blocked++;
+        if (!(v.rot >= 0 && v.rot < 360)) badRot++;
+        if (!(v.phase >= 0 && v.phase < 1)) badPhase++;
+        if (v.anim === 'work') work++;
+        if (v.state !== 'wander' && v.state !== 'stand') badState++;
+        if (v.tree) picked++;
+        felled = Math.max(felled, v.felled);
+        one.states[v.state] = (one.states[v.state] || 0) + 1;
+        one.anims[v.anim] = (one.anims[v.anim] || 0) + 1;
+        if (v.state === 'stand') one.stand++;
+        one.max = Math.max(one.max, Math.hypot(v.x - v.anchor.x, v.y - v.anchor.y));
+        for (const t of near[i]) {
+          const d = Math.hypot(v.x - t.x, v.y - t.y);
+          if (d < one.minTree) one.minTree = d;
+        }
+        /* След для кадра — с прореживанием по расстоянию: за 10 минут житель
+           проходит 340 клеток, и точка на каждый шестой кадр дала бы тысячи
+           узлов там, где ломаная из шага в четверть клетки выглядит так же. */
+        const last = trail[i][trail[i].length - 1];
+        if (!last || Math.hypot(v.x - last[0], v.y - last[1]) >= 0.25)
+          trail[i].push([+v.x.toFixed(2), +v.y.toFixed(2)]);
+      }
     }
-    const stop = [v.x, v.y], stopRot = v.rot;
-    const tree = v.tree;
-    const arrived = v.state !== 'toward';
-    /* Пройденное ЗАСЕКАЕТСЯ ЗДЕСЬ, а не в конце прогона: дальше идут рубка и
-       дорога к следующему дереву, и v.walked к концу включал бы и то и другое.
-       Из этой суммы вычитается STAND_OFF — последний шаг к стволу, которого в
-       маршруте нет (он меряется отдельной проверкой ниже). */
-    const walkedToTree = v.walked - V.STAND_OFF;
-
-    /* Цель — точка под деревом; v.goal это {x, y}, а не пара чисел: на этом
-       тест уже один раз соврал (goal[0] — undefined, и «прямая свободна»).
-       Считается это ДО рубки и до перехода к следующему дереву: после падения
-       v.goal указывает уже на другое дерево, и «обход не длиннее кратчайшего»
-       сравнивало бы путь к одному дереву с путём к другому. */
-    const goal = v.goal ? [v.goal.x, v.goal.y] : stop;
-    const direct = V.lineClear(w, solid, start[0], start[1], goal[0], goal[1]);
-    const goalCell = [Math.floor(goal[0]), Math.floor(goal[1])];
-    const cells = V.findPath(w, solid, startCell[0], startCell[1], goalCell[0], goalCell[1]);
-    let octile = 0;
-    for (let i = 1; cells && i < cells.length; i++) {
-      const ax = cells[i-1] % W, ay = (cells[i-1] / W) | 0;
-      const bx = cells[i] % W, by = (cells[i] / W) | 0;
-      octile += (ax !== bx && ay !== by) ? Math.SQRT2 : 1;
-    }
-
-    /* РУБКА. Здесь меряется ровно то, что обещано заказчику: житель стоит и
-       бьёт топором, удары идут по кадру удара, а дерево пропадает на пятой
-       секунде рубки.
-
-       Тряску дерева (tree.shake) ставит удар, а ГАСИТ её рендер — в прогоне без
-       рендера флаг остался бы поднятым навсегда, и «сколько было ударов» по
-       нему не сосчитать. Поэтому тест сбрасывает флаг перед каждым шагом и
-       считает шаги, на которых удар его поднял: это и есть число ударов. */
-    let moved = 0, chopSteps = 0, shakeSteps = 0, goneAt = null, felledAt = null;
-    let anims = {};
-    const treesBefore = w.stats ? w.stats.trees : null;
-    let t = 0;
-    while (v.state === 'chop' && t < 12) {
-      if (tree) tree.shake = 0;
-      const had = w.objects.indexOf(tree) >= 0;
-      g.stepVillagers(dt);
-      t += dt;
-      chopSteps++;
-      anims[v.anim] = (anims[v.anim] || 0) + 1;
-      if (v.x !== stop[0] || v.y !== stop[1]) moved++;
-      if (tree && tree.shake) shakeSteps++;
-      if (had && w.objects.indexOf(tree) < 0) { goneAt = t; felledAt = t; }
-    }
-    const treesAfter = w.stats ? w.stats.trees : null;
-    const hits = v.hits;
-    /* Что дальше: он выбирает СЛЕДУЮЩЕЕ дерево и ИДЁТ к нему. Меряется это
-       двумя секундами симуляции, а не первым же шагом: на первом шаге он
-       только выбирает цель, и «сдвинулся на 0.01» ничего не доказывает. */
-    let after = { state: v.state, tree: null, steps: 0 };
-    for (let i = 0; i < 120; i++) {
-      g.stepVillagers(dt);
-      after.steps++;
-      if (!after.tree && v.tree) after.tree = [v.tree.x, v.tree.y];
-    }
-    after.state = v.state;
-    after.sameTree = !!(after.tree && tree &&
-      Math.abs(after.tree[0] - tree.x) < 1e-9 && Math.abs(after.tree[1] - tree.y) < 1e-9);
-    after.moved = Math.hypot(v.x - stop[0], v.y - stop[1]);
-    // Силуэт следа: максимальное отклонение от прямой старт -> финиш.
-    let dev = 0;
-    const dx = stop[0] - start[0], dy = stop[1] - start[1];
-    const len = Math.hypot(dx, dy) || 1;
-    for (const p of trail) dev = Math.max(dev, Math.abs((p[0]-start[0])*dy - (p[1]-start[1])*dx) / len);
-    // Стоит ли он на клетке рядом с деревом и смотрит ли на него.
-    const faceWant = tree ? ((Math.atan2(tree.y - stop[1], tree.x - stop[0]) * 180 / Math.PI) % 360 + 360) % 360 : null;
-    const faceErr = faceWant === null ? null :
-      Math.abs(((stopRot - faceWant + 540) % 360) - 180);
-    const standOff = tree ? Math.hypot(tree.x - stop[0], tree.y - stop[1]) : null;
+    st.forEach((one, i) => { one.trips = list[i].trips; one.walked = list[i].walked; });
+    const trees1 = w.stats ? w.stats.trees : null;
     return {
-      steps: steps, water, blocked, outside, badRot, badAnim, badPhase, moved,
-      chopSteps, hits, shakeSteps, goneAt, felledAt, treesBefore, treesAfter,
-      after: after, standOff, standOffK: V.STAND_OFF,
-      standCell: [Math.floor(stop[0]), Math.floor(stop[1])],
-      arrived: arrived,
-      anims: anims,
-      tree: tree ? [tree.x, tree.y] : null,
-      treeCell: tree ? [Math.floor(tree.x), Math.floor(tree.y)] : null,
-      stop: stop, stopCell: [Math.floor(stop[0]), Math.floor(stop[1])],
-      rot: stopRot, faceWant, faceErr,
-      walked: walkedToTree, walkedAll: v.walked, trips: v.trips,
-      direct, octile, dev, len,
-      startCell, goalCell, pathCells: cells ? cells.length : -1,
-      startOk: V.walkable(w, solid, startCell[0], startCell[1]),
-      goalOk: V.walkable(w, solid, goalCell[0], goalCell[1]),
-      straight: Math.hypot((tree ? tree.x : stop[0]) - start[0], (tree ? tree.y : stop[1]) - start[1]),
+      steps: ${STEPS}, minutes: ${MINUTES}, n: list.length,
+      max: st.map(o => o.max), minTree: st.map(o => o.minTree),
+      states: st.map(o => o.states), anims: st.map(o => o.anims),
+      stand: st.map(o => o.stand), trips: st.map(o => o.trips), walked: st.map(o => o.walked),
+      water: water, blocked: blocked, outside: outside,
+      badRot: badRot, badPhase: badPhase, work: work, badState: badState, picked: picked,
+      felled: felled, trees0: trees0, trees1: trees1,
+      radius: V.WANDER_R, standOff: V.STAND_OFF,
+      anchors: list.map(v => [v.anchor.x, v.anchor.y]),
       trail: trail
     };
   })()`);
-  check('за ' + MINUTES + ' минут ни одного шага в воду',
-    sim.water === 0 && sim.outside === 0, `${sim.water} в воде, ${sim.outside} за картой из ${sim.steps} шагов`);
-  check('ни одного шага в дерево, камень или дом', sim.blocked === 0, sim.blocked + ' шагов');
-  check('курс свободный, но всегда в [0, 360), анимация — idle, walk или work',
-    sim.badRot === 0 && sim.badAnim === 0 && sim.badPhase === 0,
-    `${sim.badRot} / ${sim.badAnim} / ${sim.badPhase}`);
-  check('он дошёл до дерева и РУБИТ его', sim.arrived && !!sim.tree && sim.steps < STEPS,
-    sim.tree ? `за ${(sim.steps / 60).toFixed(1)} с, дерево ${sim.tree.map(n => n.toFixed(2)).join(',')}`
-             : 'дерева нет');
-  check('встал на СОСЕДНЮЮ с деревом клетку',
-    !!sim.treeCell && Math.abs(sim.treeCell[0] - sim.stopCell[0]) +
-      Math.abs(sim.treeCell[1] - sim.stopCell[1]) === 1,
-    `дерево ${(sim.treeCell || []).join(',')}, житель ${sim.stopCell.join(',')}`);
-  check('повёрнут РОВНО на дерево, а не «примерно туда»',
-    sim.faceErr !== null && sim.faceErr < 0.5,
-    `курс ${sim.rot.toFixed(2)}° против ${sim.faceWant === null ? '—' : sim.faceWant.toFixed(2)}° на дерево`);
-  check('идёт по прямой, а не зигзагом по клеткам',
-    !sim.direct || sim.dev < 0.30,
-    sim.direct
-      ? `прямая свободна, отклонение следа ${sim.dev.toFixed(3)} клетки`
-      : `прямая занята — шёл в обход, отклонение ${sim.dev.toFixed(3)} клетки`);
-  check('обход не длиннее кратчайшего клеточного пути',
-    sim.octile > 0 && sim.walked <= sim.octile + 0.05,
-    `пройдено ${sim.walked.toFixed(2)} при кратчайшем ${sim.octile.toFixed(2)} клетки ` +
-    `(${sim.startCell.join(',')} -> ${sim.goalCell.join(',')}, поиск дал ${sim.pathCells} клеток, ` +
-    `проходимы старт ${sim.startOk}, цель ${sim.goalOk})`);
+  const mm = (n) => n.toFixed(2);
+  check('за ' + MINUTES + ' минут ни одного срубленного дерева',
+    sim.trees1 === sim.trees0 && sim.felled === 0,
+    `деревьев ${sim.trees0} -> ${sim.trees1}, жители срубили ${sim.felled}`);
+  check('и ни разу не играли анимацию работы, и дерево не выбирали целью',
+    sim.work === 0 && sim.picked === 0,
+    `кадров анимации work: ${sim.work}, кадров с деревом-целью: ${sim.picked}`);
+  check('всё время в состоянии wander (или stand, если идти некуда)',
+    sim.badState === 0,
+    sim.states.map((s, i) => '№' + (i + 1) + ' ' + JSON.stringify(s)).join(' · ') +
+    (sim.badState ? ` — ВНЕ ЭТИХ СОСТОЯНИЙ ${sim.badState} кадров` : ''));
+  check('ни один не отошёл от своего якоря дальше ' + sim.radius + ' клеток',
+    sim.max.every(d => d <= sim.radius + 1e-9),
+    'максимум от якоря: ' + sim.max.map((d, i) => '№' + (i + 1) + ' ' + d.toFixed(3)).join(' · ') +
+    ' клетки');
+  check('к дереву не подходил так близко, как подходит рубящий (STAND_OFF ' + sim.standOff + ')',
+    sim.minTree.every(d => d >= sim.standOff),
+    'ближе всего к стволу: ' + sim.minTree.map((d, i) => '№' + (i + 1) + ' ' + mm(d)).join(' · ') +
+    ' клетки');
+  check('ни одного шага в воду за ' + MINUTES + ' минут',
+    sim.water === 0 && sim.outside === 0,
+    `${sim.water} шагов в воде, ${sim.outside} за картой из ${sim.steps}`);
+  check('ни одного шага в дерево, камень или постройку', sim.blocked === 0, sim.blocked + ' шагов');
+  check('курс свободный, но всегда в [0, 360), фаза анимации — в [0, 1)',
+    sim.badRot === 0 && sim.badPhase === 0, `${sim.badRot} / ${sim.badPhase}`);
+  check('жители ходят, а не стоят: каждый прошёл десятки клеток',
+    sim.walked.every(w => w > 15 * MINUTES) && sim.trips.every(t => t > MINUTES / 2),
+    'пройдено ' + sim.walked.map((w, i) => '№' + (i + 1) + ' ' + w.toFixed(0)).join(' · ') +
+    ' клетки за ' + sim.trips.map((t, i) => '№' + (i + 1) + ' ' + t).join('/') + ' переходов' +
+    (sim.stand.some(s => s) ? '; в stand кадров: ' + sim.stand.join('/') : ''));
 
-  /* --- 4a. РУБКА: пять секунд, восемь ударов, дерево падает ----------- *
-   * Заказчик (2026-10-14): «когда персонаж подходил к дереву и останавливался
-   * он начинал его рубить, рубил его 5 секунд а потом дерево исчезало».
-   * Проверяется тремя числами, а не «на глаз»:
-   *   * во время рубки он НЕ ДВИГАЕТСЯ (рубить — это стоять) и играет work;
-   *   * ударов ровно восемь, и каждый поднимает дереву флаг тряски;
-   *   * дерево пропадает на 5.00 с (допуск на сложение dt — 0.05 с), и
-   *     счётчик деревьев в мире уменьшается.
-   * Отдельно проверяется, что он на этом не кончил: дальше он выбирает
-   * СЛЕДУЮЩЕЕ дерево и идёт к нему, а не встаёт навсегда. */
-  check('во время рубки он играет work и не делает ни шага',
-    sim.chopSteps > 0 && sim.moved === 0 && (sim.anims.work || 0) === sim.chopSteps,
-    `${sim.chopSteps} шагов рубки (${(sim.chopSteps / 60).toFixed(2)} с), ` +
-    `сдвигов с места ${sim.moved}, кадры анимации: ${JSON.stringify(sim.anims)}`);
-  check('ударов восемь, и каждый тряхнул дерево',
-    sim.hits === 8 && sim.shakeSteps === 8,
-    `ударов ${sim.hits}, из них с тряской ${sim.shakeSteps}`);
-  check('дерево исчезло ровно на пятой секунде рубки',
-    sim.goneAt !== null && Math.abs(sim.goneAt - 5.0) < 0.05,
-    sim.goneAt === null ? 'дерево не пропало' : `пропало на ${sim.goneAt.toFixed(2)} с рубки`);
-  check('счётчик деревьев в мире уменьшился на одно',
-    sim.treesBefore !== null && sim.treesAfter === sim.treesBefore - 1,
-    `${sim.treesBefore} -> ${sim.treesAfter}`);
-  check('после падения дерева он идёт к СЛЕДУЮЩЕМУ, а не стоит',
-    !!sim.after.tree && !sim.after.sameTree && sim.after.moved > 0.5,
-    sim.after.tree
-      ? `новое дерево ${sim.after.tree.map(n => n.toFixed(1)).join(',')} ` +
-        `(прежнее ${sim.after.sameTree ? 'то же' : 'другое'}), отошёл на ${sim.after.moved.toFixed(2)} клетки ` +
-        `за ${(sim.after.steps / 60).toFixed(2)} с`
-      : 'нового дерева он не нашёл');
-  check('под деревом он стоит не в середине клетки, а ближе к стволу (иначе топор не достаёт)',
-    sim.standOff !== null && sim.standOff < 0.95,
-    sim.standOff === null ? '—' : `до ствола ${sim.standOff.toFixed(2)} клетки ` +
-      `(сдвиг STAND_OFF ${sim.standOffK})`);
-
-  /* --- 4b. ближайшее дерево ------------------------------------------ *
-   * «Ближайшее» — это ближайшее ДОСТИЖИМОЕ: дерево на соседнем островке по
-   * линейке ближе, но дойти до него нельзя. Проверяется честным перебором:
-   * у всех деревьев, что ближе выбранного, не должно быть ни одной клетки, с
-   * которой до них есть путь. */
-  const nearest = await js(`(() => {
-    const g = window.__mapgen, V = window.Villagers, w = g.getWorld();
-    g.spawnVillagers(g.getBuildings()[0]);
-    const v = g.getVillagers()[0];
-    const solid = V.blockedMap(w, g.getBuildings());
-    const sx = Math.floor(v.x), sy = Math.floor(v.y);
-    const reach = (t) => {
-      for (const s of V.standCells(w, solid, t, v.x, v.y)) {
-        if (s.cx === sx && s.cy === sy) return true;
-        if (V.findPath(w, solid, sx, sy, s.cx, s.cy)) return true;
+  /* --- 4б. тот же сид — та же прогулка ------------------------------- *
+   * ГПСЧ у каждого жителя свой (от сида мира и номера), и Math.random в
+   * движке нет вовсе: прогулка обязана повторяться до знака. Проверяется
+   * двумя прогонами с НОВОГО появления жителей: сравниваются точки каждую
+   * секунду — все три жителя, а не только первый. */
+  const again = await js(`(() => {
+    const g = window.__mapgen, DT = ${DT};
+    const walk = () => {
+      g.spawnVillagers(g.getBuildings()[0]);
+      const list = g.getVillagers(), pts = [];
+      for (let i = 0; i < 60 * 120; i++) {
+        g.stepVillagers(DT);
+        if (i % 60 === 0) pts.push(list.map(v => [+v.x.toFixed(4), +v.y.toFixed(4)]));
       }
-      return false;
+      return pts;
     };
-    const trees = V.treesNear(w, v.x, v.y, 0);
-    let n = 0, bad = 0, firstReach = null;
-    for (const t of trees) {
-      n++;
-      if (reach(t)) { firstReach = t; break; }
-      if (n > V.TREE_TRIES) break;                    // дальше житель и не ищет
-    }
-    const chosen = v.tree;
-    const same = !!(chosen && firstReach) &&
-      Math.abs(chosen.x - firstReach.x) < 1e-9 && Math.abs(chosen.y - firstReach.y) < 1e-9;
-    return {
-      trees: trees.length, tried: n, chosen: chosen ? [chosen.x, chosen.y] : null,
-      first: firstReach ? [firstReach.x, firstReach.y] : null, same: same,
-      noneReachable: !firstReach && !chosen
-    };
+    const a = walk(), b = walk();
+    const same = JSON.stringify(a) === JSON.stringify(b);
+    // Пройденное каждым: «тот же путь» без «он вообще шёл» ничего не стоит.
+    const span = a[0].map((_, k) => {
+      let s = 0;
+      for (let i = 1; i < a.length; i++)
+        s += Math.hypot(a[i][k][0] - a[i-1][k][0], a[i][k][1] - a[i-1][k][1]);
+      return s;
+    });
+    return { same: same, first: a[0], last: a[a.length - 1], span: span, samples: a.length };
   })()`);
-  check('он идёт к ближайшему ДОСТИЖИМОМУ дереву',
-    nearest.same || nearest.noneReachable,
-    nearest.same
-      ? `выбрано ${nearest.chosen.map(n => n.toFixed(1)).join(',')} из ${nearest.trees} деревьев`
-      : `ближайшее достижимое ${nearest.first ? nearest.first.map(n => n.toFixed(1)).join(',') : '—'}, ` +
-        `выбрано ${nearest.chosen ? nearest.chosen.map(n => n.toFixed(1)).join(',') : '—'}`);
+  check('тот же сид — та же прогулка у всех трёх',
+    again.same && again.samples > 100,
+    `${again.samples} замеров: ` + JSON.stringify(again.first[0]) + ' -> ' +
+    JSON.stringify(again.last[0]) + ' (первый житель)');
+  check('и они действительно идут, а не стоят',
+    again.span.every(s => s > 20), 'пройдено за две минуты: ' +
+    again.span.map(s => s.toFixed(1)).join('/') + ' клетки');
 
-  /* --- 4c. обход ратуши ---------------------------------------------- *
-   * Ставим жителя так, чтобы БЛИЖАЙШЕЕ дерево лежало за ратушей (клетку
-   * выбирает сам тест перебором вокруг пятна), и проживаем путь. Прямая тут
-   * заведомо занята, поэтому проверяются две вещи: ни один шаг не попал в
-   * пятно ратуши и путь не длиннее кратчайшего обхода — то есть ратушу он
-   * обходит БЛИЖАЙШИМ путём к дереву, а не «как-нибудь». */
-  const detour = await js(`(() => {
-    const g = window.__mapgen, V = window.Villagers, B = window.Buildings, w = g.getWorld();
-    const home = g.getBuildings()[0];
-    if (!home) return { ok: false, reason: 'ратуши нет' };
-    const solid = V.blockedMap(w, g.getBuildings());
-    const fp = B.footprint(home.rot);
-    const cards = B.cells(home);
-    const inside = new Set(cards.map(c => c.x + ',' + c.y));
-    let pick = null;
-    for (let x = Math.max(0, home.x - 9); x < home.x + fp.w + 9 && !pick; x++) {
-      for (let y = Math.max(0, home.y - 9); y < home.y + fp.h + 9 && !pick; y++) {
-        if (inside.has(x + ',' + y) || !V.walkable(w, solid, x, y)) continue;
-        const t = V.create(w, { index: 0, x: x + 0.5, y: y + 0.5, buildings: g.getBuildings() });
-        if (!t.tree || t.state !== 'toward') continue;
-        // прямая от жителя к его дереву пересекает пятно ратуши?
-        let hit = false;
-        for (let i = 0; i <= 400; i++) {
-          const px = t.x + (t.tree.x - t.x) * i / 400, py = t.y + (t.tree.y - t.y) * i / 400;
-          if (inside.has(Math.floor(px) + ',' + Math.floor(py))) { hit = true; break; }
-        }
-        if (!hit) continue;
-        if (!pick || t.walked + 0 > pick.d) {
-          pick = { x: x + 0.5, y: y + 0.5, d: Math.hypot(t.tree.x - t.x, t.tree.y - t.y) };
-        }
-      }
-    }
-    if (!pick) return { ok: false, reason: 'случая «ратуша между» не нашлось' };
-    /* Жителя двигает ИГРОВОЙ цикл, поэтому в найденную клетку ставится тот
-       житель, который уже в списке игры, а не отдельный объект: отдельный
-       никто не тронет, и проверка «дошёл» превратилась бы в «стоял 600 с». */
-    g.spawnVillagers(g.getBuildings()[0]);
-    const v = g.getVillagers()[0];
-    v.x = pick.x; v.y = pick.y;
-    v.path = null; v.tree = null; v.goal = null; v.state = 'toward'; v.walked = 0; v.trips = 0;
-    g.stepVillagers(${DT});                      // первый шаг — он же и планирует путь
-    if (!v.tree) return { ok: false, reason: 'житель не нашёл дерево с этой клетки' };
-    const start = [pick.x, pick.y], startCell = [Math.floor(pick.x), Math.floor(pick.y)];
-    const want = v.goal ? [v.goal.x, v.goal.y] : null;
-    let inHouse = 0, water = 0, blocked = 0, steps = 0;
-    const trail = [[v.x, v.y]];
-    while (steps < 60 * 600 && v.state === 'toward') {
-      g.stepVillagers(${DT});
-      steps++;
-      const cx = Math.floor(v.x), cy = Math.floor(v.y);
-      if (inside.has(cx + ',' + cy)) inHouse++;
-      if (!w.isLand[cy * w.width + cx]) water++;
-      else if (solid[cy * w.width + cx]) blocked++;
-      if (steps % 6 === 0) trail.push([v.x, v.y]);
-    }
-    const cells = V.findPath(w, solid, startCell[0], startCell[1],
-      Math.floor(want[0]), Math.floor(want[1]));
-    let octile = 0;
-    for (let i = 1; cells && i < cells.length; i++) {
-      const ax = cells[i-1] % w.width, ay = (cells[i-1] / w.width) | 0;
-      const bx = cells[i] % w.width, by = (cells[i] / w.width) | 0;
-      octile += (ax !== bx && ay !== by) ? Math.SQRT2 : 1;
-    }
-    // Куда он шёл напрямую: расстояние до дерева по воздуху.
-    const air = v.tree ? Math.hypot(v.tree.x - start[0], v.tree.y - start[1]) : null;
-    return {
-      ok: true, start, stop: [v.x, v.y], tree: v.tree ? [v.tree.x, v.tree.y] : null,
-      inHouse, water, blocked, steps, walked: v.walked, octile, air,
-      arrived: v.state !== 'toward', goal: want, trail: trail,
-      home: [home.x, home.y], fp: [fp.w, fp.h], houseCells: cards.map(c => [c.x, c.y])
-    };
-  })()`);
-  check('ратуша между жителем и деревом: он её обошёл',
-    detour.ok && detour.arrived && detour.inHouse === 0 && detour.water === 0 && detour.blocked === 0,
-    detour.ok
-      ? `шагов в пятне ${detour.inHouse}, в воде ${detour.water}, в занятых ${detour.blocked}; ` +
-        `дошёл за ${(detour.steps / 60).toFixed(1)} с`
-      : detour.reason);
-  if (detour.ok) {
-    check('обход ратуши — ближайший путь к дереву, а не «какой-нибудь»',
-      detour.walked <= detour.octile + 0.05,
-      `пройдено ${detour.walked.toFixed(2)} при кратчайшем ${detour.octile.toFixed(2)} клетки ` +
-      `(по воздуху до дерева ${detour.air === null ? '—' : detour.air.toFixed(2)})`);
-  }
-
-  /* --- 4d. дом, поставленный поперёк пути ---------------------------- *
-   * Ратушу игрок ставит мышью когда угодно — в том числе на уже проложенный
-   * путь. Путь после этого обязан пересчитаться сам: в пятне новой ратуши не
-   * должно остаться ни одного шага, а житель обязан дойти до дерева. Ставит
-   * ратушу тут настоящий placeAt — тот же код, что и по клику. */
-  const late = await js(`(() => {
-    const g = window.__mapgen, V = window.Villagers, B = window.Buildings, w = g.getWorld();
-    g.spawnVillagers(g.getBuildings()[0]);
-    const v = g.getVillagers()[0];
-    for (let i = 0; i < 120 && v.state === 'toward'; i++) g.stepVillagers(${DT});
-    if (v.state !== 'toward' || !v.path) return { ok: false, reason: 'он дошёл раньше, чем мы успели поставить дом' };
-    const wp = v.path[v.step];
-    const mx = (v.x + wp.x) / 2, my = (v.y + wp.y) / 2;
-    let placed = null, cells = null;
-    for (let r = 0; r <= 3 && !placed; r++) {
-      for (let dx = -r; dx <= r && !placed; dx++) {
-        for (let dy = -r; dy <= r && !placed; dy++) {
-          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
-          const b = { variant: 'a', rot: 0, x: Math.floor(mx) + dx, y: Math.floor(my) + dy };
-          const cs = B.cells(b);
-          let onLeg = false, onHim = false;
-          for (const c of cs) {
-            if (c.x === Math.floor(v.x) && c.y === Math.floor(v.y)) onHim = true;
-            for (let t = 0; t <= 60; t++) {
-              const px = v.x + (wp.x - v.x) * t / 60, py = v.y + (wp.y - v.y) * t / 60;
-              if (c.x === Math.floor(px) && c.y === Math.floor(py)) onLeg = true;
-            }
-          }
-          if (!onLeg || onHim) continue;               // пятно обязано лечь на путь, но не на него
-          if (!g.placeAt(b)) continue;                 // ставим НАСТОЯЩИМ размещением
-          placed = b;
-          cells = cs;
-        }
-      }
-    }
-    if (!placed) return { ok: false, reason: 'места поперёк пути не нашлось' };
-    const inside = new Set(cells.map(c => c.x + ',' + c.y));
-    const trips = v.trips;
-    let inHouse = 0, water = 0, blocked = 0, steps = 0;
-    while (steps < 120 * 60 && v.state === 'toward') {
-      g.stepVillagers(${DT});
-      steps++;
-      const cx = Math.floor(v.x), cy = Math.floor(v.y);
-      if (inside.has(cx + ',' + cy)) inHouse++;
-      if (!w.isLand[cy * w.width + cx]) water++;
-      else if (V.blockedMap(w, g.getBuildings())[cy * w.width + cx]) blocked++;
-    }
-    const was = g.getBuildings().length;
-    g.removeLast();                                  // убираем поставленное за собой
-    const cell = [Math.floor(v.x), Math.floor(v.y)];
-    return {
-      ok: true, home: [placed.x, placed.y], cells: cells.length,
-      inHouse, water, blocked, steps, state: v.state,
-      replanned: v.trips > trips,
-      adjacent: !!v.tree && (Math.abs(Math.floor(v.tree.x) - cell[0]) +
-                             Math.abs(Math.floor(v.tree.y) - cell[1])) === 1,
-      removed: g.getBuildings().length === was - 1, left: g.getBuildings().length
-    };
-  })()`);
-  check('дом, поставленный поперёк пути, житель обходит',
-    late.ok && late.inHouse === 0 && late.water === 0 && late.blocked === 0 &&
-      late.state !== 'toward' && late.adjacent && late.replanned && late.removed,
-    late.ok
-      ? `ратуша встала в ${late.home.join(',')} (${late.cells} клеток), шагов в её пятне ${late.inHouse}, ` +
-        `путь пересчитан: ${late.replanned}, дошёл: ${late.state}, убрана: ${late.removed} (осталось ${late.left})`
-      : late.reason);
-
-  /* --- 5. порядок глубины ------------------------------------------- */
+  /* --- 5. порядок глубины -------------------------------------------- */
   const order = await js(`(() => {
     const g = window.__mapgen, r = g.renderer;
     const seq = [];
@@ -666,207 +550,132 @@ const getJSON = (u) => new Promise((res, rej) => {
       if (kind === 'житель') walkers++;
       prev = key;
     }
-    return { n: seq.length, bad, walkers };
+    return { n: seq.length, bad, walkers, inGame: g.getVillagers().length };
   })()`);
-  check('житель попал в общий поток отрисовки', order.walkers === 1, order.walkers + ' из ' + order.n);
+  check('в общий поток отрисовки попадают все три жителя',
+    order.walkers === 3 && order.inGame === 3, order.walkers + ' из ' + order.n + ' спрайтов');
   check('порядок глубины не убывает (x + y)', order.bad === 0, order.bad + ' нарушений');
 
-  /* --- 6. он нарисован ---------------------------------------------- *
-   * Сравниваются два кадра ОДНОГО времени: с жителем и без него. Разницу
-   * внутри габарита его спрайта считаем фигурой, снаружи — шумом отрисовки;
-   * их считают отдельно, потому что это разные утверждения. Одиночный
-   * сглаженный пиксель на другом конце кадра раздувает общий габарит так,
-   * что по нему уже ничего не проверить, — на этом тест уже один раз соврал. */
+  /* --- 6. все три нарисованы ----------------------------------------- *
+   * Сравниваются два кадра ОДНОГО времени: со слоем жителей и без него.
+   * Разницу внутри габарита КАЖДОГО спрайта считаем фигурой — так проверка
+   * отвечает на вопрос «нарисованы ли все трое», а не «нарисован ли кто-нибудь».
+   * Фигуры ставятся в чистый двор перед домом, и это не поблажка: в чаще их
+   * закрывают кроны деревьев, которые по глубине ближе камеры (x + y больше),
+   * и «не нарисован» означало бы не то, что случилось, — на это тест уже
+   * попадался. Проверка здесь про слой отрисовки, а не про видимость в лесу.
+   *
+   * Вне габаритов спрайтов на суше не должно измениться ничего; на воде Chrome
+   * даёт дрожание в пару единиц (рябь заливается умножением на весь кадр), и
+   * такое дрожание считается отдельно. */
   const drawn = await js(`(() => {
     const g = window.__mapgen, r = g.renderer, B = window.Buildings, w = g.getWorld();
-    const V = window.Villagers, v = g.getVillagers()[0];
-    /* Житель ставится в ЧИСТЫЙ ДВОР ратуши, перед домом, а не остаётся там,
-       где стоит сам. Это не поблажка: в чаще его закрывают кроны деревьев,
-       которые по глубине ближе камеры (x + y больше), и «не нарисован»
-       означало бы не то, что случилось, — на это тест уже попался. Проверка
-       здесь про слой отрисовки, а не про видимость в лесу. */
-    const home = g.getBuildings()[0], c = B.center(home);
+    const V = window.Villagers, S = window.Session;
+    g.spawnVillagers(g.getBuildings()[0]);
+    const list = g.getVillagers();
+    const house = S.houseOf(g.getBuildings()), c = B.center(house);
     const solid = V.blockedMap(w, g.getBuildings());
-    let spot = null;
-    for (let x = Math.floor(c.x) - 6; x <= Math.floor(c.x) + 6; x++)
-      for (let y = Math.floor(c.y) - 6; y <= Math.floor(c.y) + 6; y++) {
+    // Свободные клетки строго ПЕРЕД домом, по возрастанию расстояния до него.
+    const spots = [];
+    for (let x = Math.floor(c.x) - 7; x <= Math.floor(c.x) + 7; x++)
+      for (let y = Math.floor(c.y) - 7; y <= Math.floor(c.y) + 7; y++) {
         const k = y * w.width + x;
         if (x < 1 || y < 1 || x >= w.width - 1 || y >= w.height - 1) continue;
         if (!w.isLand[k] || solid[k]) continue;
         const d = Math.hypot(x + 0.5 - c.x, y + 0.5 - c.y);
-        if (d < 2.6 || (x + y + 1) < (c.x + c.y) + 2.5) continue;   // строго ПЕРЕД домом
-        if (!spot || d < spot.d) spot = { x: x + 0.5, y: y + 0.5, d: d };
+        if (d < 3 || (x + y + 1) < (c.x + c.y) + 4) continue;   // строго перед домом
+        spots.push({ x: x + 0.5, y: y + 0.5 });
       }
-    if (spot) { v.x = spot.x; v.y = spot.y; v.path = null; v.state = 'stand'; v.anim = 'idle'; v.phase = 0; }
+    spots.sort((a, b) => Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(b.x - c.x, b.y - c.y));
+    const placed = [];
+    for (const s of spots) {
+      if (placed.some(p => Math.hypot(p.x - s.x, p.y - s.y) < 2)) continue;
+      placed.push(s);
+      if (placed.length === list.length) break;
+    }
+    for (let i = 0; i < list.length && i < placed.length; i++) {
+      const v = list[i];
+      v.x = placed[i].x; v.y = placed[i].y;
+      v.path = null; v.state = 'stand'; v.anim = 'idle'; v.phase = 0;
+    }
     const cv = r.canvas, ctx = cv.getContext('2d');
     r.cam.zoom = 96;
-    r.centerOn(v.x, v.y);
+    r.centerOn(c.x, c.y + 2);
     r.hover = null;
-    const box = r.villagerBox(v, r.cam.zoom);
-    const size = [cv.width, cv.height];
-    const grab = () => ctx.getImageData(0, 0, cv.width, cv.height).data;
-
-    r.showVillagers = true;  r.render(1); const a = grab();
-    const sizeA = [cv.width, cv.height];
-    r.showVillagers = false; r.render(1); const b = grab();
-    const sizeB = [cv.width, cv.height];
-    r.showVillagers = true;
-
+    const boxes = list.map(v => r.villagerBox(v, r.cam.zoom));
     const dpr = r.dpr;
-    const want = {
+    const want = boxes.map(box => ({
       x0: (r.cssW / 2 + box.dx) * dpr, y0: (r.cssH / 2 + box.dy) * dpr,
       x1: (r.cssW / 2 + box.dx + box.dw) * dpr, y1: (r.cssH / 2 + box.dy + box.dh) * dpr
-    };
-
-    /* Порог разный для фигуры и для остального кадра, и это не поблажка
-       себе. Внутри кадра спрайта разница обязана быть крупной — там либо
-       человек, либо пусто. А снаружи Chrome даёт дрожание в пару единиц на
-       слоях воды: узор ряби заливается умножением на весь кадр, и его
-       растеризация от вызова к вызову отличается на +/-2..6 (глазом это
-       не видно, но пиксели не равны). Такое дрожание считается отдельно —
-       noise, — а видимая разница (out) обязана быть нулевой. */
-    /* Строгий проход: те же два кадра, но без волн и ряби. Море тогда —
-       градиент из кэша, и оно бит в бит одинаково; так проверяется, что
-       от жителя в кадре не зависит НИЧЕГО, кроме его собственного спрайта. */
-    const waves = r.waveSprites, ripple = r.ripplePattern;
-    r.waveSprites = null; r.ripplePattern = null;
-    r.showVillagers = true;  r.render(1); const wa = grab();
-    r.showVillagers = false; r.render(1); const wb = grab();
+    }));
+    const grab = () => ctx.getImageData(0, 0, cv.width, cv.height).data;
+    r.showVillagers = true;  r.render(1); const a = grab();
+    r.showVillagers = false; r.render(1); const b = grab();
     r.showVillagers = true;
-    r.waveSprites = waves; r.ripplePattern = ripple;
-    let strict = 0, strictAt = null;
-    for (let i = 0; i < wa.length; i += 4) {
-      const d = Math.abs(wa[i] - wb[i]) + Math.abs(wa[i+1] - wb[i+1]) + Math.abs(wa[i+2] - wb[i+2]);
-      if (d < 12) continue;
-      const px = (i / 4) % cv.width, py = Math.floor((i / 4) / cv.width);
-      if (px >= want.x0 - 2 && px <= want.x1 + 2 && py >= want.y0 - 2 && py <= want.y1 + 2) continue;
-      strict++;
-      if (!strictAt) strictAt = [px, py, d];
-    }
 
     const VISIBLE = 30;
     let n = 0, noise = 0, onLand = 0, onWater = 0, worst = 0, worstAt = null;
-    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    const per = want.map(() => 0);
     for (let i = 0; i < a.length; i += 4) {
       const d = Math.abs(a[i] - b[i]) + Math.abs(a[i+1] - b[i+1]) + Math.abs(a[i+2] - b[i+2]);
       if (d < 12) continue;
       const px = (i / 4) % cv.width, py = Math.floor((i / 4) / cv.width);
-      if (px >= want.x0 - 2 && px <= want.x1 + 2 && py >= want.y0 - 2 && py <= want.y1 + 2) {
-        n++;
-        if (px < x0) x0 = px; if (px > x1) x1 = px;
-        if (py < y0) y0 = py; if (py > y1) y1 = py;
-        continue;
+      let inside = -1;
+      for (let k = 0; k < want.length; k++) {
+        const q = want[k];
+        if (px >= q.x0 - 2 && px <= q.x1 + 2 && py >= q.y0 - 2 && py <= q.y1 + 2) { inside = k; break; }
       }
+      if (inside >= 0) { n++; per[inside]++; continue; }
       if (d < VISIBLE) { noise++; continue; }
-      // Куда попал разошедшийся пиксель: суша или вода — это разные
-      // утверждения, и проверяются они порознь.
       const wp = r.screenToWorld(px / dpr - r.cssW / 2, py / dpr - r.cssH / 2);
       const wx = Math.floor(wp.x), wy = Math.floor(wp.y);
-      const inside = wx >= 0 && wy >= 0 && wx < w.width && wy < w.height;
-      const land = inside && !!w.isLand[wy * w.width + wx];
-      if (land) onLand++; else onWater++;
-      if (d > worst) { worst = d; worstAt = [wx, wy, land, d]; }
+      const on = wx >= 0 && wy >= 0 && wx < w.width && wy < w.height && !!w.isLand[wy * w.width + wx];
+      if (on) onLand++; else onWater++;
+      if (d > worst) { worst = d; worstAt = [wx, wy, on, d]; }
     }
-    // Земля под ногами: пиксель кадра, куда проецируется точка опоры.
-    const feet = (r.cssH / 2 + box.dy + box.dh * (1 - box.spr.ay)) * dpr;
     // exportPNG обязан показывать то же, что экран: слой в нём тоже есть.
-    const e1 = r.exportPNG(1), e2 = (() => { r.showVillagers = false; const c = r.exportPNG(1); r.showVillagers = true; return c; })();
+    const e1 = r.exportPNG(1);
+    r.showVillagers = false;
+    const e2 = r.exportPNG(1);
+    r.showVillagers = true;
     let exp = 0;
     const g1 = e1.getContext('2d').getImageData(0,0,e1.width,e1.height).data;
     const g2 = e2.getContext('2d').getImageData(0,0,e2.width,e2.height).data;
     for (let i = 0; i < g1.length; i += 4) if (g1[i] !== g2[i] || g1[i+1] !== g2[i+1]) exp++;
-
-    const view = r.viewTiles(2);
+    // Земля под ногами: пиксель кадра, куда проецируется точка опоры спрайта.
+    const feet = boxes.map(box => (r.cssH / 2 + box.dy + box.dh * (1 - box.spr.ay)) * dpr);
     return {
-      n, noise, onLand, onWater, worst, worstAt, strict, strictAt,
-      // Числа состояния — в сообщение проверки: если спрайт не нарисуется,
-      // по ним видно, где он стоял и что показывал кадр.
-      diag: {
-        at: [+v.x.toFixed(2), +v.y.toFixed(2)], anim: v.anim, rot: +v.rot.toFixed(1),
-        state: v.state, zoom: r.cam.zoom, villagers: r.villagers.length,
-        dw: +box.dw.toFixed(1), dh: +box.dh.toFixed(1),
-        view: [view.x0, view.y0, view.x1, view.y1], spr: [box.spr.sw, box.spr.sh]
-      },
-      box: [x0, y0, x1, y1], want: [want.x0, want.y0, want.x1, want.y1],
-      size: size, sizeA: sizeA, sizeB: sizeB,
-      dw: box.dw, dh: box.dh, feet: feet, dpr: dpr, export: exp,
-      expScale: Math.pow(r.cachePx / r.cam.zoom, 2),
-      spr: [box.spr.sw, box.spr.sh]
+      n: n, per: per, noise: noise, onLand: onLand, onWater: onWater, worst: worst, worstAt: worstAt,
+      placed: placed.length, spots: spots.length,
+      boxes: want, feet: feet,
+      dw: boxes.map(b => +b.dw.toFixed(1)), dh: boxes.map(b => +b.dh.toFixed(1)),
+      exp: exp, expScale: Math.pow(r.cachePx / r.cam.zoom, 2)
     };
   })()`);
-  const insideBox = drawn.box[0] >= drawn.want[0] - 1.5 && drawn.box[1] >= drawn.want[1] - 1.5 &&
-    drawn.box[2] <= drawn.want[2] + 1.5 && drawn.box[3] <= drawn.want[3] + 1.5;
-  check('кадр не менял размер между сравнениями',
-    drawn.sizeA.join('×') === drawn.sizeB.join('×'), drawn.size.join('×'));
-  check('житель нарисован (пиксели отличаются от кадра без него)', drawn.n > 400,
-    drawn.n + ' пикселей; ' + JSON.stringify(drawn.diag));
-  check('нарисован ровно в своём кадре, а не где-то ещё', insideBox,
-    'нашлось ' + drawn.box.map(v => v.toFixed(0)).join(',') +
-    ' в кадре ' + drawn.want.map(v => v.toFixed(0)).join(','));
-  check('кроме его спрайта, кадр не меняется вообще', drawn.strict === 0,
-    drawn.strict ? `${drawn.strict} пикселей, первый ${JSON.stringify(drawn.strictAt)}` : 'ни одного пикселя');
-  check('вне кадра спрайта на суше не изменилось ничего', drawn.onLand === 0,
-    drawn.onLand
-      ? `${drawn.onLand} пикселей суши, худший ${JSON.stringify(drawn.worstAt)}`
-      : 'ни одного');
+  check('все три жителя нарисованы — у каждого свои пиксели в кадре',
+    drawn.placed === 3 && drawn.per.every(p => p > 200),
+    `пикселей по жителям: ${drawn.per.join('/')} (всего ${drawn.n}), ` +
+    `кадры ${drawn.dw.join('×')} × ${drawn.dh.join('×')} px`);
+  check('вне габаритов спрайтов на суше не изменилось ничего', drawn.onLand === 0,
+    drawn.onLand ? `${drawn.onLand} пикселей суши, худший ${JSON.stringify(drawn.worstAt)}` : 'ни одного');
   check('на воде — только дрожание растеризации', drawn.onWater <= 200,
     `${drawn.onWater} пикселей воды` +
     (drawn.worst ? `, худший ${drawn.worst} единиц в клетке ${drawn.worstAt[0]},${drawn.worstAt[1]}` : '') +
     (drawn.noise ? `; всего дрожания ${drawn.noise} пикселей` : ''));
-  check('фигура занимает заметную часть своего кадра',
-    (drawn.box[3] - drawn.box[1]) > drawn.dh * 0.45 * drawn.dpr,
-    `${(drawn.box[3] - drawn.box[1]).toFixed(0)} px при нарисованном кадре ${(drawn.dh * drawn.dpr).toFixed(0)}`);
-  check('ноги стоят на земле клетки, а не выше и не ниже',
-    drawn.feet > drawn.box[1] && drawn.feet < drawn.box[3] + 1,
-    `земля ${drawn.feet.toFixed(0)} в силуэте ${drawn.box[1].toFixed(0)}..${drawn.box[3].toFixed(0)}`);
+  check('ноги стоят на земле клетки у каждого',
+    drawn.feet.every((f, i) => f > drawn.boxes[i].y0 && f < drawn.boxes[i].y1 + 1),
+    drawn.feet.map(f => f.toFixed(0)).join('/') + ' в силуэтах ' +
+    drawn.boxes.map(b => b.y0.toFixed(0) + '..' + b.y1.toFixed(0)).join(' / '));
   const expWant = Math.max(25, drawn.n * drawn.expScale * 0.5);
-  check('в экспорт PNG житель тоже попадает', drawn.export >= expWant,
-    `${drawn.export} пикселей при ${drawn.n} на экране ` +
+  check('в экспорт PNG жители тоже попадают', drawn.exp >= expWant,
+    `${drawn.exp} пикселей при ${drawn.n} на экране ` +
     `(в экспорте масштаб x${Math.sqrt(drawn.expScale).toFixed(2)}, ждали от ${Math.round(expWant)})`);
 
-  /* --- 7. тот же сид — тот же путь ----------------------------------- */
-  const again = await js(`(() => {
-    const g = window.__mapgen;
-    /* Прогон останавливается на ПЕРВОМ приходе к дереву. Это не поблажка:
-       житель теперь ВАЛИТ дерево, то есть меняет мир, и «тот же сид — тот же
-       путь» верно ровно до первого удара. Досчитай прогон до конца — второй
-       заход пошёл бы по миру без первого дерева, и деревья у двух прогонов
-       были бы разные (на этом проверка уже падала). */
-    const walk = () => {
-      g.spawnVillagers(g.getBuildings()[0]);
-      const v = g.getVillagers()[0];
-      const pts = [];
-      for (let i = 0; i < 3600 && v.state === 'toward'; i++) {
-        g.stepVillagers(${DT});
-        if (i % 60 === 0) pts.push([+v.x.toFixed(3), +v.y.toFixed(3)]);
-      }
-      return { pts: pts, tree: v.tree ? [v.tree.x, v.tree.y] : null, state: v.state };
-    };
-    const a = walk(), b = walk();
-    let same = a.pts.length === b.pts.length;
-    for (let i = 0; same && i < a.pts.length; i++) same = a.pts[i][0] === b.pts[i][0] && a.pts[i][1] === b.pts[i][1];
-    same = same && String(a.tree) === String(b.tree);
-    return { same: same, first: a.pts[0], last: a.pts[a.pts.length - 1], tree: a.tree, state: a.state,
-             moved: Math.hypot(a.pts[a.pts.length-1][0]-a.pts[0][0], a.pts[a.pts.length-1][1]-a.pts[0][1]) };
-  })()`);
-  check('тот же сид — тот же путь к тому же дереву', again.same,
-    JSON.stringify(again.first) + ' -> ' + JSON.stringify(again.last) + ', дерево ' + JSON.stringify(again.tree));
-  check('и он действительно сдвинулся', again.moved > 0.5 || again.state !== 'toward',
-    again.moved.toFixed(2) + ' клетки, состояние ' + again.state);
-
-  /* --- 8. кадры ------------------------------------------------------ *
-   * Кадры снимаются ДО перегенерации: это тот остров, на котором шёл прогон,
-   * и путь на картинке — тот самый, что проверен выше. */
+  /* --- 7. кадры ------------------------------------------------------ */
   console.log('кадры:');
 
   /* Крупный план: сетка включена, клетка под жителем подсвечена — по нему
-   * видно, что он стоит НА клетке, а не висит над ней и не провалился.
-   *
-   * Кадр СТАВИТСЯ в чистый двор ратуши, а не снимается там, где житель
-   * остановился сам: если его дерево стоит в чаще, жителя закрывают кроны
-   * деревьев перед ним (они по глубине ближе камеры, x + y больше), и на
-   * кадре выходила подсвеченная клетка без человека. Где он стоит на самом
-   * деле и на что смотрит — проверяют прогоны выше, а кадр тут для глаза. */
+   * видно, что он стоит НА клетке, а не висит над ней и не провалился. */
   await js(`(() => {
     const g = window.__mapgen;
     g.spawnVillagers(g.getBuildings()[0]);
@@ -889,7 +698,12 @@ const getJSON = (u) => new Promise((res, rej) => {
       }
     if (best) {
       v.x = best.x; v.y = best.y;
+      /* Стоять он будет не «пока не надоест»: житель без работы, которому идти
+         некуда, через WANDER_RETRY (1 с) пробует снова и уходит. Кадр снимается
+         через треть секунды после постановки, а сброс stuck отодвигает попытку
+         на секунду вперёд — иначе на кадре была бы пустая лужайка. */
       v.path = null; v.state = 'stand'; v.anim = 'idle'; v.phase = 0; v.rot = 0;
+      v.stuck = 0;
     }
     r.cam.zoom = 110;
     r.centerOn(v.x, v.y - 0.15);
@@ -898,174 +712,65 @@ const getJSON = (u) => new Promise((res, rej) => {
     return best ? 1 : 0;
   })()`);
 
-  // Рядом с домом и деревьями: видно, одного ли он с ними роста. Кадр
-  // СТАВИТСЯ, а не ловится: житель уходит к своему дереву, и «кадр роста»
-  // оставался пустой лужайкой. Ставим его на свободную траву ПЕРЕД домом (по
-  // глубине x + y он ближе камеры — иначе маленький спрайт прячется за крышей
-  // целиком) и на время кадра останавливаем.
-  await shoot('villager-scale', `(() => {
-    const g = window.__mapgen, r = g.renderer, v = g.getVillagers()[0];
-    const V = window.Villagers, B = window.Buildings, w = g.getWorld();
-    const home = g.getBuildings()[0], c = B.center(home);
+  /* Трое у своего дома — тот самый кадр, ради которого задача делалась: видно,
+   * что жителей ТРИ, что они разные (разные номера и позы) и что все они
+   * собрались у двери дома, а не разошлись по острову. Кадр СТАВИТСЯ, а не
+   * ловится: за время съёмки они успели бы разойтись в разные стороны. */
+  const trio = await js(`(() => {
+    const g = window.__mapgen, r = g.renderer, B = window.Buildings;
+    const V = window.Villagers, S = window.Session, w = g.getWorld();
+    g.spawnVillagers(g.getBuildings()[0]);
+    const list = g.getVillagers();
+    const house = S.houseOf(g.getBuildings());
+    const door = B.frontSpot(house), c = B.center(house);
     const solid = V.blockedMap(w, g.getBuildings());
-    let best = null;
-    for (let x = Math.floor(c.x) - 6; x <= Math.floor(c.x) + 6; x++)
-      for (let y = Math.floor(c.y) - 6; y <= Math.floor(c.y) + 6; y++) {
+    // Клетка перед дверью и две соседние с ней: жители встают в ряд у входа.
+    const around = [];
+    for (let dx = -2; dx <= 2; dx++)
+      for (let dy = -1; dy <= 2; dy++) {
+        const x = door.x + dx, y = door.y + dy;
         const k = y * w.width + x;
         if (x < 1 || y < 1 || x >= w.width - 1 || y >= w.height - 1) continue;
         if (!w.isLand[k] || solid[k]) continue;
-        const d = Math.hypot(x + 0.5 - c.x, y + 0.5 - c.y);
-        if (d < 2.6 || (x + y + 1) < (c.x + c.y) + 2.5) continue;
-        if (!best || d < best.d) best = { x: x + 0.5, y: y + 0.5, d: d };
+        around.push({ x: x + 0.5, y: y + 0.5, d: Math.abs(dx) + Math.abs(dy) });
       }
-    if (best) {
-      v.x = best.x; v.y = best.y;
-      v.path = null; v.state = 'stand'; v.anim = 'idle'; v.phase = 0; v.rot = 0;
+    around.sort((a, b) => a.d - b.d);
+    const spots = [];
+    for (const s of around) {
+      if (spots.some(p => Math.hypot(p.x - s.x, p.y - s.y) < 1.5)) continue;
+      spots.push(s);
+      if (spots.length === list.length) break;
+    }
+    for (let i = 0; i < list.length && i < spots.length; i++) {
+      list[i].x = spots[i].x; list[i].y = spots[i].y;
+      list[i].path = null; list[i].state = 'stand'; list[i].anim = 'idle';
+      list[i].phase = i / list.length;            // разные кадры покоя: видно, что их трое
+      list[i].rot = 90 + i * 45;
+      // Запертыми они себя не считают — просто стоят секунду до новой точки
+      // прогулки; кадр снимается раньше (см. villager-zoom).
+      list[i].stuck = 0;
     }
     r.showGrid = false;
     r.hover = null;
-    r.cam.zoom = 64;
-    r.centerOn((c.x + v.x) / 2, (c.y + v.y) / 2);
-    return best ? 1 : 0;
+    r.showVillagers = true;
+    r.cam.zoom = 96;
+    r.centerOn(c.x, c.y + 1.6);
+    return { spots: spots.length, n: list.length, door: [door.x, door.y],
+             names: list.map(v => S.villagerName(v)), at: spots.map(s => [s.x, s.y]) };
   })()`);
+  await shoot('villager-three', null);
+  check('кадр «трое у дома»: все три жителя стоят у двери своего дома',
+    trio.spots === 3 && trio.n === 3,
+    trio.names.join(' · ') + ' у двери ' + trio.door.join(','));
 
-  /* Он под деревом — крупно: видно, что стоит рядом со стволом и смотрит на
-   * него, а не «где-то в лесу». Кадр тоже СТАВИТСЯ, и по той же причине:
-   * жителя у его собственного дерева в чаще не видно. Дерево для кадра
-   * выбирается САМОЕ ОТКРЫТОЕ — у которого вокруг клетки под ним свободно, —
-   * и житель встаёт с той стороны, откуда он виден (клетка с большим x + y:
-   * по глубине он тогда ближе камеры, чем ствол). */
-  const underTree = await js(`(() => {
-    const g = window.__mapgen, r = g.renderer, B = window.Buildings, w = g.getWorld();
-    const V = window.Villagers, v = g.getVillagers()[0];
-    const solid = V.blockedMap(w, g.getBuildings());
-    const home = g.getBuildings()[0], c = B.center(home);
-    const trees = V.treesNear(w, c.x, c.y, 400);
-    let best = null;
-    for (const t of trees) {
-      const tc = [Math.floor(t.x), Math.floor(t.y)];
-      for (const spot of V.standCells(w, solid, t, c.x, c.y)) {
-        if (spot.cx + spot.cy <= tc[0] + tc[1]) continue;      // только со стороны камеры
-        // открытость: сколько из восьми соседей клетки свободно
-        let open = 0;
-        for (let dx = -1; dx <= 1; dx++)
-          for (let dy = -1; dy <= 1; dy++)
-            if (V.walkable(w, solid, spot.cx + dx, spot.cy + dy)) open++;
-        const d = Math.hypot(t.x - c.x, t.y - c.y);
-        if (!best || open > best.open || (open === best.open && d < best.d)) {
-          best = { open: open, d: d, x: spot.x, y: spot.y, tree: t };
-        }
-      }
-    }
-    if (!best) return { ok: 0 };
-    v.x = best.x; v.y = best.y;
-    v.path = null; v.state = 'stand'; v.anim = 'idle'; v.phase = 0;
-    v.rot = ((Math.atan2(best.tree.y - v.y, best.tree.x - v.x) * 180 / Math.PI) % 360 + 360) % 360;
-    const face = v.rot;
-    r.showGrid = false;
-    r.hover = null;
-    r.cam.zoom = 78;
-    r.centerOn((v.x + best.tree.x) / 2, (v.y + best.tree.y) / 2 - 0.2);
-    return {
-      ok: 1, open: best.open, dist: Math.hypot(best.tree.x - v.x, best.tree.y - v.y),
-      rot: v.rot, face: face, state: v.state
-    };
-  })()`);
-  await shoot('villager-tree', null);
-  check('кадр «житель под деревом»: стоит рядом и смотрит на ствол',
-    underTree.ok === 1 && Math.abs(((underTree.rot - underTree.face + 540) % 360) - 180) < 0.5 &&
-      underTree.dist < 1.6,
-    underTree.ok
-      ? `до ствола ${underTree.dist.toFixed(2)} клетки, курс ${underTree.rot.toFixed(1)}°, ` +
-        `свободных клеток вокруг ${underTree.open} из 9`
-      : 'дерева нет');
-
-  /* Он РУБИТ — кадр удара, крупно. До него симуляция доматывается тем же шагом,
-   * что в игре, и останавливается на ФАЗЕ УДАРА (CHOP_HIT): на ней топор входит
-   * в ствол, и в игре дерево вздрагивает.
-   *
-   * Тряску приходится ставить вручную: её гасит рендер по времени, а между
-   * постановкой кадра и снятием проходит треть секунды — к этому моменту от
-   * амплитуды остаётся 3%, и кадр показывал бы стоящее дерево. Берётся возраст
-   * 0.03 с: на нём синус почти максимален (0.97 размаха). И кадр снимается ТУТ
-   * ЖЕ, а не помощником shoot: тот ждёт и снимает то, что успело остыть. */
-  const chopShot = await js(`(() => {
-    const g = window.__mapgen, r = g.renderer, V = window.Villagers, w = g.getWorld();
-    g.spawnVillagers(g.getBuildings()[0]);
-    const v = g.getVillagers()[0];
-    /* Дерево для кадра выбирается САМОЕ ОТКРЫТОЕ — у которого вокруг клетки
-       подхода свободно (тем же перебором, что у кадра «под деревом»). Без
-       этого кадр рубки выходит пустой лужайкой: житель уходит в чащу, и его
-       закрывают кроны деревьев, которые по глубине ближе камеры. */
-    const solid = V.blockedMap(w, g.getBuildings());
-    const c = V.treesNear(w, v.x, v.y, 400);
-    let best = null;
-    for (const t of c) {
-      const tc = [Math.floor(t.x), Math.floor(t.y)];
-      for (const spot of V.standCells(w, solid, t, v.x, v.y)) {
-        // только со стороны камеры (x + y больше, чем у ствола): с дальней
-        // стороны жителя закрывает крона — она огромная и по глубине ближе
-        if (spot.cx + spot.cy <= tc[0] + tc[1]) continue;
-        let open = 0;
-        for (let dx = -1; dx <= 1; dx++)
-          for (let dy = -1; dy <= 1; dy++)
-            if (V.walkable(w, solid, spot.cx + dx, spot.cy + dy)) open++;
-        const d = Math.hypot(t.x - v.x, t.y - v.y);
-        if (!best || open > best.open || (open === best.open && d < best.d)) {
-          best = { open: open, d: d, x: spot.x, y: spot.y, tree: t };
-        }
-        break;                                   // у дерева хватит одной клетки подхода
-      }
-    }
-    if (!best) return { png: null, state: 'нет открытого дерева' };
-    v.x = best.x; v.y = best.y;
-    v.tree = best.tree;
-    v.goal = { x: best.x, y: best.y };
-    v.path = null; v.close = false; v.state = 'toward'; v.chopT = 0; v.hits = 0;
-    for (let i = 0; i < 60 * 20 && v.state === 'toward'; i++) g.stepVillagers(1/60);
-    if (v.state !== 'chop') return { png: null, state: v.state };
-    const t = v.tree;
-    for (let i = 0; i < 200; i++) {              // доматываем до кадра удара
-      const before = v.phase;
-      g.stepVillagers(1/60);
-      if (before < V.CHOP_HIT && v.phase >= V.CHOP_HIT) break;
-    }
-    r.showGrid = false;
-    r.hover = null;
-    r.cam.zoom = 110;
-    r.centerOn((v.x + t.x) / 2, (v.y + t.y) / 2 - 0.05);
-    t.shake = 1;
-    t._shakeT = (r.time || 0) - 0.03;
-    r.render(r.time || 0);
-    return {
-      png: document.getElementById('view').toDataURL('image/png'),
-      phase: +v.phase.toFixed(3), anim: v.anim,
-      hits: v.hits, dist: +Math.hypot(t.x - v.x, t.y - v.y).toFixed(2),
-      angle: +(r.treeShake(t, r.time || 0)).toFixed(3), tree: [t.x, t.y],
-      hitPhase: V.CHOP_HIT
-    };
-  })()`);
-  if (chopShot.png) {
-    fs.writeFileSync(path.join(OUT, 'villager-chop.png'),
-      Buffer.from(chopShot.png.split(',')[1], 'base64'));
-    console.log('  villager-chop.png');
-  }
-  check('кадр «житель рубит»: анимация работы на фазе удара, топор у самого ствола',
-    !!chopShot.png && chopShot.anim === 'work' &&
-      chopShot.phase >= 0.5 && chopShot.phase < 0.62 && chopShot.dist < 1.0,
-    chopShot.png
-      ? `фаза ${chopShot.phase} (удар на ${chopShot.hitPhase}), до ствола ${chopShot.dist} клетки, ` +
-        `ударов ${chopShot.hits}, тряска дерева ${chopShot.angle}`
-      : 'житель не дошёл до дерева: ' + chopShot.state);
-
-  /* Весь остров и путь жителя. Путь рисуется поверх экспорта PNG: он собран
-   * в тех же пикселях кэша, поэтому ложится ровно на свои клетки. Прогон
-   * здесь ПОВТОРЯЕТСЯ, а не берётся из проверок выше, и это не лишняя работа:
-   * перегенерация построила другой остров, а координаты прошлого пути — того
-   * мира. */
-  const islandShot = async (name, trail, tree, title) => {
+  /* Весь остров и прогулки всех трёх — из ГЛАВНОГО прогона (sim), а не
+   * прожитые заново: это те самые шаги, что проверены выше, и остров на
+   * картинке тот же. Круг радиуса WANDER_R вокруг якоря рисуется затем, чтобы
+   * «не дальше 10 клеток» было видно глазом, а не только числом. */
+  const islandShot = async (name, opts) => {
     const data = await js(`(() => {
       const g = window.__mapgen, r = g.renderer;
+      const o = ${JSON.stringify(opts)};
       const src = r.exportPNG(1);
       const k = Math.min(1, 1500 / src.width);
       const cv = document.createElement('canvas');
@@ -1076,120 +781,124 @@ const getJSON = (u) => new Promise((res, rej) => {
       g2.drawImage(src, 0, 0, cv.width, cv.height);
       const cpx = r.cachePx, off = r.cacheOffset;
       const to = (x, y) => [((x - y) * 0.5 * cpx + off.x) * k, ((x + y) * 0.25 * cpx + off.y) * k];
-      const t = ${JSON.stringify(trail)};
-      g2.lineWidth = 1.2;
-      g2.strokeStyle = 'rgba(220,60,40,0.6)';
-      g2.beginPath();
-      for (let i = 0; i < t.length; i++) {
-        const p = to(t[i][0], t[i][1]);
-        if (i === 0) g2.moveTo(p[0], p[1]); else g2.lineTo(p[0], p[1]);
-      }
-      g2.stroke();
-      const drawDot = (xy, color) => {
+      const drawDot = (xy, color, r0) => {
         const p = to(xy[0], xy[1]);
         g2.fillStyle = color;
-        g2.beginPath(); g2.arc(p[0], p[1], 5, 0, 7); g2.fill();
+        g2.beginPath(); g2.arc(p[0], p[1], r0 || 5, 0, 7); g2.fill();
       };
-      if (t.length) { drawDot(t[0], '#2f8f3f'); drawDot(t[t.length - 1], '#c8281a'); }
-      const tr = ${JSON.stringify(tree)};
-      if (tr) { drawDot(tr, '#1d5fbf'); }
+      for (const c of (o.circles || [])) {
+        g2.beginPath();
+        for (let i = 0; i <= 96; i++) {
+          const a = i / 96 * Math.PI * 2;
+          const p = to(c.x + Math.cos(a) * c.r, c.y + Math.sin(a) * c.r);
+          if (i === 0) g2.moveTo(p[0], p[1]); else g2.lineTo(p[0], p[1]);
+        }
+        g2.closePath();
+        g2.strokeStyle = c.color || 'rgba(255,255,255,0.8)';
+        g2.lineWidth = 1.3;
+        g2.setLineDash([5, 4]);
+        g2.stroke();
+        g2.setLineDash([]);
+      }
+      for (const t of (o.trails || [])) {
+        const pts = t.points;
+        g2.lineWidth = 1.2;
+        g2.strokeStyle = t.color;
+        g2.beginPath();
+        for (let i = 0; i < pts.length; i++) {
+          const p = to(pts[i][0], pts[i][1]);
+          if (i === 0) g2.moveTo(p[0], p[1]); else g2.lineTo(p[0], p[1]);
+        }
+        g2.stroke();
+        if (pts.length) {
+          drawDot(pts[0], t.color, 3.4);
+          drawDot(pts[pts.length - 1], '#c8281a', 3.4);
+        }
+      }
+      for (const a of (o.anchors || [])) drawDot(a, '#fff2c4', 3.2);
       g2.fillStyle = 'rgba(0,0,0,0.55)';
       g2.fillRect(0, 0, cv.width, 26);
       g2.fillStyle = '#fff';
       g2.font = '600 15px -apple-system, Segoe UI, Roboto, sans-serif';
-      g2.fillText(${JSON.stringify(title)}, 10, 18);
+      g2.fillText(o.title || '', 10, 18);
       return cv.toDataURL('image/png');
     })()`);
     fs.writeFileSync(path.join(OUT, name + '.png'), Buffer.from(data.split(',')[1], 'base64'));
     console.log('  ' + name + '.png');
   };
 
-  /* Путь для кадра берётся из ГЛАВНОГО прогона (sim), а не проживается
-     заново: это тот самый путь, шаги которого проверены выше, и остров на
-     картинке — тот же. */
-  await islandShot('villager-trail', sim.trail, sim.tree,
-    'путь жителя к ближайшему дереву: ' + sim.walked.toFixed(1) + ' клетки за ' +
-    (sim.steps / 60).toFixed(0) + ' с, встал на клетке ' + sim.stopCell.join(',') +
-    ' (зелёная — старт, синяя — дерево, красная — где встал)');
+  const TRAIL_COLORS = ['#2f8f3f', '#1d5fbf', '#8a3fbf'];
+  await islandShot('villager-trail', {
+    trails: sim.trail.map((points, i) => ({ points: points, color: TRAIL_COLORS[i % 3] })),
+    anchors: sim.anchors,
+    circles: sim.anchors.map(a => ({ x: a[0], y: a[1], r: sim.radius,
+      color: 'rgba(255,255,255,0.75)' })),
+    title: 'прогулки трёх жителей за ' + MINUTES + ' мин: пунктир — круг радиуса ' +
+      sim.radius + ' вокруг якоря, максимум вышел ' +
+      sim.max.map(d => d.toFixed(2)).join('/') + ' клетки, срублено ' +
+      (sim.trees0 - sim.trees1) + ' деревьев'
+  });
 
-  if (detour.ok && detour.trail) {
-    await islandShot('villager-detour', detour.trail, detour.tree,
-      'обход ратуши по пути к дереву: пятно ' + detour.fp.join('×') + ' в ' +
-      detour.home.join(',') + ', пройдено ' + detour.walked.toFixed(1) +
-      ' при кратчайшем ' + detour.octile.toFixed(1) + ' клетки');
-  }
-
-  /* --- 9. перегенерация карты ---------------------------------------- *
+  /* --- 8. перегенерация карты ---------------------------------------- *
    * «Сгенерировать» в панели и `R` строят ДРУГОЙ мир, а путь жителя — это
-   * клетки того мира, на котором он его считал. Забыть про это легко:
-   * житель остаётся с прошлым путём и идёт по воде нового острова. Кнопка
-   * тут настоящая, из панели, — тест жмёт её, а не зовёт функцию. */
+   * клетки того мира, на котором он его считал. Забыть про это легко: житель
+   * остаётся с прошлым путём и идёт по воде нового острова. Кнопка тут
+   * настоящая, из панели, — тест жмёт её, а не зовёт функцию. */
   const regen = await js(`(() => {
-    const g = window.__mapgen, V = window.Villagers;
+    const g = window.__mapgen, V = window.Villagers, S = window.Session, B = window.Buildings;
     document.getElementById('seed').value = 'житель-перегенерация';
     document.getElementById('regen').click();
-    const w = g.getWorld(), v = g.getVillagers()[0];
-    if (!v) return { n: 0 };
+    const w = g.getWorld(), list = g.getVillagers(), builds = g.getBuildings();
+    if (!list.length) return { n: 0 };
+    const solid = V.blockedMap(w, builds);
+    const house = S.houseOf(builds);
     const W = w.width;
-    /* Ставим его на клетку ПОДАЛЬШЕ от деревьев: иначе на новом острове дерево
-       может оказаться соседним, прогон закончится на первом же шаге, и «он
-       идёт по новой суше» превратится в «он стоит там же, где стоял». */
-    const solid0 = V.blockedMap(w, g.getBuildings());
-    const trees = [];
-    for (const o of w.objects) if (o.kind === 'tree') trees.push([Math.floor(o.x), Math.floor(o.y)]);
-    let far = null;
-    for (let k = 0; k < W * w.height; k++) {
-      const x = k % W, y = (k / W) | 0;
-      if (!V.walkable(w, solid0, x, y)) continue;
-      let d = Infinity;
-      for (const t of trees) {
-        const dd = Math.hypot(t[0] - x, t[1] - y);
-        if (dd < d) d = dd;
-      }
-      if (!far || d > far.d) far = { x: x, y: y, d: d };
-    }
-    if (far) {
-      v.x = far.x + 0.5; v.y = far.y + 0.5;
-      v.path = null; v.tree = null; v.goal = null; v.state = 'toward'; v.walked = 0;
-    }
     let water = 0, blocked = 0, off = 0, steps = 0;
-    const start = [v.x, v.y];
-    while (steps < 180 * 60 && v.state === 'toward') {
+    const max = list.map(() => 0);
+    const states = list.map(() => ({}));
+    while (steps < 180 * 60) {
       g.stepVillagers(${DT});
       steps++;
-      const cx = Math.floor(v.x), cy = Math.floor(v.y);
-      if (cx < 0 || cy < 0 || cx >= W || cy >= w.height) off++;
-      else if (!w.isLand[cy * W + cx]) water++;
-      else if (V.blockedMap(w, g.getBuildings())[cy * W + cx]) blocked++;
+      for (let i = 0; i < list.length; i++) {
+        const v = list[i], cx = Math.floor(v.x), cy = Math.floor(v.y);
+        if (cx < 0 || cy < 0 || cx >= W || cy >= w.height) off++;
+        else if (!w.isLand[cy * W + cx]) water++;
+        else if (solid[cy * W + cx]) blocked++;
+        states[i][v.state] = (states[i][v.state] || 0) + 1;
+        max[i] = Math.max(max[i], Math.hypot(v.x - v.anchor.x, v.y - v.anchor.y));
+      }
     }
-    const cell = [Math.floor(v.x), Math.floor(v.y)];
+    const cell = (v) => [Math.floor(v.x), Math.floor(v.y)];
     return {
-      n: g.getVillagers().length, water: water, blocked: blocked, off: off,
-      state: v.state, tree: v.tree ? [v.tree.x, v.tree.y] : null,
-      walked: Math.hypot(v.x - start[0], v.y - start[1]),
-      from: [Math.floor(start[0]), Math.floor(start[1])], cell: cell,
-      far: far ? +far.d.toFixed(1) : null,
-      // рядом с ним (по осям) обязано стоять дерево — иначе он встал в поле
-      adjacent: !!v.tree && (Math.abs(Math.floor(v.tree.x) - cell[0]) +
-                             Math.abs(Math.floor(v.tree.y) - cell[1])) === 1,
-      land: !!w.isLand[cell[1] * W + cell[0]],
-      cells: V.landCells(w).length
+      n: list.length, water: water, blocked: blocked, off: off, steps: steps,
+      max: max, states: states, radius: V.WANDER_R,
+      housed: list.filter(v => v.home === house).length,
+      land: list.every(v => !!w.isLand[cell(v)[1] * W + cell(v)[0]]),
+      cells: V.landCells(w).length,
+      walked: list.map(v => Math.round(v.walked)),
+      trees: w.stats ? w.stats.trees : null
     };
   })()`);
-  check('после перегенерации карты житель остался один', regen.n === 1, regen.n + ' шт.');
-  check('на новом острове он идёт к дереву новой суши, а не по старой',
-    regen.water === 0 && regen.blocked === 0 && regen.off === 0 && regen.land &&
-      regen.state !== 'toward',
-    `${regen.water} в воде, ${regen.blocked} в занятых, ${regen.off} за картой; ` +
-    `дерево ${regen.tree ? regen.tree.map(n => n.toFixed(1)).join(',') : '—'}`);
-  check('и он снова идёт — от дальней от леса клетки к ближайшему дереву',
-    regen.walked > 1 && regen.state !== 'toward' && regen.adjacent,
-    `${regen.walked.toFixed(1)} клетки от клетки ${regen.from.join(',')} (до леса ${regen.far} клеток), ` +
-    `встал на ${regen.cell.join(',')} рядом с деревом: ${regen.adjacent}`);
+  check('после перегенерации карты жителей снова трое, и все прописаны',
+    regen.n === 3 && regen.housed === 3, regen.n + ' шт., прописано ' + regen.housed);
+  check('на новом острове они гуляют по НОВОЙ суше, а не по старой',
+    regen.water === 0 && regen.blocked === 0 && regen.off === 0 && regen.land,
+    `${regen.water} в воде, ${regen.blocked} в занятом, ${regen.off} за картой; ` +
+    `суши на острове ${regen.cells} клеток`);
+  check('и на новом острове они не выходят из своего круга',
+    regen.max.every(d => d <= regen.radius + 1e-9),
+    'максимум от якоря: ' + regen.max.map(d => d.toFixed(2)).join('/') + ' клетки за ' +
+    (regen.steps / 60).toFixed(0) + ' с');
+  check('на новом острове они тоже гуляют, а не стоят',
+    regen.walked.every(w => w > 20) && regen.states.every(s =>
+      Object.keys(s).every(k => k === 'wander' || k === 'stand')),
+    'пройдено ' + regen.walked.join('/') + ' клеток, состояния ' +
+    regen.states.map(s => JSON.stringify(s)).join(' · '));
 
-  console.log('\nитог пути: ' + sim.steps + ' шагов (' + (sim.steps / 60).toFixed(1) + ' с), ' +
-    sim.walked.toFixed(1) + ' клеток до дерева, встал на клетке ' + sim.stopCell.join(',') +
-    ', курс ' + sim.rot.toFixed(1) + '°');
+  console.log('\nитог прогулки: ' + (sim.steps / 60).toFixed(0) + ' с на троих, ' +
+    'максимум от якоря ' + sim.max.map(d => d.toFixed(2)).join('/') + ' клетки при радиусе ' +
+    sim.radius + ', ближе всего к стволу ' + sim.minTree.map(d => d.toFixed(2)).join('/') +
+    ' клетки, срублено деревьев ' + (sim.trees0 - sim.trees1));
 
   if (errors.length) { console.log('\nошибки:'); errors.forEach(e => console.log('  ' + e)); }
   else console.log('\nошибок в консоли нет');
@@ -1198,8 +907,8 @@ const getJSON = (u) => new Promise((res, rej) => {
 
   function finish() {
     console.log(fails ? '\nПРОВАЛЕНО проверок: ' + fails : '\nИТОГ: ПРИНЯТО');
-    ws.close(); chrome.kill('SIGKILL');
+    ws.close(); killChrome();
     try { fs.rmSync(PROFILE, { recursive: true, force: true }); } catch (e) {}
     process.exit(fails ? 1 : 0);
   }
-})().catch(e => { console.error('ошибка: ' + e.message); chrome.kill('SIGKILL'); process.exit(1); });
+})().catch(e => { console.error('ошибка: ' + e.message); killChrome(); process.exit(1); });

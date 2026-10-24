@@ -2,14 +2,14 @@
 (function (global) {
   'use strict';
 
-  var WG = global.WorldGen, T = WG.T;
+  var WG = global.WorldGen;
 
   var $ = function (id) { return document.getElementById(id); };
 
-  /* Ратуша игрока. Вариант C и поворот на 90° — основная ратуша партии;
-     это не настройка панели, а часть начала игры, поэтому здесь, а не в
-     разметке. */
-  var HOME = { variant: 'c', rot: 90 };
+  /* Ратуша игрока — та же, что в игре (game/index.html): вариант C и поворот
+     на 90°. Число живёт в js/session.js, чтобы обе оболочки ставили одну и
+     ту же ратушу; здесь только ссылка на него. */
+  var HOME = global.Session.HOME;
 
   var view = $('view');
   var renderer = new global.Render.Renderer(view);
@@ -26,13 +26,37 @@
 
   var buildings = [];                       // поставленные ратуши
   var villagers = [];                       // жители: ходят сами (js/villager.js)
-  var place = { on: false, variant: 'a', rot: 0, clear: true, strict: false };
+  /* Призрак и постановка мышью: вариант, поворот, расчистка. Поворот по
+     умолчанию — общий для всех построек FACE_ROT (лицом вправо-вниз): игрок
+     ставит дом таким, каким его видно, а повернуть может Q/E или чипами.
+     Число берётся у движка построек — js/buildings.js подключается раньше
+     (см. порядок тегов в index.html), и правило поворота живёт только там. */
+  var place = {
+    on: false, variant: 'a', rot: global.Buildings.FACE_ROT,
+    clear: true, strict: false
+  };
   var ghost = null;                         // призрак под курсором
 
+  /* Атлас ратуши: панель размещения ставит только её, и «есть ли что ставить»
+     спрашивается у набора по типу, а не у рендера целиком (js/render.js:
+     spritesFor). Деревня на старте ставится из js/session.js — панель в это
+     не вмешивается. */
+  function homeSprites() {
+    return renderer.spritesFor(global.Buildings.DEFAULT_TYPE);
+  }
+
   function placeOpts() {
-    // yard: 1 — вместе с пятном расчищается клетка вокруг: без неё куст
-    // встаёт вплотную к стене и рисуется поверх неё (по земле он ближе).
-    return { clearable: place.clear, requireClear: place.strict, yard: 1 };
+    // yard — клетка вокруг пятна: и в неё смотрит расчистка, и она же
+    // попадает в предупреждение (дерево вплотную к стене читается как ошибка
+    // кадра). Число берётся у движка (js/buildings.js: YARD): им же меряет
+    // отрисовка, закрывая мелочь под призраком и под вставшим домом.
+    // Кусты и трава в счёт не идут вовсе — они не помеха, их сминает
+    // постановка (js/buildings.js: obstacle, settle).
+    // clear — то же, что clearable, но про ДЕЙСТВИЕ: «расчистить ли площадку,
+    // когда дом встанет». Разрешение спрашивают один раз, а читают его двое
+    // (проверка места и settle), поэтому числа два, а галочка одна.
+    return { clearable: place.clear, requireClear: place.strict,
+             yard: global.Buildings.YARD, clear: place.clear };
   }
 
   function applyBuildings() {
@@ -44,47 +68,20 @@
 
   /* ---------------------------- жители ---------------------------- */
 
-  /* Житель выходит из дома: место появления — двор ратуши с той стороны,
-     откуда смотрит камера (x + y больше — значит, ближе к зрителю). Дальше
-     он ходит сам, и в этом весь смысл: игрок им не управляет.
-
-     Житель один. Он не «юнит» и не работник — экономики в игре нет, — а
-     человек, который пошёл пройтись по острову. Массив тут не ради толпы,
-     а ради того, что жителей может стать больше одной строкой. */
-  var VILLAGERS = 1;
-
+  /* Жителя создаёт и ведёт js/session.js: партия у генератора и у игры одна
+     и та же, и «житель вышел из ратуши и пошёл рубить» — её часть, а не
+     особенность панели. Здесь остаются имена, которыми пользуются панель и
+     автотесты. */
   function spawnVillagers(home) {
-    villagers = [];
-    if (!world || !renderer.villagerSprites) { renderer.setVillagers(villagers); return 0; }
-    var x = world.width / 2, y = world.height / 2;
-    if (home) {
-      var fp = global.Buildings.footprint(home.rot);
-      x = home.x + fp.w + 1;
-      y = home.y + fp.h + 1;
-    }
-    for (var i = 0; i < VILLAGERS; i++) {
-      villagers.push(global.Villagers.create(world, {
-        index: i, x: x, y: y, buildings: buildings,
-        // Двое в одной клетке не встают: второй ищет место рядом.
-        avoid: villagers
-      }));
-    }
-    renderer.setVillagers(villagers);
+    villagers = global.Session.spawnVillagers(world, renderer, buildings, home);
     return villagers.length;
   }
 
-  // Шаг всех жителей. Живёт здесь, а не в render.js: состояние и время —
-  // одно, рисование — другое.
   var felledSeen = 0;          // сколько деревьев срублено на прошлом шаге (см. ниже)
 
   function stepVillagers(dt) {
     if (!world || !villagers.length) return 0;
-    var opts = { buildings: buildings };
-    var felled = 0;
-    for (var i = 0; i < villagers.length; i++) {
-      global.Villagers.update(villagers[i], world, renderer.villagerSprites, dt, opts);
-      felled += villagers[i].felled;
-    }
+    var felled = global.Session.stepVillagers(villagers, world, renderer, dt, buildings);
     /* Срубленное дерево — это минус дерево в мире, и панель обязана это
        показать. Обновляем её только когда счёт ДЕЙСТВИТЕЛЬНО изменился: житель
        валит дерево раз в 10..20 секунд (пять секунд рубки плюс дорога), а
@@ -119,7 +116,7 @@
   function updatePlaceInfo() {
     var el = $('placeInfo');
     if (!el) return;
-    if (!renderer.buildingSprites) {
+    if (!homeSprites()) {
       el.textContent = 'Спрайты ратуши не загрузились';
       el.className = 'place-info bad';
       return;
@@ -140,7 +137,7 @@
   function setPlaceMode(on) {
     // Без атласа ратуши режим включать нечем: пятно рисовалось бы, а ставить
     // было бы нечего. Кнопка в панели в этом случае тоже заблокирована.
-    if (on && !renderer.buildingSprites) return;
+    if (on && !homeSprites()) return;
     place.on = !!on;
     renderer.selected = null;
     $('thPlace').classList.toggle('active', place.on);
@@ -170,10 +167,19 @@
   // Ставит ратушу в пятно. Возвращает false, если место не годится —
   // вызывающий сам решает, что об этом сказать.
   function placeAt(b) {
-    var chk = global.Buildings.canPlace(world, buildings, b, placeOpts());
+    /* Постройка заводится через make, и проверяется ровно то, что ляжет в
+       список: классификатор (kind), целые x/y и поворот из четвертей — его
+       работа, а не панели. Одно место создания на весь движок: по kind
+       постройку отличают от ландшафта и выбор мышью, и режим правки игры. */
+    var made = global.Buildings.make(b);
+    var chk = global.Buildings.canPlace(world, buildings, made, placeOpts());
     if (!chk.ok) return false;
-    if (place.clear) global.Buildings.clearSite(world, b, placeOpts());
-    buildings.push({ variant: b.variant, rot: b.rot, x: b.x, y: b.y });
+    /* Постройка встала — и вместе с ней решается судьба того, что под ней:
+       расчистка, если игрок её разрешил, и всегда — смятие мелочи (куст под
+       домом рисуется поверх стены). Правило это движковое: js/buildings.js,
+       settle. */
+    global.Buildings.settle(world, made, placeOpts());
+    buildings.push(made);
     applyBuildings();
     updateStats();
     return true;
@@ -208,9 +214,11 @@
   }
 
   function placeAllThree() {
+    // Поворот не задаём: «все три» встают так же, как всё остальное на карте, —
+    // лицом вправо-вниз, а это правило живёт в js/buildings.js (FACE_ROT).
     var spots = global.Buildings.placeAll(world, {
       clear: place.clear, clearable: place.clear, requireClear: place.strict,
-      variants: ['a', 'b', 'c'], rotations: [0, 180, 0]
+      variants: ['a', 'b', 'c']
     });
     for (var i = 0; i < spots.length; i++) buildings.push(spots[i]);
     applyBuildings();
@@ -223,8 +231,9 @@
   function keepValidBuildings() {
     var keep = [], dropped = 0;
     for (var i = 0; i < buildings.length; i++) {
-      // opts по умолчанию: растения в пятне не считаются запретом, иначе
-      // смена ползунка «только чистое место» сносила бы готовые постройки.
+      // opts по умолчанию: деревья и камни в пятне не считаются запретом,
+      // иначе смена ползунка «только чистое место» сносила бы готовые
+      // постройки. Про мелочь и говорить нечего — она место не портит.
       if (global.Buildings.canPlace(world, keep, buildings[i], {}).ok) {
         // А вот площадку расчищаем всегда, даже если расчистка выключена:
         // лес на новом сиде растёт заново и без этого прорастает сквозь
@@ -287,15 +296,12 @@
 
     buildings = [];
     renderer.selected = null;
-    var home = global.Buildings.homeSpot(world, HOME);
-    if (home) {
-      // Под ратушей и вокруг неё — чисто: она встаёт на готовую площадку,
-      // а не в лес, который потом прорастёт сквозь стены.
-      global.Buildings.clearSite(world, home, placeOpts());
-      buildings.push(home);
-    }
-    renderer.setBuildings(buildings);
-    renderer.fitIsland();
+    // Ратуша игрока, постройки партии и кадр «остров целиком» — из
+    // js/session.js: ровно то же делает игра (game/index.html) на своей
+    // стороне, и разойтись эти две партии не могут.
+    var st = global.Session.startHome(world, renderer, placeOpts());
+    var home = st.home;
+    buildings = st.buildings;
     refreshGhost();
     spawnVillagers(home);
     updateStats(tGen);
@@ -382,58 +388,81 @@
        житель ходит — значит, точка ставится здесь, на каждый кадр, поверх
        готовой картинки обзора. Без неё найти человека на острове можно
        только обшарив его глазами: он один и он маленький. */
-    for (var i = 0; i < villagers.length; i++) {
-      var p = renderer.worldToMM(villagers[i].x, villagers[i].y);
-      mmCtx.beginPath();
-      mmCtx.arc(p.x, p.y, 2.4, 0, Math.PI * 2);
-      mmCtx.fillStyle = '#fff2c4';
-      mmCtx.fill();
-      mmCtx.lineWidth = 1.2;
-      mmCtx.strokeStyle = 'rgba(40,30,6,0.9)';
-      mmCtx.stroke();
-    }
+    global.Session.drawVillagers(mmCtx, renderer, villagers);
   }
 
   /* ------------------------------ ввод ------------------------------ */
 
   var drag = null;
 
+  /* Пороги указателя — те же правила, что у игры (game/js/play.js): дрожь
+     меряется РАССТОЯНИЕМ от точки нажатия, а не суммой пути, клик терпит 8 px,
+     камера едет только после порога. Иначе рука на Windows дрожит на 8–10 px, и
+     «поставить здание» превращается в «подвинуть карту». */
+  var CLICK_SLOP = 8;
+  var PAN_SLOP = CLICK_SLOP;
+  /* Пока ставим здание, рука прицеливается: 10–15 px дрожи — это «сюда», а не
+     «увести карту». Тот же порог, что у постановки в игре (PLACE_SLOP). */
+  var PLACE_SLOP = 18;
+  function moveSlop() { return place.on ? PLACE_SLOP : PAN_SLOP; }
+
+  /* Колесо: Firefox меряет deltaY строками (deltaMode 1), Windows-мышь — по
+     100 пикселей за щелчок. Без пересчёта зум в Firefox почти не работал. */
+  function wheelDelta(e) {
+    var d = e.deltaY || 0;
+    if (e.deltaMode === 1) d *= 16;          // строки
+    else if (e.deltaMode === 2) d *= 400;    // страницы
+    if (d > 240) d = 240;
+    if (d < -240) d = -240;
+    return d;
+  }
+
+  function pointerAt(e) {
+    var rect = view.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
   view.addEventListener('pointerdown', function (e) {
     view.setPointerCapture(e.pointerId);
     view.classList.add('dragging');
-    drag = { x: e.clientX, y: e.clientY, moved: 0 };
+    drag = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, moved: 0 };
+    var p = pointerAt(e);
+    updateHover(p.x, p.y);
   });
 
   view.addEventListener('pointermove', function (e) {
-    var rect = view.getBoundingClientRect();
+    var p = pointerAt(e);
     if (drag) {
       var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
       drag.x = e.clientX; drag.y = e.clientY;
-      drag.moved += Math.abs(dx) + Math.abs(dy);
-      renderer.panScreen(dx, dy);
-      needFrame = true;
+      var reach = Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0);
+      if (reach > drag.moved) drag.moved = reach;
+      if (drag.moved > moveSlop()) {
+        renderer.panScreen(dx, dy);
+        needFrame = true;
+      }
     }
-    updateHover(e.clientX - rect.left, e.clientY - rect.top);
+    updateHover(p.x, p.y);
   });
 
-  // Клик отличается от перетаскивания по пройденному пути: панорама тоже
-  // начинается с нажатия, и без этого порога здание ставилось бы в конце
+  // Клик отличается от перетаскивания расстоянием от точки нажатия: панорама
+  // тоже начинается с нажатия, и без этого порога здание ставилось бы в конце
   // каждого сдвига камеры.
-  var CLICK_SLOP = 6;
-
   view.addEventListener('pointerup', function (e) {
     view.classList.remove('dragging');
-    var wasDrag = drag && drag.moved > CLICK_SLOP;
+    var wasDrag = !!(drag && drag.moved > CLICK_SLOP);
+    var wasPlaceDrag = !!(drag && drag.moved > PLACE_SLOP);
     drag = null;
-    if (e.button !== 0 || wasDrag || !world) return;
+    if (e.button !== 0 || !world) return;
 
-    var rect = view.getBoundingClientRect();
-    var p = renderer.screenToWorld(
-      e.clientX - rect.left - view.clientWidth / 2,
-      e.clientY - rect.top - view.clientHeight / 2);
+    var pt = pointerAt(e);
+    var p = renderer.screenToWorld(pt.x - renderer.cssW / 2, pt.y - renderer.cssH / 2);
     var cell = { x: Math.floor(p.x), y: Math.floor(p.y) };
 
     if (place.on) {
+      // Настоящая панорама (сдвиг больше PLACE_SLOP) постановку отменяет;
+      // дрожь руки — нет: призрак всё это время стоял под курсором.
+      if (wasPlaceDrag) return;
       // Призрак считается от клетки под курсором, а не от последнего
       // движения мыши: клик без движения тоже должен ставить.
       refreshGhost();
@@ -442,6 +471,7 @@
       needFrame = true;
       return;
     }
+    if (wasDrag) return;
 
     // Вне режима размещения клик выбирает постройку: по выбранной видно
     // пятно, её можно снести клавишей Delete, а не откатывать всё подряд.
@@ -454,6 +484,10 @@
   });
   view.addEventListener('pointercancel', function () { drag = null; view.classList.remove('dragging'); });
 
+  /* Потеря фокуса окна: отпускание до полотна не доедет, и камера осталась бы
+     «в руке». */
+  global.addEventListener('blur', function () { drag = null; view.classList.remove('dragging'); });
+
   // ПКМ по карте — выход из режима размещения: привычнее, чем искать Esc.
   view.addEventListener('contextmenu', function (e) {
     e.preventDefault();
@@ -465,7 +499,7 @@
     var rect = view.getBoundingClientRect();
     var vx = e.clientX - rect.left - rect.width / 2;
     var vy = e.clientY - rect.top - rect.height / 2;
-    var factor = Math.pow(1.0016, -e.deltaY);
+    var factor = Math.pow(1.0016, -wheelDelta(e));
     renderer.zoomAt(vx, vy, factor);
     needFrame = true;
   }, { passive: false });
@@ -479,8 +513,12 @@
   var keys = Object.create(null);
 
   global.addEventListener('keydown', function (e) {
-    if (e.target && /input|select|textarea/i.test(e.target.tagName)) return;
-    var k = e.key.toLowerCase();
+    if (global.Keys ? global.Keys.typing(e)
+        : (e.target && /input|select|textarea/i.test(e.target.tagName))) return;
+    /* Имя клавиши — по физическому месту (js/keys.js): на русской раскладке
+       `e.key` для W приходит как «ц», и молчали WASD, B, R, G и остальные
+       буквы. */
+    var k = global.Keys ? global.Keys.name(e) : String(e.key || '').toLowerCase();
     keys[k] = true;
     if (k === 'b') { setPlaceMode(!place.on); }
     else if (place.on && (k === 'q' || k === '[')) { rotate(-90); }
@@ -500,7 +538,9 @@
     else if (k === '-' || k === '_') { renderer.zoomAt(0, 0, 1 / 1.15); needFrame = true; }
     if (k.indexOf('arrow') === 0 || 'wasd'.indexOf(k) >= 0) e.preventDefault();
   });
-  global.addEventListener('keyup', function (e) { keys[e.key.toLowerCase()] = false; });
+  global.addEventListener('keyup', function (e) {
+    keys[global.Keys ? global.Keys.name(e) : String(e.key || '').toLowerCase()] = false;
+  });
   global.addEventListener('blur', function () { keys = Object.create(null); });
 
   // Камера от клавиш едет в экранных направлениях, как при перетаскивании:
@@ -543,18 +583,10 @@
     var tx = Math.floor(p.x), ty = Math.floor(p.y);
     if (renderer.hover && renderer.hover.x === tx && renderer.hover.y === ty) return;
     renderer.hover = { x: tx, y: ty };
-    if (world && tx >= 0 && ty >= 0 && tx < world.width && ty < world.height) {
-      var i = ty * world.width + tx;
-      var name = WG.TILE_NAMES[world.tile[i]];
-      var extra = '';
-      if (world.tile[i] === T.GRASS) {
-        var f = world.forestness[i];
-        extra = f > 0.35 ? ' · роща' : (world.stonyness[i] > 0.3 ? ' · камень' : '');
-      }
-      hudText.textContent = tx + ', ' + ty + ' · ' + name + extra;
-    } else {
-      hudText.textContent = 'за картой';
-    }
+    // Что на клетке — считает движок (worldgen.js: describeCell): ту же строку
+    // показывает под курсором игра, и разойтись в словах оболочки не могут.
+    var cell = WG.describeCell(world, tx, ty);
+    hudText.textContent = cell && cell.inside ? cell.text : 'за картой';
     // Призрак строится от той же клетки, что и подсветка: одна точка входа,
     // иначе здание встаёт не туда, куда показывает курсор.
     refreshGhost();
@@ -629,7 +661,7 @@
   // Миниатюры вариантов: спрайт берётся из того же атласа, что и на карте,
   // поэтому в панели видно ровно то, что встанет на клетки.
   function drawVariantThumbs() {
-    var set = renderer.buildingSprites;
+    var set = homeSprites();
     if (!set) return;
     var thumbs = $('thVariants').querySelectorAll('canvas');
     for (var i = 0; i < thumbs.length; i++) {
@@ -692,6 +724,9 @@
   var TEXTURES = {
     grass: 'assets/textures/grass.png',
     meadow: 'assets/textures/meadow.png',
+    // Газон участков: низкая трава темнее луга, плитка 2 x 2 клетки.
+    // Исходник и сборка — art/textures/plot_grass.
+    plot_grass: 'assets/textures/plot_grass.png',
     sand: 'assets/textures/sand.png',
     water: 'assets/textures/water.png',
     // Рябь моря — не текстура земли, а готовая карта яркости для умножения;
@@ -731,7 +766,10 @@
   }
 
   function bootSprites() {
-    var left = 4, failed = null;
+    // Шесть загрузок: спрайты мира, волны, три постройки деревни, житель.
+    // Постройки грузятся одним циклом (см. ниже) — их число берётся из
+    // таблицы типов, чтобы новую постройку не приходилось считать тут.
+    var left = 4 + Object.keys(global.Buildings.TYPES).length, failed = null;
     function done() {
       if (--left > 0) return;
       // Открывается партия: случайная карта с дефолтными настройками и
@@ -784,21 +822,29 @@
       done();
     }); });
 
-    // Атлас ратуши — отдельная загрузка: без него карта работает, просто
-    // панель размещения честно говорит, что ставить нечего.
-    start(function () { global.Buildings.load({ base: 'assets/' }, function (set) {
-      renderer.buildingSprites = set;
-      drawVariantThumbs();
-      updatePlaceInfo();
-      done();
-    }, function (err) {
-      renderer.buildingSprites = null;
-      $('thPlace').disabled = true;
-      $('thAll').disabled = true;
-      $('placeInfo').textContent = 'Атлас ратуши не загрузился: ' + (err && err.message ? err.message : err);
-      $('placeInfo').className = 'place-info bad';
-      done();
-    }); });
+    // Атласы построек — по одному на тип, и каждый отдельной загрузкой: без
+    // ратуши карта работает, просто панель размещения честно говорит, что
+    // ставить нечего; без дома и лагеря деревня на старте просто меньше.
+    Object.keys(global.Buildings.TYPES).forEach(function (type) {
+      start(function () { global.Buildings.load(type, { base: 'assets/' }, function (set) {
+        renderer.setBuildingSet(type, set);
+        if (type === global.Buildings.DEFAULT_TYPE) {
+          drawVariantThumbs();
+          updatePlaceInfo();
+        }
+        done();
+      }, function (err) {
+        renderer.setBuildingSet(type, null);
+        if (type === global.Buildings.DEFAULT_TYPE) {
+          // Панель размещения ставит ратуши: нет её атласа — нечего и ставить.
+          $('thPlace').disabled = true;
+          $('thAll').disabled = true;
+          $('placeInfo').textContent = 'Атлас ратуши не загрузился: ' + (err && err.message ? err.message : err);
+          $('placeInfo').className = 'place-info bad';
+        }
+        done();
+      }); });
+    });
 
     // Атлас жителя — отдельная загрузка: без него карта работает, просто
     // по острову никто не ходит.
@@ -807,6 +853,18 @@
       done();
     }, function () {
       renderer.villagerSprites = null;
+      done();
+    }); });
+
+    // Атлас рыцаря — в броне, шлеме и с мечом. Необязателен: без него рыцарь
+    // рисуется обычным жителем, и карта не падает.
+    start(function () { global.Villagers.load({
+      base: 'assets/', dir: 'armored_villager/', metaName: 'ARMORED_VILLAGER_ATLAS'
+    }, function (set) {
+      renderer.knightSprites = set;
+      done();
+    }, function () {
+      renderer.knightSprites = null;
       done();
     }); });
   }

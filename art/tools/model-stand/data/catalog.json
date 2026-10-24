@@ -1,0 +1,9129 @@
+{
+ "generated": "2026-10-14 18:37",
+ "groups": [
+  {
+   "id": "buildings",
+   "name": "Постройки"
+  },
+  {
+   "id": "characters",
+   "name": "Люди"
+  },
+  {
+   "id": "props",
+   "name": "Предметы"
+  },
+  {
+   "id": "fx",
+   "name": "Эффекты"
+  },
+  {
+   "id": "research",
+   "name": "Разборы"
+  }
+ ],
+ "cameras": {
+  "pipeline": {
+   "title": "общий пайплайн, −X +Y",
+   "eye": [
+    -0.57735,
+    0.57735,
+    0.57735
+   ],
+   "sun": [
+    -0.36,
+    0.3,
+    0.88
+   ],
+   "mirror": false,
+   "source": "art/buildings/townhall/tools/thpipe.py"
+  },
+  "game": {
+   "title": "канон игры, +X +Y",
+   "eye": [
+    0.57735,
+    0.57735,
+    0.57735
+   ],
+   "sun": [
+    0.36,
+    0.3,
+    0.88
+   ],
+   "mirror": true,
+   "source": "art/characters/villager/tools/scene.py"
+  },
+  "other": {
+   "title": "камера разбора, +X −Y",
+   "eye": [
+    0.57735,
+    -0.57735,
+    0.57735
+   ],
+   "sun": [
+    -0.36,
+    0.3,
+    0.88
+   ],
+   "mirror": false,
+   "source": "research/coc_house/tools/build_house.py"
+  }
+ },
+ "gameCanon": "game",
+ "counts": {
+  "models": 23,
+  "inGame": 12,
+  "atlases": 9,
+  "frames": 382
+ },
+ "models": [
+  {
+   "id": "art/buildings/lumbercamp/out/lc_model",
+   "title": "Лагерь лесоруба",
+   "group": "buildings",
+   "groupName": "Постройки",
+   "variant": null,
+   "where": "в игре: деревня на старте партии, 4 поворота",
+   "inGame": true,
+   "atlas": "lumbercamp",
+   "camera": "pipeline",
+   "mirror": false,
+   "exportRot": 0,
+   "project": "art/buildings/lumbercamp",
+   "glb": {
+    "path": "art/buildings/lumbercamp/out/lc_model.glb",
+    "bytes": 55924,
+    "sha": "27b67832c6f7"
+   },
+   "blend": "art/buildings/lumbercamp/lc_model.blend",
+   "blends": [
+    "art/buildings/lumbercamp/lc_model.blend"
+   ],
+   "generators": [
+    "art/buildings/lumbercamp/tools/building.py"
+   ],
+   "readme": "art/buildings/lumbercamp/README.md",
+   "stats": {
+    "tris": 982,
+    "verts": 1822,
+    "meshes": 1,
+    "primitives": 7,
+    "materials": 7,
+    "nodes": 1,
+    "images": 0,
+    "animations": [],
+    "bbox": [
+     2.8618,
+     1.7496,
+     2.7163
+    ],
+    "origin": [
+     -1.4474,
+     0.0,
+     -1.2672
+    ]
+   },
+   "palette": [
+    {
+     "hex": "#d3bc84",
+     "rgba": [
+      0.6588,
+      0.5098,
+      0.2353,
+      1
+     ],
+     "name": "lc_board"
+    },
+    {
+     "hex": "#c3ad73",
+     "rgba": [
+      0.5569,
+      0.4235,
+      0.1725,
+      1
+     ],
+     "name": "lc_board2"
+    },
+    {
+     "hex": "#5a5044",
+     "rgba": [
+      0.102,
+      0.0784,
+      0.0549,
+      1
+     ],
+     "name": "lc_dark"
+    },
+    {
+     "hex": "#828286",
+     "rgba": [
+      0.2275,
+      0.2275,
+      0.2431,
+      1
+     ],
+     "name": "lc_iron"
+    },
+    {
+     "hex": "#ceb893",
+     "rgba": [
+      0.6275,
+      0.4863,
+      0.298,
+      1
+     ],
+     "name": "lc_plank"
+    },
+    {
+     "hex": "#c3c7ca",
+     "rgba": [
+      0.5569,
+      0.5804,
+      0.5961,
+      1
+     ],
+     "name": "lc_stone"
+    },
+    {
+     "hex": "#a28560",
+     "rgba": [
+      0.3686,
+      0.2392,
+      0.1176,
+      1
+     ],
+     "name": "lc_timber"
+    }
+   ],
+   "meshKey": "art/buildings/lumbercamp/out/lc_model"
+  },
+  {
+   "id": "art/buildings/starter_house/out/starter_house_model",
+   "title": "Дом жителя — стартовый дом (2 x 3)",
+   "group": "buildings",
+   "groupName": "Постройки",
+   "variant": null,
+   "where": "в игре: тип house, деревня на старте партии",
+   "inGame": true,
+   "atlas": "starter_house",
+   "camera": "pipeline",
+   "mirror": false,
+   "exportRot": 0,
+   "project": "art/buildings/starter_house",
+   "glb": {
+    "path": "art/buildings/starter_house/out/starter_house_model.glb",
+    "bytes": 173720,
+    "sha": "c0f139564be9"
+   },
+   "blend": "art/buildings/starter_house/starter_house_model.blend",
+   "blends": [
+    "art/buildings/starter_house/starter_house.blend",
+    "art/buildings/starter_house/starter_house_model.blend"
+   ],
+   "generators": [
+    "art/buildings/starter_house/tools/house.py"
+   ],
+   "readme": "art/buildings/starter_house/README.md",
+   "stats": {
+    "tris": 1432,
+    "verts": 2852,
+    "meshes": 153,
+    "primitives": 153,
+    "materials": 12,
+    "nodes": 153,
+    "images": 0,
+    "animations": [],
+    "bbox": [
+     2.0539,
+     2.833,
+     3.0348
+    ],
+    "origin": [
+     -1.0266,
+     0.0,
+     -1.5174
+    ]
+   },
+   "palette": [
+    {
+     "hex": "#5a5044",
+     "rgba": [
+      0.102,
+      0.0784,
+      0.0549,
+      1
+     ],
+     "name": "sh_dark"
+    },
+    {
+     "hex": "#c1a580",
+     "rgba": [
+      0.5412,
+      0.3843,
+      0.2196,
+      1
+     ],
+     "name": "sh_beam"
+    },
+    {
+     "hex": "#ceb893",
+     "rgba": [
+      0.6275,
+      0.4863,
+      0.298,
+      1
+     ],
+     "name": "sh_plank"
+    },
+    {
+     "hex": "#828286",
+     "rgba": [
+      0.2275,
+      0.2275,
+      0.2431,
+      1
+     ],
+     "name": "sh_iron"
+    },
+    {
+     "hex": "#c3c7ca",
+     "rgba": [
+      0.5569,
+      0.5804,
+      0.5961,
+      1
+     ],
+     "name": "sh_stone"
+    },
+    {
+     "hex": "#a28560",
+     "rgba": [
+      0.3686,
+      0.2392,
+      0.1176,
+      1
+     ],
+     "name": "sh_timber"
+    },
+    {
+     "hex": "#c7b091",
+     "rgba": [
+      0.5765,
+      0.4431,
+      0.2902,
+      1
+     ],
+     "name": "sh_wall"
+    },
+    {
+     "hex": "#aeb2b6",
+     "rgba": [
+      0.4314,
+      0.4549,
+      0.4784,
+      1
+     ],
+     "name": "sh_stone2"
+    },
+    {
+     "hex": "#8eac7c",
+     "rgba": [
+      0.2745,
+      0.4196,
+      0.2039,
+      1
+     ],
+     "name": "sh_moss"
+    },
+    {
+     "hex": "#b6a58c",
+     "rgba": [
+      0.4784,
+      0.3843,
+      0.2667,
+      1
+     ],
+     "name": "sh_dirt"
+    },
+    {
+     "hex": "#c3ad73",
+     "rgba": [
+      0.5569,
+      0.4235,
+      0.1725,
+      1
+     ],
+     "name": "sh_thatch2"
+    },
+    {
+     "hex": "#d3bc84",
+     "rgba": [
+      0.6588,
+      0.5098,
+      0.2353,
+      1
+     ],
+     "name": "sh_thatch"
+    }
+   ],
+   "meshKey": "art/buildings/starter_house/out/starter_house_model"
+  },
+  {
+   "id": "art/buildings/townhall/out/townhall_a",
+   "title": "Ратуша A",
+   "group": "buildings",
+   "groupName": "Постройки",
+   "variant": "A",
+   "where": "в игре: слой построек, 3 варианта x 4 поворота",
+   "inGame": true,
+   "atlas": "townhall",
+   "camera": "pipeline",
+   "mirror": false,
+   "exportRot": 180,
+   "project": "art/buildings/townhall",
+   "glb": {
+    "path": "art/buildings/townhall/out/townhall_a.glb",
+    "bytes": 75032,
+    "sha": "e7da00a322f2"
+   },
+   "blend": "art/buildings/townhall/hut.blend",
+   "blends": [
+    "art/buildings/townhall/hut.blend"
+   ],
+   "generators": [
+    "art/buildings/townhall/tools/geom.py",
+    "art/buildings/townhall/tools/hut.py",
+    "art/buildings/townhall/tools/townhall.py"
+   ],
+   "readme": "art/buildings/townhall/README.md",
+   "stats": {
+    "tris": 1068,
+    "verts": 2166,
+    "meshes": 21,
+    "primitives": 21,
+    "materials": 10,
+    "nodes": 21,
+    "images": 0,
+    "animations": [],
+    "bbox": [
+     4.2512,
+     3.1986,
+     3.579
+    ],
+    "origin": [
+     -2.1119,
+     -0.2648,
+     -1.6498
+    ]
+   },
+   "palette": [
+    {
+     "hex": "#828286",
+     "rgba": [
+      0.2275,
+      0.2275,
+      0.2431,
+      1
+     ],
+     "name": "iron"
+    },
+    {
+     "hex": "#a28560",
+     "rgba": [
+      0.3686,
+      0.2392,
+      0.1176,
+      1
+     ],
+     "name": "timber"
+    },
+    {
+     "hex": "#d3bc84",
+     "rgba": [
+      0.6588,
+      0.5098,
+      0.2353,
+      1
+     ],
+     "name": "thatch"
+    },
+    {
+     "hex": "#5a5044",
+     "rgba": [
+      0.102,
+      0.0784,
+      0.0549,
+      1
+     ],
+     "name": "dark"
+    },
+    {
+     "hex": "#ceb893",
+     "rgba": [
+      0.6275,
+      0.4863,
+      0.298,
+      1
+     ],
+     "name": "plank"
+    },
+    {
+     "hex": "#c7b091",
+     "rgba": [
+      0.5765,
+      0.4431,
+      0.2902,
+      1
+     ],
+     "name": "wall"
+    },
+    {
+     "hex": "#c3c7ca",
+     "rgba": [
+      0.5569,
+      0.5804,
+      0.5961,
+      1
+     ],
+     "name": "stone"
+    },
+    {
+     "hex": "#8eac7c",
+     "rgba": [
+      0.2745,
+      0.4196,
+      0.2039,
+      1
+     ],
+     "name": "moss"
+    },
+    {
+     "hex": "#aeb2b6",
+     "rgba": [
+      0.4314,
+      0.4549,
+      0.4784,
+      1
+     ],
+     "name": "stone2"
+    },
+    {
+     "hex": "#c3ad73",
+     "rgba": [
+      0.5569,
+      0.4235,
+      0.1725,
+      1
+     ],
+     "name": "thatch2"
+    }
+   ],
+   "meshKey": "art/buildings/townhall/out/townhall_a"
+  },
+  {
+   "id": "art/buildings/townhall/out/townhall_b",
+   "title": "Ратуша B",
+   "group": "buildings",
+   "groupName": "Постройки",
+   "variant": "B",
+   "where": "в игре: слой построек, 3 варианта x 4 поворота",
+   "inGame": true,
+   "atlas": "townhall",
+   "camera": "pipeline",
+   "mirror": false,
+   "exportRot": 180,
+   "project": "art/buildings/townhall",
+   "glb": {
+    "path": "art/buildings/townhall/out/townhall_b.glb",
+    "bytes": 102480,
+    "sha": "83346393cea6"
+   },
+   "blend": "art/buildings/townhall/hut.blend",
+   "blends": [
+    "art/buildings/townhall/hut.blend"
+   ],
+   "generators": [
+    "art/buildings/townhall/tools/geom.py",
+    "art/buildings/townhall/tools/hut.py",
+    "art/buildings/townhall/tools/townhall.py"
+   ],
+   "readme": "art/buildings/townhall/README.md",
+   "stats": {
+    "tris": 1566,
+    "verts": 3048,
+    "meshes": 26,
+    "primitives": 26,
+    "materials": 10,
+    "nodes": 26,
+    "images": 0,
+    "animations": [],
+    "bbox": [
+     4.5643,
+     3.1986,
+     4.4157
+    ],
+    "origin": [
+     -2.425,
+     -0.2648,
+     -1.7172
+    ]
+   },
+   "palette": [
+    {
+     "hex": "#ceb893",
+     "rgba": [
+      0.6275,
+      0.4863,
+      0.298,
+      1
+     ],
+     "name": "plank"
+    },
+    {
+     "hex": "#828286",
+     "rgba": [
+      0.2275,
+      0.2275,
+      0.2431,
+      1
+     ],
+     "name": "iron"
+    },
+    {
+     "hex": "#a28560",
+     "rgba": [
+      0.3686,
+      0.2392,
+      0.1176,
+      1
+     ],
+     "name": "timber"
+    },
+    {
+     "hex": "#5a5044",
+     "rgba": [
+      0.102,
+      0.0784,
+      0.0549,
+      1
+     ],
+     "name": "dark"
+    },
+    {
+     "hex": "#c7b091",
+     "rgba": [
+      0.5765,
+      0.4431,
+      0.2902,
+      1
+     ],
+     "name": "wall"
+    },
+    {
+     "hex": "#c3c7ca",
+     "rgba": [
+      0.5569,
+      0.5804,
+      0.5961,
+      1
+     ],
+     "name": "stone"
+    },
+    {
+     "hex": "#8eac7c",
+     "rgba": [
+      0.2745,
+      0.4196,
+      0.2039,
+      1
+     ],
+     "name": "moss"
+    },
+    {
+     "hex": "#aeb2b6",
+     "rgba": [
+      0.4314,
+      0.4549,
+      0.4784,
+      1
+     ],
+     "name": "stone2"
+    },
+    {
+     "hex": "#c3ad73",
+     "rgba": [
+      0.5569,
+      0.4235,
+      0.1725,
+      1
+     ],
+     "name": "thatch2"
+    },
+    {
+     "hex": "#d3bc84",
+     "rgba": [
+      0.6588,
+      0.5098,
+      0.2353,
+      1
+     ],
+     "name": "thatch"
+    }
+   ],
+   "meshKey": "art/buildings/townhall/out/townhall_b"
+  },
+  {
+   "id": "art/buildings/townhall/out/townhall_c",
+   "title": "Ратуша C",
+   "group": "buildings",
+   "groupName": "Постройки",
+   "variant": "C",
+   "where": "в игре: слой построек, 3 варианта x 4 поворота",
+   "inGame": true,
+   "atlas": "townhall",
+   "camera": "pipeline",
+   "mirror": false,
+   "exportRot": 180,
+   "project": "art/buildings/townhall",
+   "glb": {
+    "path": "art/buildings/townhall/out/townhall_c.glb",
+    "bytes": 79316,
+    "sha": "c64f5cd19552"
+   },
+   "blend": "art/buildings/townhall/hut.blend",
+   "blends": [
+    "art/buildings/townhall/hut.blend"
+   ],
+   "generators": [
+    "art/buildings/townhall/tools/geom.py",
+    "art/buildings/townhall/tools/hut.py",
+    "art/buildings/townhall/tools/townhall.py"
+   ],
+   "readme": "art/buildings/townhall/README.md",
+   "stats": {
+    "tris": 1124,
+    "verts": 2274,
+    "meshes": 23,
+    "primitives": 23,
+    "materials": 10,
+    "nodes": 23,
+    "images": 0,
+    "animations": [],
+    "bbox": [
+     4.2512,
+     3.2025,
+     3.579
+    ],
+    "origin": [
+     -2.1119,
+     -0.2648,
+     -1.6498
+    ]
+   },
+   "palette": [
+    {
+     "hex": "#828286",
+     "rgba": [
+      0.2275,
+      0.2275,
+      0.2431,
+      1
+     ],
+     "name": "iron"
+    },
+    {
+     "hex": "#5a5044",
+     "rgba": [
+      0.102,
+      0.0784,
+      0.0549,
+      1
+     ],
+     "name": "dark"
+    },
+    {
+     "hex": "#a28560",
+     "rgba": [
+      0.3686,
+      0.2392,
+      0.1176,
+      1
+     ],
+     "name": "timber"
+    },
+    {
+     "hex": "#ceb893",
+     "rgba": [
+      0.6275,
+      0.4863,
+      0.298,
+      1
+     ],
+     "name": "plank"
+    },
+    {
+     "hex": "#c7b091",
+     "rgba": [
+      0.5765,
+      0.4431,
+      0.2902,
+      1
+     ],
+     "name": "wall"
+    },
+    {
+     "hex": "#c3c7ca",
+     "rgba": [
+      0.5569,
+      0.5804,
+      0.5961,
+      1
+     ],
+     "name": "stone"
+    },
+    {
+     "hex": "#8eac7c",
+     "rgba": [
+      0.2745,
+      0.4196,
+      0.2039,
+      1
+     ],
+     "name": "moss"
+    },
+    {
+     "hex": "#aeb2b6",
+     "rgba": [
+      0.4314,
+      0.4549,
+      0.4784,
+      1
+     ],
+     "name": "stone2"
+    },
+    {
+     "hex": "#c3ad73",
+     "rgba": [
+      0.5569,
+      0.4235,
+      0.1725,
+      1
+     ],
+     "name": "thatch2"
+    },
+    {
+     "hex": "#d3bc84",
+     "rgba": [
+      0.6588,
+      0.5098,
+      0.2353,
+      1
+     ],
+     "name": "thatch"
+    }
+   ],
+   "meshKey": "art/buildings/townhall/out/townhall_c"
+  },
+  {
+   "id": "art/buildings/starter_house/out/starter_house",
+   "title": "Стартовый дом — первая ревизия (забракована)",
+   "group": "buildings",
+   "groupName": "Постройки",
+   "variant": null,
+   "where": "не в игре: заменена моделью starter_house_model (tools/rev2)",
+   "inGame": false,
+   "atlas": null,
+   "camera": "pipeline",
+   "mirror": false,
+   "exportRot": 0,
+   "project": "art/buildings/starter_house",
+   "glb": {
+    "path": "art/buildings/starter_house/out/starter_house.glb",
+    "bytes": 52560,
+    "sha": "ba9020a804d2"
+   },
+   "blend": "art/buildings/starter_house/starter_house.blend",
+   "blends": [
+    "art/buildings/starter_house/starter_house.blend",
+    "art/buildings/starter_house/starter_house_model.blend"
+   ],
+   "generators": [
+    "art/buildings/starter_house/tools/house.py"
+   ],
+   "readme": "art/buildings/starter_house/README.md",
+   "stats": {
+    "tris": 808,
+    "verts": 1612,
+    "meshes": 1,
+    "primitives": 10,
+    "materials": 10,
+    "nodes": 1,
+    "images": 0,
+    "animations": [],
+    "bbox": [
+     2.6424,
+     2.402,
+     3.2396
+    ],
+    "origin": [
+     -1.322,
+     0.0,
+     -1.6284
+    ]
+   },
+   "palette": [
+    {
+     "hex": "#c7b091",
+     "rgba": [
+      0.5765,
+      0.4431,
+      0.2902,
+      1
+     ],
+     "name": "sh_wall"
+    },
+    {
+     "hex": "#a28560",
+     "rgba": [
+      0.3686,
+      0.2392,
+      0.1176,
+      1
+     ],
+     "name": "sh_timber"
+    },
+    {
+     "hex": "#c1a580",
+     "rgba": [
+      0.5412,
+      0.3843,
+      0.2196,
+      1
+     ],
+     "name": "sh_beam"
+    },
+    {
+     "hex": "#ceb893",
+     "rgba": [
+      0.6275,
+      0.4863,
+      0.298,
+      1
+     ],
+     "name": "sh_plank"
+    },
+    {
+     "hex": "#d3bc84",
+     "rgba": [
+      0.6588,
+      0.5098,
+      0.2353,
+      1
+     ],
+     "name": "sh_thatch"
+    },
+    {
+     "hex": "#c3ad73",
+     "rgba": [
+      0.5569,
+      0.4235,
+      0.1725,
+      1
+     ],
+     "name": "sh_thatch2"
+    },
+    {
+     "hex": "#c3c7ca",
+     "rgba": [
+      0.5569,
+      0.5804,
+      0.5961,
+      1
+     ],
+     "name": "sh_stone"
+    },
+    {
+     "hex": "#aeb2b6",
+     "rgba": [
+      0.4314,
+      0.4549,
+      0.4784,
+      1
+     ],
+     "name": "sh_stone2"
+    },
+    {
+     "hex": "#5a5044",
+     "rgba": [
+      0.102,
+      0.0784,
+      0.0549,
+      1
+     ],
+     "name": "sh_dark"
+    },
+    {
+     "hex": "#828286",
+     "rgba": [
+      0.2275,
+      0.2275,
+      0.2431,
+      1
+     ],
+     "name": "sh_iron"
+    }
+   ],
+   "meshKey": "art/buildings/starter_house/out/starter_house"
+  },
+  {
+   "id": "art/buildings/townhall/out/hutrect_a",
+   "title": "Хижина A",
+   "group": "buildings",
+   "groupName": "Постройки",
+   "variant": "A",
+   "where": "атлас hut собран, в игру не подключён",
+   "inGame": false,
+   "atlas": "hut",
+   "camera": "pipeline",
+   "mirror": false,
+   "exportRot": 180,
+   "project": "art/buildings/townhall",
+   "glb": {
+    "path": "art/buildings/townhall/out/hutrect_a.glb",
+    "bytes": 59036,
+    "sha": "daf44c0b20fb"
+   },
+   "blend": "art/buildings/townhall/hut.blend",
+   "blends": [
+    "art/buildings/townhall/hut.blend"
+   ],
+   "generators": [
+    "art/buildings/townhall/tools/geom.py",
+    "art/buildings/townhall/tools/hut.py",
+    "art/buildings/townhall/tools/townhall.py"
+   ],
+   "readme": "art/buildings/townhall/README.md",
+   "stats": {
+    "tris": 844,
+    "verts": 1752,
+    "meshes": 14,
+    "primitives": 14,
+    "materials": 9,
+    "nodes": 14,
+    "images": 0,
+    "animations": [],
+    "bbox": [
+     3.2422,
+     2.346,
+     2.1682
+    ],
+    "origin": [
+     -1.6194,
+     -0.0409,
+     -1.0883
+    ]
+   },
+   "palette": [
+    {
+     "hex": "#4c8338",
+     "rgba": [
+      0.0706,
+      0.2314,
+      0.0353,
+      1
+     ],
+     "name": "hr_leaf"
+    },
+    {
+     "hex": "#221c15",
+     "rgba": [
+      0.0118,
+      0.0078,
+      0.0039,
+      1
+     ],
+     "name": "hr_dark"
+    },
+    {
+     "hex": "#89602b",
+     "rgba": [
+      0.2549,
+      0.1176,
+      0.0196,
+      1
+     ],
+     "name": "hr_wood_mid"
+    },
+    {
+     "hex": "#f7c665",
+     "rgba": [
+      0.9294,
+      0.5725,
+      0.1294,
+      1
+     ],
+     "name": "hr_glow"
+    },
+    {
+     "hex": "#553d22",
+     "rgba": [
+      0.0902,
+      0.0431,
+      0.0118,
+      1
+     ],
+     "name": "hr_wood_dark"
+    },
+    {
+     "hex": "#7b8287",
+     "rgba": [
+      0.2,
+      0.2275,
+      0.2471,
+      1
+     ],
+     "name": "hr_stone"
+    },
+    {
+     "hex": "#be8f42",
+     "rgba": [
+      0.5255,
+      0.2784,
+      0.051,
+      1
+     ],
+     "name": "hr_straw_light"
+    },
+    {
+     "hex": "#666d72",
+     "rgba": [
+      0.1333,
+      0.1529,
+      0.1686,
+      1
+     ],
+     "name": "hr_stone_dark"
+    },
+    {
+     "hex": "#aa742b",
+     "rgba": [
+      0.4078,
+      0.1765,
+      0.0196,
+      1
+     ],
+     "name": "hr_wood"
+    }
+   ],
+   "meshKey": "art/buildings/townhall/out/hutrect_a"
+  },
+  {
+   "id": "art/buildings/townhall/out/hutrect_b",
+   "title": "Хижина B",
+   "group": "buildings",
+   "groupName": "Постройки",
+   "variant": "B",
+   "where": "атлас hut собран, в игру не подключён",
+   "inGame": false,
+   "atlas": "hut",
+   "camera": "pipeline",
+   "mirror": false,
+   "exportRot": 180,
+   "project": "art/buildings/townhall",
+   "glb": {
+    "path": "art/buildings/townhall/out/hutrect_b.glb",
+    "bytes": 59872,
+    "sha": "0519ecf37b84"
+   },
+   "blend": "art/buildings/townhall/hut.blend",
+   "blends": [
+    "art/buildings/townhall/hut.blend"
+   ],
+   "generators": [
+    "art/buildings/townhall/tools/geom.py",
+    "art/buildings/townhall/tools/hut.py",
+    "art/buildings/townhall/tools/townhall.py"
+   ],
+   "readme": "art/buildings/townhall/README.md",
+   "stats": {
+    "tris": 878,
+    "verts": 1778,
+    "meshes": 14,
+    "primitives": 14,
+    "materials": 9,
+    "nodes": 14,
+    "images": 0,
+    "animations": [],
+    "bbox": [
+     3.2299,
+     2.6603,
+     2.2842
+    ],
+    "origin": [
+     -1.6083,
+     -0.0341,
+     -1.0825
+    ]
+   },
+   "palette": [
+    {
+     "hex": "#89602b",
+     "rgba": [
+      0.2549,
+      0.1176,
+      0.0196,
+      1
+     ],
+     "name": "hr_wood_mid"
+    },
+    {
+     "hex": "#4c8338",
+     "rgba": [
+      0.0706,
+      0.2314,
+      0.0353,
+      1
+     ],
+     "name": "hr_leaf"
+    },
+    {
+     "hex": "#7b8287",
+     "rgba": [
+      0.2,
+      0.2275,
+      0.2471,
+      1
+     ],
+     "name": "hr_stone"
+    },
+    {
+     "hex": "#221c15",
+     "rgba": [
+      0.0118,
+      0.0078,
+      0.0039,
+      1
+     ],
+     "name": "hr_dark"
+    },
+    {
+     "hex": "#897050",
+     "rgba": [
+      0.2549,
+      0.1647,
+      0.0784,
+      1
+     ],
+     "name": "hr_daub"
+    },
+    {
+     "hex": "#6e5a40",
+     "rgba": [
+      0.1569,
+      0.102,
+      0.0471,
+      1
+     ],
+     "name": "hr_daub_dark"
+    },
+    {
+     "hex": "#553d22",
+     "rgba": [
+      0.0902,
+      0.0431,
+      0.0118,
+      1
+     ],
+     "name": "hr_wood_dark"
+    },
+    {
+     "hex": "#f7c665",
+     "rgba": [
+      0.9294,
+      0.5725,
+      0.1294,
+      1
+     ],
+     "name": "hr_glow"
+    },
+    {
+     "hex": "#7b848a",
+     "rgba": [
+      0.2,
+      0.2353,
+      0.2588,
+      1
+     ],
+     "name": "hr_roof"
+    }
+   ],
+   "meshKey": "art/buildings/townhall/out/hutrect_b"
+  },
+  {
+   "id": "art/buildings/townhall/out/hutrect_c",
+   "title": "Хижина C",
+   "group": "buildings",
+   "groupName": "Постройки",
+   "variant": "C",
+   "where": "атлас hut собран, в игру не подключён",
+   "inGame": false,
+   "atlas": "hut",
+   "camera": "pipeline",
+   "mirror": false,
+   "exportRot": 180,
+   "project": "art/buildings/townhall",
+   "glb": {
+    "path": "art/buildings/townhall/out/hutrect_c.glb",
+    "bytes": 82864,
+    "sha": "b76574b4f1ed"
+   },
+   "blend": "art/buildings/townhall/hut.blend",
+   "blends": [
+    "art/buildings/townhall/hut.blend"
+   ],
+   "generators": [
+    "art/buildings/townhall/tools/geom.py",
+    "art/buildings/townhall/tools/hut.py",
+    "art/buildings/townhall/tools/townhall.py"
+   ],
+   "readme": "art/buildings/townhall/README.md",
+   "stats": {
+    "tris": 1064,
+    "verts": 2568,
+    "meshes": 18,
+    "primitives": 18,
+    "materials": 10,
+    "nodes": 18,
+    "images": 0,
+    "animations": [],
+    "bbox": [
+     3.3917,
+     2.2906,
+     2.5558
+    ],
+    "origin": [
+     -1.6936,
+     -0.0342,
+     -1.267
+    ]
+   },
+   "palette": [
+    {
+     "hex": "#2e5c2b",
+     "rgba": [
+      0.0235,
+      0.1059,
+      0.0196,
+      1
+     ],
+     "name": "hr_leaf_dark"
+    },
+    {
+     "hex": "#553d22",
+     "rgba": [
+      0.0902,
+      0.0431,
+      0.0118,
+      1
+     ],
+     "name": "hr_wood_dark"
+    },
+    {
+     "hex": "#89602b",
+     "rgba": [
+      0.2549,
+      0.1176,
+      0.0196,
+      1
+     ],
+     "name": "hr_wood_mid"
+    },
+    {
+     "hex": "#f7c665",
+     "rgba": [
+      0.9294,
+      0.5725,
+      0.1294,
+      1
+     ],
+     "name": "hr_glow"
+    },
+    {
+     "hex": "#4c8338",
+     "rgba": [
+      0.0706,
+      0.2314,
+      0.0353,
+      1
+     ],
+     "name": "hr_leaf"
+    },
+    {
+     "hex": "#6e5435",
+     "rgba": [
+      0.1569,
+      0.0863,
+      0.0314,
+      1
+     ],
+     "name": "hr_earth"
+    },
+    {
+     "hex": "#221c15",
+     "rgba": [
+      0.0118,
+      0.0078,
+      0.0039,
+      1
+     ],
+     "name": "hr_dark"
+    },
+    {
+     "hex": "#7b8287",
+     "rgba": [
+      0.2,
+      0.2275,
+      0.2471,
+      1
+     ],
+     "name": "hr_stone"
+    },
+    {
+     "hex": "#666d72",
+     "rgba": [
+      0.1333,
+      0.1529,
+      0.1686,
+      1
+     ],
+     "name": "hr_stone_dark"
+    },
+    {
+     "hex": "#aa742b",
+     "rgba": [
+      0.4078,
+      0.1765,
+      0.0196,
+      1
+     ],
+     "name": "hr_wood"
+    }
+   ],
+   "meshKey": "art/buildings/townhall/out/hutrect_c"
+  },
+  {
+   "id": "art/buildings/villager_house/out/house_a",
+   "title": "Прежний дом жителя (3 x 2) A",
+   "group": "buildings",
+   "groupName": "Постройки",
+   "variant": "A",
+   "where": "атлас house собран, но игра его не грузит: дом жителя в игре — стартовый дом (art/buildings/starter_house)",
+   "inGame": false,
+   "atlas": "house",
+   "camera": "pipeline",
+   "mirror": false,
+   "exportRot": 0,
+   "project": "art/buildings/villager_house",
+   "glb": {
+    "path": "art/buildings/villager_house/out/house_a.glb",
+    "bytes": 89172,
+    "sha": "03e26e5d2c15"
+   },
+   "blend": "art/buildings/villager_house/house_a.blend",
+   "blends": [
+    "art/buildings/villager_house/house_a.blend"
+   ],
+   "generators": [
+    "art/buildings/villager_house/tools/house.py"
+   ],
+   "readme": "art/buildings/villager_house/README.md",
+   "stats": {
+    "tris": 1348,
+    "verts": 2640,
+    "meshes": 1,
+    "primitives": 20,
+    "materials": 20,
+    "nodes": 1,
+    "images": 0,
+    "animations": [],
+    "bbox": [
+     2.98,
+     2.9143,
+     2.009
+    ],
+    "origin": [
+     -1.49,
+     0.0,
+     -1.005
+    ]
+   },
+   "palette": [
+    {
+     "hex": "#724c32",
+     "rgba": [
+      0.1686,
+      0.0706,
+      0.0275,
+      1
+     ],
+     "name": "vh_trunk_0"
+    },
+    {
+     "hex": "#704a32",
+     "rgba": [
+      0.1647,
+      0.0667,
+      0.0275,
+      1
+     ],
+     "name": "vh_trunk_1"
+    },
+    {
+     "hex": "#482e1c",
+     "rgba": [
+      0.0627,
+      0.0235,
+      0.0078,
+      1
+     ],
+     "name": "vh_trunk_2"
+    },
+    {
+     "hex": "#889aa0",
+     "rgba": [
+      0.251,
+      0.3294,
+      0.3569,
+      1
+     ],
+     "name": "vh_stone_0"
+    },
+    {
+     "hex": "#8d9699",
+     "rgba": [
+      0.2706,
+      0.3098,
+      0.3255,
+      1
+     ],
+     "name": "vh_stone_1"
+    },
+    {
+     "hex": "#5f6665",
+     "rgba": [
+      0.1137,
+      0.1333,
+      0.1294,
+      1
+     ],
+     "name": "vh_stone_2"
+    },
+    {
+     "hex": "#ffc885",
+     "rgba": [
+      1,
+      0.5843,
+      0.2392,
+      1
+     ],
+     "name": "vh_skin_0"
+    },
+    {
+     "hex": "#f2af74",
+     "rgba": [
+      0.8941,
+      0.4353,
+      0.1765,
+      1
+     ],
+     "name": "vh_skin_1"
+    },
+    {
+     "hex": "#9c744e",
+     "rgba": [
+      0.3412,
+      0.1765,
+      0.0745,
+      1
+     ],
+     "name": "vh_skin_2"
+    },
+    {
+     "hex": "#b87a27",
+     "rgba": [
+      0.4902,
+      0.1961,
+      0.0157,
+      1
+     ],
+     "name": "vh_leaf_autumn_0"
+    },
+    {
+     "hex": "#bc7d27",
+     "rgba": [
+      0.5137,
+      0.2078,
+      0.0157,
+      1
+     ],
+     "name": "vh_leaf_autumn_1"
+    },
+    {
+     "hex": "#754a1c",
+     "rgba": [
+      0.1804,
+      0.0667,
+      0.0078,
+      1
+     ],
+     "name": "vh_leaf_autumn_2"
+    },
+    {
+     "hex": "#4c8a40",
+     "rgba": [
+      0.0706,
+      0.2588,
+      0.0471,
+      1
+     ],
+     "name": "vh_grass_0"
+    },
+    {
+     "hex": "#00dc3d",
+     "rgba": [
+      0,
+      0.7255,
+      0.0431,
+      1
+     ],
+     "name": "vh_grass_1"
+    },
+    {
+     "hex": "#447435",
+     "rgba": [
+      0.0549,
+      0.1765,
+      0.0314,
+      1
+     ],
+     "name": "vh_grass_2"
+    },
+    {
+     "hex": "#8e97a1",
+     "rgba": [
+      0.2745,
+      0.3176,
+      0.3647,
+      1
+     ],
+     "name": "vh_iron_1"
+    },
+    {
+     "hex": "#5f696b",
+     "rgba": [
+      0.1137,
+      0.1412,
+      0.149,
+      1
+     ],
+     "name": "vh_iron_2"
+    },
+    {
+     "hex": "#523b27",
+     "rgba": [
+      0.0824,
+      0.0392,
+      0.0157,
+      1
+     ],
+     "name": "vh_leather_0"
+    },
+    {
+     "hex": "#402e1c",
+     "rgba": [
+      0.0471,
+      0.0235,
+      0.0078,
+      1
+     ],
+     "name": "vh_leather_1"
+    },
+    {
+     "hex": "#2e1c1c",
+     "rgba": [
+      0.0235,
+      0.0078,
+      0.0078,
+      1
+     ],
+     "name": "vh_leather_2"
+    }
+   ],
+   "meshKey": "art/buildings/villager_house/out/house_a"
+  },
+  {
+   "id": "art/characters/villager/out/villager",
+   "title": "Житель",
+   "group": "characters",
+   "groupName": "Люди",
+   "variant": null,
+   "where": "в игре: слои villager и hero",
+   "inGame": true,
+   "atlas": "villager",
+   "camera": "game",
+   "mirror": true,
+   "exportRot": 0,
+   "project": "art/characters/villager",
+   "glb": {
+    "path": "art/characters/villager/out/villager.glb",
+    "bytes": 41256,
+    "sha": "d1fc978054e8"
+   },
+   "blend": "art/characters/villager/villager.blend",
+   "blends": [
+    "art/characters/villager/villager.blend"
+   ],
+   "generators": [],
+   "readme": "art/characters/villager/README.md",
+   "stats": {
+    "tris": 598,
+    "verts": 1156,
+    "meshes": 1,
+    "primitives": 11,
+    "materials": 11,
+    "nodes": 1,
+    "images": 0,
+    "animations": [],
+    "bbox": [
+     0.22,
+     0.9929,
+     0.3242
+    ],
+    "origin": [
+     -0.11,
+     0.0,
+     -0.1621
+    ]
+   },
+   "palette": [
+    {
+     "hex": "#ffc885",
+     "rgba": [
+      1,
+      0.5843,
+      0.2392,
+      1
+     ],
+     "name": "vg_skin_0"
+    },
+    {
+     "hex": "#f2af74",
+     "rgba": [
+      0.8941,
+      0.4353,
+      0.1765,
+      1
+     ],
+     "name": "vg_skin_1"
+    },
+    {
+     "hex": "#9c744e",
+     "rgba": [
+      0.3412,
+      0.1765,
+      0.0745,
+      1
+     ],
+     "name": "vg_skin_2"
+    },
+    {
+     "hex": "#889aa0",
+     "rgba": [
+      0.251,
+      0.3294,
+      0.3569,
+      1
+     ],
+     "name": "vg_stone_0"
+    },
+    {
+     "hex": "#8d9699",
+     "rgba": [
+      0.2706,
+      0.3098,
+      0.3255,
+      1
+     ],
+     "name": "vg_stone_1"
+    },
+    {
+     "hex": "#5f6665",
+     "rgba": [
+      0.1137,
+      0.1333,
+      0.1294,
+      1
+     ],
+     "name": "vg_stone_2"
+    },
+    {
+     "hex": "#523b27",
+     "rgba": [
+      0.0824,
+      0.0392,
+      0.0157,
+      1
+     ],
+     "name": "vg_leather_0"
+    },
+    {
+     "hex": "#2e1c1c",
+     "rgba": [
+      0.0235,
+      0.0078,
+      0.0078,
+      1
+     ],
+     "name": "vg_leather_2"
+    },
+    {
+     "hex": "#724c32",
+     "rgba": [
+      0.1686,
+      0.0706,
+      0.0275,
+      1
+     ],
+     "name": "vg_trunk_0"
+    },
+    {
+     "hex": "#704a32",
+     "rgba": [
+      0.1647,
+      0.0667,
+      0.0275,
+      1
+     ],
+     "name": "vg_trunk_1"
+    },
+    {
+     "hex": "#482e1c",
+     "rgba": [
+      0.0627,
+      0.0235,
+      0.0078,
+      1
+     ],
+     "name": "vg_trunk_2"
+    }
+   ],
+   "meshKey": "art/characters/villager/out/villager"
+  },
+  {
+   "id": "art/props/axe/out/axe_b",
+   "title": "Топор B",
+   "group": "props",
+   "groupName": "Предметы",
+   "variant": "B",
+   "where": "в игре: топор в правом кулаке жителя, кадры work",
+   "inGame": true,
+   "atlas": "villager",
+   "camera": "pipeline",
+   "mirror": false,
+   "exportRot": 0,
+   "project": "art/props/axe",
+   "glb": {
+    "path": "art/props/axe/out/axe_b.glb",
+    "bytes": 20708,
+    "sha": "a085c0402cda"
+   },
+   "blend": "art/props/axe/axe_b.blend",
+   "blends": [
+    "art/props/axe/axe.blend",
+    "art/props/axe/axe_a.blend",
+    "art/props/axe/axe_b.blend",
+    "art/props/axe/axe_c.blend"
+   ],
+   "generators": [
+    "art/props/axe/tools/axe.py"
+   ],
+   "readme": "art/props/axe/README.md",
+   "stats": {
+    "tris": 236,
+    "verts": 460,
+    "meshes": 3,
+    "primitives": 9,
+    "materials": 9,
+    "nodes": 3,
+    "images": 0,
+    "animations": [],
+    "bbox": [
+     0.0877,
+     0.452,
+     0.21
+    ],
+    "origin": [
+     -0.0438,
+     0.0,
+     -0.14
+    ]
+   },
+   "palette": [
+    {
+     "hex": "#66442b",
+     "rgba": [
+      0.1333,
+      0.0549,
+      0.0196,
+      1
+     ],
+     "name": "wood_mid"
+    },
+    {
+     "hex": "#6f442e",
+     "rgba": [
+      0.1608,
+      0.0549,
+      0.0235,
+      1
+     ],
+     "name": "wood"
+    },
+    {
+     "hex": "#573515",
+     "rgba": [
+      0.0941,
+      0.0314,
+      0.0039,
+      1
+     ],
+     "name": "wood_dark"
+    },
+    {
+     "hex": "#8f9697",
+     "rgba": [
+      0.2784,
+      0.3098,
+      0.3176,
+      1
+     ],
+     "name": "stone_mid"
+    },
+    {
+     "hex": "#7f858a",
+     "rgba": [
+      0.2157,
+      0.2392,
+      0.2588,
+      1
+     ],
+     "name": "stone"
+    },
+    {
+     "hex": "#737575",
+     "rgba": [
+      0.1725,
+      0.1804,
+      0.1804,
+      1
+     ],
+     "name": "stone_dark"
+    },
+    {
+     "hex": "#402b15",
+     "rgba": [
+      0.0471,
+      0.0196,
+      0.0039,
+      1
+     ],
+     "name": "leather"
+    },
+    {
+     "hex": "#52381c",
+     "rgba": [
+      0.0824,
+      0.0353,
+      0.0078,
+      1
+     ],
+     "name": "leather_lt"
+    },
+    {
+     "hex": "#1c1500",
+     "rgba": [
+      0.0078,
+      0.0039,
+      0,
+      1
+     ],
+     "name": "leather_dk"
+    }
+   ],
+   "meshKey": "art/props/axe/out/axe_b"
+  },
+  {
+   "id": "art/props/axe/out/axe_a",
+   "title": "Топор A",
+   "group": "props",
+   "groupName": "Предметы",
+   "variant": "A",
+   "where": "в наборе: вариант в игре не встречается (канон — b)",
+   "inGame": false,
+   "atlas": "villager",
+   "camera": "pipeline",
+   "mirror": false,
+   "exportRot": 0,
+   "project": "art/props/axe",
+   "glb": {
+    "path": "art/props/axe/out/axe_a.glb",
+    "bytes": 18388,
+    "sha": "cfd04710c227"
+   },
+   "blend": "art/props/axe/axe_a.blend",
+   "blends": [
+    "art/props/axe/axe.blend",
+    "art/props/axe/axe_a.blend",
+    "art/props/axe/axe_b.blend",
+    "art/props/axe/axe_c.blend"
+   ],
+   "generators": [
+    "art/props/axe/tools/axe.py"
+   ],
+   "readme": "art/props/axe/README.md",
+   "stats": {
+    "tris": 244,
+    "verts": 472,
+    "meshes": 2,
+    "primitives": 6,
+    "materials": 6,
+    "nodes": 2,
+    "images": 0,
+    "animations": [],
+    "bbox": [
+     0.066,
+     0.456,
+     0.221
+    ],
+    "origin": [
+     -0.033,
+     0.0,
+     -0.146
+    ]
+   },
+   "palette": [
+    {
+     "hex": "#66442b",
+     "rgba": [
+      0.1333,
+      0.0549,
+      0.0196,
+      1
+     ],
+     "name": "wood_mid"
+    },
+    {
+     "hex": "#6f442e",
+     "rgba": [
+      0.1608,
+      0.0549,
+      0.0235,
+      1
+     ],
+     "name": "wood"
+    },
+    {
+     "hex": "#573515",
+     "rgba": [
+      0.0941,
+      0.0314,
+      0.0039,
+      1
+     ],
+     "name": "wood_dark"
+    },
+    {
+     "hex": "#80898f",
+     "rgba": [
+      0.2196,
+      0.2549,
+      0.2784,
+      1
+     ],
+     "name": "iron_mid"
+    },
+    {
+     "hex": "#747c80",
+     "rgba": [
+      0.1765,
+      0.2039,
+      0.2196,
+      1
+     ],
+     "name": "iron"
+    },
+    {
+     "hex": "#757b80",
+     "rgba": [
+      0.1804,
+      0.2,
+      0.2196,
+      1
+     ],
+     "name": "iron_dark"
+    }
+   ],
+   "meshKey": "art/props/axe/out/axe_a"
+  },
+  {
+   "id": "art/props/axe/out/axe_c",
+   "title": "Топор C",
+   "group": "props",
+   "groupName": "Предметы",
+   "variant": "C",
+   "where": "в наборе: вариант в игре не встречается (канон — b)",
+   "inGame": false,
+   "atlas": "villager",
+   "camera": "pipeline",
+   "mirror": false,
+   "exportRot": 0,
+   "project": "art/props/axe",
+   "glb": {
+    "path": "art/props/axe/out/axe_c.glb",
+    "bytes": 16740,
+    "sha": "8d07fc2ed129"
+   },
+   "blend": "art/props/axe/axe_c.blend",
+   "blends": [
+    "art/props/axe/axe.blend",
+    "art/props/axe/axe_a.blend",
+    "art/props/axe/axe_b.blend",
+    "art/props/axe/axe_c.blend"
+   ],
+   "generators": [
+    "art/props/axe/tools/axe.py"
+   ],
+   "readme": "art/props/axe/README.md",
+   "stats": {
+    "tris": 212,
+    "verts": 412,
+    "meshes": 2,
+    "primitives": 6,
+    "materials": 6,
+    "nodes": 2,
+    "images": 0,
+    "animations": [],
+    "bbox": [
+     0.066,
+     0.553,
+     0.221
+    ],
+    "origin": [
+     -0.033,
+     0.0,
+     -0.146
+    ]
+   },
+   "palette": [
+    {
+     "hex": "#66442b",
+     "rgba": [
+      0.1333,
+      0.0549,
+      0.0196,
+      1
+     ],
+     "name": "wood_mid"
+    },
+    {
+     "hex": "#6f442e",
+     "rgba": [
+      0.1608,
+      0.0549,
+      0.0235,
+      1
+     ],
+     "name": "wood"
+    },
+    {
+     "hex": "#573515",
+     "rgba": [
+      0.0941,
+      0.0314,
+      0.0039,
+      1
+     ],
+     "name": "wood_dark"
+    },
+    {
+     "hex": "#80898f",
+     "rgba": [
+      0.2196,
+      0.2549,
+      0.2784,
+      1
+     ],
+     "name": "iron_mid"
+    },
+    {
+     "hex": "#747c80",
+     "rgba": [
+      0.1765,
+      0.2039,
+      0.2196,
+      1
+     ],
+     "name": "iron"
+    },
+    {
+     "hex": "#757b80",
+     "rgba": [
+      0.1804,
+      0.2,
+      0.2196,
+      1
+     ],
+     "name": "iron_dark"
+    }
+   ],
+   "meshKey": "art/props/axe/out/axe_c"
+  },
+  {
+   "id": "art/props/shovel/out/shovel_a",
+   "title": "Лопата A",
+   "group": "props",
+   "groupName": "Предметы",
+   "variant": "A",
+   "where": "в игре не используется",
+   "inGame": false,
+   "atlas": null,
+   "camera": "pipeline",
+   "mirror": false,
+   "exportRot": 0,
+   "project": "art/props/shovel",
+   "glb": {
+    "path": "art/props/shovel/out/shovel_a.glb",
+    "bytes": 24684,
+    "sha": "efbbd2b1dd79"
+   },
+   "blend": "art/props/shovel/shovel_a.blend",
+   "blends": [
+    "art/props/shovel/shovel.blend",
+    "art/props/shovel/shovel_a.blend",
+    "art/props/shovel/shovel_b.blend",
+    "art/props/shovel/shovel_c.blend"
+   ],
+   "generators": [
+    "art/props/shovel/tools/shovel.py"
+   ],
+   "readme": "art/props/shovel/README.md",
+   "stats": {
+    "tris": 244,
+    "verts": 472,
+    "meshes": 5,
+    "primitives": 15,
+    "materials": 9,
+    "nodes": 5,
+    "images": 0,
+    "animations": [],
+    "bbox": [
+     0.0522,
+     0.622,
+     0.1984
+    ],
+    "origin": [
+     -0.026,
+     0.0,
+     -0.0995
+    ]
+   },
+   "palette": [
+    {
+     "hex": "#899197",
+     "rgba": [
+      0.2549,
+      0.2902,
+      0.3176,
+      1
+     ],
+     "name": "shovel_iron_mid"
+    },
+    {
+     "hex": "#767e82",
+     "rgba": [
+      0.1843,
+      0.2118,
+      0.2275,
+      1
+     ],
+     "name": "shovel_iron"
+    },
+    {
+     "hex": "#747a7e",
+     "rgba": [
+      0.1765,
+      0.1961,
+      0.2118,
+      1
+     ],
+     "name": "shovel_iron_dark"
+    },
+    {
+     "hex": "#422b15",
+     "rgba": [
+      0.051,
+      0.0196,
+      0.0039,
+      1
+     ],
+     "name": "shovel_leather"
+    },
+    {
+     "hex": "#402b15",
+     "rgba": [
+      0.0471,
+      0.0196,
+      0.0039,
+      1
+     ],
+     "name": "shovel_leather_lt"
+    },
+    {
+     "hex": "#2e1500",
+     "rgba": [
+      0.0235,
+      0.0039,
+      0,
+      1
+     ],
+     "name": "shovel_leather_dk"
+    },
+    {
+     "hex": "#65422b",
+     "rgba": [
+      0.1294,
+      0.051,
+      0.0196,
+      1
+     ],
+     "name": "shovel_wood_mid"
+    },
+    {
+     "hex": "#6f442e",
+     "rgba": [
+      0.1608,
+      0.0549,
+      0.0235,
+      1
+     ],
+     "name": "shovel_wood"
+    },
+    {
+     "hex": "#553515",
+     "rgba": [
+      0.0902,
+      0.0314,
+      0.0039,
+      1
+     ],
+     "name": "shovel_wood_dark"
+    }
+   ],
+   "meshKey": "art/props/shovel/out/shovel_a"
+  },
+  {
+   "id": "art/props/shovel/out/shovel_b",
+   "title": "Лопата B",
+   "group": "props",
+   "groupName": "Предметы",
+   "variant": "B",
+   "where": "в игре не используется",
+   "inGame": false,
+   "atlas": null,
+   "camera": "pipeline",
+   "mirror": false,
+   "exportRot": 0,
+   "project": "art/props/shovel",
+   "glb": {
+    "path": "art/props/shovel/out/shovel_b.glb",
+    "bytes": 24828,
+    "sha": "aa33abb608db"
+   },
+   "blend": "art/props/shovel/shovel_b.blend",
+   "blends": [
+    "art/props/shovel/shovel.blend",
+    "art/props/shovel/shovel_a.blend",
+    "art/props/shovel/shovel_b.blend",
+    "art/props/shovel/shovel_c.blend"
+   ],
+   "generators": [
+    "art/props/shovel/tools/shovel.py"
+   ],
+   "readme": "art/props/shovel/README.md",
+   "stats": {
+    "tris": 244,
+    "verts": 472,
+    "meshes": 5,
+    "primitives": 15,
+    "materials": 9,
+    "nodes": 5,
+    "images": 0,
+    "animations": [],
+    "bbox": [
+     0.0522,
+     0.622,
+     0.1984
+    ],
+    "origin": [
+     -0.026,
+     0.0,
+     -0.0995
+    ]
+   },
+   "palette": [
+    {
+     "hex": "#65422b",
+     "rgba": [
+      0.1294,
+      0.051,
+      0.0196,
+      1
+     ],
+     "name": "shovel_wood_mid"
+    },
+    {
+     "hex": "#6f442e",
+     "rgba": [
+      0.1608,
+      0.0549,
+      0.0235,
+      1
+     ],
+     "name": "shovel_wood"
+    },
+    {
+     "hex": "#553515",
+     "rgba": [
+      0.0902,
+      0.0314,
+      0.0039,
+      1
+     ],
+     "name": "shovel_wood_dark"
+    },
+    {
+     "hex": "#422b15",
+     "rgba": [
+      0.051,
+      0.0196,
+      0.0039,
+      1
+     ],
+     "name": "shovel_leather"
+    },
+    {
+     "hex": "#402b15",
+     "rgba": [
+      0.0471,
+      0.0196,
+      0.0039,
+      1
+     ],
+     "name": "shovel_leather_lt"
+    },
+    {
+     "hex": "#2e1500",
+     "rgba": [
+      0.0235,
+      0.0039,
+      0,
+      1
+     ],
+     "name": "shovel_leather_dk"
+    },
+    {
+     "hex": "#899197",
+     "rgba": [
+      0.2549,
+      0.2902,
+      0.3176,
+      1
+     ],
+     "name": "shovel_iron_mid"
+    },
+    {
+     "hex": "#767e82",
+     "rgba": [
+      0.1843,
+      0.2118,
+      0.2275,
+      1
+     ],
+     "name": "shovel_iron"
+    },
+    {
+     "hex": "#747a7e",
+     "rgba": [
+      0.1765,
+      0.1961,
+      0.2118,
+      1
+     ],
+     "name": "shovel_iron_dark"
+    }
+   ],
+   "meshKey": "art/props/shovel/out/shovel_b"
+  },
+  {
+   "id": "art/props/shovel/out/shovel_c",
+   "title": "Лопата C",
+   "group": "props",
+   "groupName": "Предметы",
+   "variant": "C",
+   "where": "в игре не используется",
+   "inGame": false,
+   "atlas": null,
+   "camera": "pipeline",
+   "mirror": false,
+   "exportRot": 0,
+   "project": "art/props/shovel",
+   "glb": {
+    "path": "art/props/shovel/out/shovel_c.glb",
+    "bytes": 24692,
+    "sha": "d7dff54c44a7"
+   },
+   "blend": "art/props/shovel/shovel_c.blend",
+   "blends": [
+    "art/props/shovel/shovel.blend",
+    "art/props/shovel/shovel_a.blend",
+    "art/props/shovel/shovel_b.blend",
+    "art/props/shovel/shovel_c.blend"
+   ],
+   "generators": [
+    "art/props/shovel/tools/shovel.py"
+   ],
+   "readme": "art/props/shovel/README.md",
+   "stats": {
+    "tris": 244,
+    "verts": 472,
+    "meshes": 5,
+    "primitives": 15,
+    "materials": 9,
+    "nodes": 5,
+    "images": 0,
+    "animations": [],
+    "bbox": [
+     0.0522,
+     0.712,
+     0.1984
+    ],
+    "origin": [
+     -0.026,
+     0.0,
+     -0.0995
+    ]
+   },
+   "palette": [
+    {
+     "hex": "#899197",
+     "rgba": [
+      0.2549,
+      0.2902,
+      0.3176,
+      1
+     ],
+     "name": "shovel_iron_mid"
+    },
+    {
+     "hex": "#767e82",
+     "rgba": [
+      0.1843,
+      0.2118,
+      0.2275,
+      1
+     ],
+     "name": "shovel_iron"
+    },
+    {
+     "hex": "#747a7e",
+     "rgba": [
+      0.1765,
+      0.1961,
+      0.2118,
+      1
+     ],
+     "name": "shovel_iron_dark"
+    },
+    {
+     "hex": "#422b15",
+     "rgba": [
+      0.051,
+      0.0196,
+      0.0039,
+      1
+     ],
+     "name": "shovel_leather"
+    },
+    {
+     "hex": "#402b15",
+     "rgba": [
+      0.0471,
+      0.0196,
+      0.0039,
+      1
+     ],
+     "name": "shovel_leather_lt"
+    },
+    {
+     "hex": "#2e1500",
+     "rgba": [
+      0.0235,
+      0.0039,
+      0,
+      1
+     ],
+     "name": "shovel_leather_dk"
+    },
+    {
+     "hex": "#65422b",
+     "rgba": [
+      0.1294,
+      0.051,
+      0.0196,
+      1
+     ],
+     "name": "shovel_wood_mid"
+    },
+    {
+     "hex": "#6f442e",
+     "rgba": [
+      0.1608,
+      0.0549,
+      0.0235,
+      1
+     ],
+     "name": "shovel_wood"
+    },
+    {
+     "hex": "#553515",
+     "rgba": [
+      0.0902,
+      0.0314,
+      0.0039,
+      1
+     ],
+     "name": "shovel_wood_dark"
+    }
+   ],
+   "meshKey": "art/props/shovel/out/shovel_c"
+  },
+  {
+   "id": "art/fx/waves/out/wave_0",
+   "title": "Гребень волны 0",
+   "group": "fx",
+   "groupName": "Эффекты",
+   "variant": "0",
+   "where": "в игре: слой волн, 5 форм x 2 поворота вала",
+   "inGame": true,
+   "atlas": "waves",
+   "camera": "pipeline",
+   "mirror": false,
+   "exportRot": 0,
+   "project": "art/fx/waves",
+   "glb": {
+    "path": "art/fx/waves/out/wave_0.glb",
+    "bytes": 9936,
+    "sha": "4d1bbdd41209"
+   },
+   "blend": null,
+   "blends": [],
+   "generators": [
+    "art/fx/waves/tools/wave_models.py",
+    "art/fx/waves/tools/wave_shapes.py"
+   ],
+   "readme": "art/fx/waves/README.md",
+   "stats": {
+    "tris": 68,
+    "verts": 142,
+    "meshes": 1,
+    "primitives": 7,
+    "materials": 7,
+    "nodes": 1,
+    "images": 0,
+    "animations": [],
+    "bbox": [
+     4.2561,
+     0.2475,
+     1.1294
+    ],
+    "origin": [
+     -2.1332,
+     0.0,
+     -1.1068
+    ]
+   },
+   "palette": [
+    {
+     "hex": "#5d9ab5",
+     "rgba": [
+      0.1098,
+      0.3294,
+      0.4706,
+      1
+     ],
+     "name": "water_c"
+    },
+    {
+     "hex": "#76b8d2",
+     "rgba": [
+      0.1843,
+      0.4863,
+      0.651,
+      1
+     ],
+     "name": "water_b"
+    },
+    {
+     "hex": "#96cce2",
+     "rgba": [
+      0.3098,
+      0.6118,
+      0.7686,
+      1
+     ],
+     "name": "water_a"
+    },
+    {
+     "hex": "#bedde7",
+     "rgba": [
+      0.5255,
+      0.7294,
+      0.8078,
+      1
+     ],
+     "name": "foam_c"
+    },
+    {
+     "hex": "#d6edf4",
+     "rgba": [
+      0.6824,
+      0.851,
+      0.9098,
+      1
+     ],
+     "name": "foam_b"
+    },
+    {
+     "hex": "#ebf7fa",
+     "rgba": [
+      0.8392,
+      0.9294,
+      0.9608,
+      1
+     ],
+     "name": "foam_a"
+    },
+    {
+     "hex": "#5087a2",
+     "rgba": [
+      0.0784,
+      0.2471,
+      0.3686,
+      1
+     ],
+     "name": "dark"
+    }
+   ],
+   "meshKey": "art/fx/waves/out/wave_0"
+  },
+  {
+   "id": "art/fx/waves/out/wave_1",
+   "title": "Гребень волны 1",
+   "group": "fx",
+   "groupName": "Эффекты",
+   "variant": "1",
+   "where": "в игре: слой волн, 5 форм x 2 поворота вала",
+   "inGame": true,
+   "atlas": "waves",
+   "camera": "pipeline",
+   "mirror": false,
+   "exportRot": 0,
+   "project": "art/fx/waves",
+   "glb": {
+    "path": "art/fx/waves/out/wave_1.glb",
+    "bytes": 9944,
+    "sha": "1d29dce06beb"
+   },
+   "blend": null,
+   "blends": [],
+   "generators": [
+    "art/fx/waves/tools/wave_models.py",
+    "art/fx/waves/tools/wave_shapes.py"
+   ],
+   "readme": "art/fx/waves/README.md",
+   "stats": {
+    "tris": 68,
+    "verts": 142,
+    "meshes": 1,
+    "primitives": 7,
+    "materials": 7,
+    "nodes": 1,
+    "images": 0,
+    "animations": [],
+    "bbox": [
+     3.0028,
+     0.2041,
+     1.0944
+    ],
+    "origin": [
+     -1.5503,
+     0.0,
+     -0.9732
+    ]
+   },
+   "palette": [
+    {
+     "hex": "#5d9ab5",
+     "rgba": [
+      0.1098,
+      0.3294,
+      0.4706,
+      1
+     ],
+     "name": "water_c"
+    },
+    {
+     "hex": "#76b8d2",
+     "rgba": [
+      0.1843,
+      0.4863,
+      0.651,
+      1
+     ],
+     "name": "water_b"
+    },
+    {
+     "hex": "#96cce2",
+     "rgba": [
+      0.3098,
+      0.6118,
+      0.7686,
+      1
+     ],
+     "name": "water_a"
+    },
+    {
+     "hex": "#bedde7",
+     "rgba": [
+      0.5255,
+      0.7294,
+      0.8078,
+      1
+     ],
+     "name": "foam_c"
+    },
+    {
+     "hex": "#d6edf4",
+     "rgba": [
+      0.6824,
+      0.851,
+      0.9098,
+      1
+     ],
+     "name": "foam_b"
+    },
+    {
+     "hex": "#ebf7fa",
+     "rgba": [
+      0.8392,
+      0.9294,
+      0.9608,
+      1
+     ],
+     "name": "foam_a"
+    },
+    {
+     "hex": "#5087a2",
+     "rgba": [
+      0.0784,
+      0.2471,
+      0.3686,
+      1
+     ],
+     "name": "dark"
+    }
+   ],
+   "meshKey": "art/fx/waves/out/wave_1"
+  },
+  {
+   "id": "art/fx/waves/out/wave_2",
+   "title": "Гребень волны 2",
+   "group": "fx",
+   "groupName": "Эффекты",
+   "variant": "2",
+   "where": "в игре: слой волн, 5 форм x 2 поворота вала",
+   "inGame": true,
+   "atlas": "waves",
+   "camera": "pipeline",
+   "mirror": false,
+   "exportRot": 0,
+   "project": "art/fx/waves",
+   "glb": {
+    "path": "art/fx/waves/out/wave_2.glb",
+    "bytes": 9956,
+    "sha": "a835829fc213"
+   },
+   "blend": null,
+   "blends": [],
+   "generators": [
+    "art/fx/waves/tools/wave_models.py",
+    "art/fx/waves/tools/wave_shapes.py"
+   ],
+   "readme": "art/fx/waves/README.md",
+   "stats": {
+    "tris": 68,
+    "verts": 142,
+    "meshes": 1,
+    "primitives": 7,
+    "materials": 7,
+    "nodes": 1,
+    "images": 0,
+    "animations": [],
+    "bbox": [
+     2.1352,
+     0.1694,
+     1.0055
+    ],
+    "origin": [
+     -1.0837,
+     0.0,
+     -0.7677
+    ]
+   },
+   "palette": [
+    {
+     "hex": "#5d9ab5",
+     "rgba": [
+      0.1098,
+      0.3294,
+      0.4706,
+      1
+     ],
+     "name": "water_c"
+    },
+    {
+     "hex": "#76b8d2",
+     "rgba": [
+      0.1843,
+      0.4863,
+      0.651,
+      1
+     ],
+     "name": "water_b"
+    },
+    {
+     "hex": "#96cce2",
+     "rgba": [
+      0.3098,
+      0.6118,
+      0.7686,
+      1
+     ],
+     "name": "water_a"
+    },
+    {
+     "hex": "#bedde7",
+     "rgba": [
+      0.5255,
+      0.7294,
+      0.8078,
+      1
+     ],
+     "name": "foam_c"
+    },
+    {
+     "hex": "#d6edf4",
+     "rgba": [
+      0.6824,
+      0.851,
+      0.9098,
+      1
+     ],
+     "name": "foam_b"
+    },
+    {
+     "hex": "#ebf7fa",
+     "rgba": [
+      0.8392,
+      0.9294,
+      0.9608,
+      1
+     ],
+     "name": "foam_a"
+    },
+    {
+     "hex": "#5087a2",
+     "rgba": [
+      0.0784,
+      0.2471,
+      0.3686,
+      1
+     ],
+     "name": "dark"
+    }
+   ],
+   "meshKey": "art/fx/waves/out/wave_2"
+  },
+  {
+   "id": "art/fx/waves/out/wave_3",
+   "title": "Гребень волны 3",
+   "group": "fx",
+   "groupName": "Эффекты",
+   "variant": "3",
+   "where": "в игре: слой волн, 5 форм x 2 поворота вала",
+   "inGame": true,
+   "atlas": "waves",
+   "camera": "pipeline",
+   "mirror": false,
+   "exportRot": 0,
+   "project": "art/fx/waves",
+   "glb": {
+    "path": "art/fx/waves/out/wave_3.glb",
+    "bytes": 9248,
+    "sha": "02e30f8bfc4f"
+   },
+   "blend": null,
+   "blends": [],
+   "generators": [
+    "art/fx/waves/tools/wave_models.py",
+    "art/fx/waves/tools/wave_shapes.py"
+   ],
+   "readme": "art/fx/waves/README.md",
+   "stats": {
+    "tris": 54,
+    "verts": 116,
+    "meshes": 1,
+    "primitives": 7,
+    "materials": 7,
+    "nodes": 1,
+    "images": 0,
+    "animations": [],
+    "bbox": [
+     1.3946,
+     0.1437,
+     0.9387
+    ],
+    "origin": [
+     -0.6876,
+     0.0,
+     -0.6457
+    ]
+   },
+   "palette": [
+    {
+     "hex": "#5d9ab5",
+     "rgba": [
+      0.1098,
+      0.3294,
+      0.4706,
+      1
+     ],
+     "name": "water_c"
+    },
+    {
+     "hex": "#76b8d2",
+     "rgba": [
+      0.1843,
+      0.4863,
+      0.651,
+      1
+     ],
+     "name": "water_b"
+    },
+    {
+     "hex": "#96cce2",
+     "rgba": [
+      0.3098,
+      0.6118,
+      0.7686,
+      1
+     ],
+     "name": "water_a"
+    },
+    {
+     "hex": "#bedde7",
+     "rgba": [
+      0.5255,
+      0.7294,
+      0.8078,
+      1
+     ],
+     "name": "foam_c"
+    },
+    {
+     "hex": "#d6edf4",
+     "rgba": [
+      0.6824,
+      0.851,
+      0.9098,
+      1
+     ],
+     "name": "foam_b"
+    },
+    {
+     "hex": "#ebf7fa",
+     "rgba": [
+      0.8392,
+      0.9294,
+      0.9608,
+      1
+     ],
+     "name": "foam_a"
+    },
+    {
+     "hex": "#5087a2",
+     "rgba": [
+      0.0784,
+      0.2471,
+      0.3686,
+      1
+     ],
+     "name": "dark"
+    }
+   ],
+   "meshKey": "art/fx/waves/out/wave_3"
+  },
+  {
+   "id": "art/fx/waves/out/wave_4",
+   "title": "Гребень волны 4",
+   "group": "fx",
+   "groupName": "Эффекты",
+   "variant": "4",
+   "where": "в игре: слой волн, 5 форм x 2 поворота вала",
+   "inGame": true,
+   "atlas": "waves",
+   "camera": "pipeline",
+   "mirror": false,
+   "exportRot": 0,
+   "project": "art/fx/waves",
+   "glb": {
+    "path": "art/fx/waves/out/wave_4.glb",
+    "bytes": 8420,
+    "sha": "c240afbd90ca"
+   },
+   "blend": null,
+   "blends": [],
+   "generators": [
+    "art/fx/waves/tools/wave_models.py",
+    "art/fx/waves/tools/wave_shapes.py"
+   ],
+   "readme": "art/fx/waves/README.md",
+   "stats": {
+    "tris": 40,
+    "verts": 90,
+    "meshes": 1,
+    "primitives": 7,
+    "materials": 7,
+    "nodes": 1,
+    "images": 0,
+    "animations": [],
+    "bbox": [
+     0.9593,
+     0.1238,
+     0.9362
+    ],
+    "origin": [
+     -0.4858,
+     0.0,
+     -0.5932
+    ]
+   },
+   "palette": [
+    {
+     "hex": "#5d9ab5",
+     "rgba": [
+      0.1098,
+      0.3294,
+      0.4706,
+      1
+     ],
+     "name": "water_c"
+    },
+    {
+     "hex": "#76b8d2",
+     "rgba": [
+      0.1843,
+      0.4863,
+      0.651,
+      1
+     ],
+     "name": "water_b"
+    },
+    {
+     "hex": "#96cce2",
+     "rgba": [
+      0.3098,
+      0.6118,
+      0.7686,
+      1
+     ],
+     "name": "water_a"
+    },
+    {
+     "hex": "#bedde7",
+     "rgba": [
+      0.5255,
+      0.7294,
+      0.8078,
+      1
+     ],
+     "name": "foam_c"
+    },
+    {
+     "hex": "#d6edf4",
+     "rgba": [
+      0.6824,
+      0.851,
+      0.9098,
+      1
+     ],
+     "name": "foam_b"
+    },
+    {
+     "hex": "#ebf7fa",
+     "rgba": [
+      0.8392,
+      0.9294,
+      0.9608,
+      1
+     ],
+     "name": "foam_a"
+    },
+    {
+     "hex": "#5087a2",
+     "rgba": [
+      0.0784,
+      0.2471,
+      0.3686,
+      1
+     ],
+     "name": "dark"
+    }
+   ],
+   "meshKey": "art/fx/waves/out/wave_4"
+  },
+  {
+   "id": "research/coc_house/out/coc_house",
+   "title": "Дом (разбор чужого ассета)",
+   "group": "research",
+   "groupName": "Разборы",
+   "variant": null,
+   "where": "разбор: не для игры",
+   "inGame": false,
+   "atlas": null,
+   "camera": "other",
+   "mirror": false,
+   "exportRot": 0,
+   "project": "research/coc_house",
+   "glb": {
+    "path": "research/coc_house/out/coc_house.glb",
+    "bytes": 263760,
+    "sha": "bcd7ef70e2a1"
+   },
+   "blend": "research/coc_house/coc_house.blend",
+   "blends": [
+    "research/coc_house/coc_house.blend"
+   ],
+   "generators": [],
+   "readme": null,
+   "stats": {
+    "tris": 3202,
+    "verts": 6275,
+    "meshes": 15,
+    "primitives": 15,
+    "materials": 15,
+    "nodes": 15,
+    "images": 0,
+    "animations": [],
+    "bbox": [
+     7.2763,
+     4.27,
+     7.1537
+    ],
+    "origin": [
+     -3.731,
+     -0.03,
+     -3.5501
+    ]
+   },
+   "palette": [
+    {
+     "hex": "#ffffff",
+     "rgba": [
+      1.0,
+      1.0,
+      1.0,
+      1.0
+     ],
+     "name": "coc_house_glass"
+    }
+   ],
+   "meshKey": "research/coc_house/out/coc_house"
+  }
+ ],
+ "atlases": [
+  {
+   "name": "hero",
+   "path": "mapgen2/assets/hero",
+   "image": "mapgen2/assets/hero/atlas.png",
+   "size": [
+    913,
+    1609
+   ],
+   "connected": true,
+   "pages": [
+    "игра",
+    "генератор карт"
+   ],
+   "ppu": 96.0,
+   "az": 45.0,
+   "el": 35.264389682754654,
+   "res": [
+    112,
+    132
+   ],
+   "mul": 1.35,
+   "cell": [
+    114,
+    134
+   ],
+   "anims": {
+    "idle": {
+     "frames": 6,
+     "fps": 8.0,
+     "loop": true
+    },
+    "walk": {
+     "frames": 8,
+     "fps": 12.0,
+     "loop": true
+    },
+    "chop": {
+     "frames": 8,
+     "fps": 12.0,
+     "loop": false
+    }
+   },
+   "variants": {},
+   "note": "спрайты персонажа-лесоруба: 1 юнит модели = 1 клетка карты, anchorX/anchorY — пиксель кадра, куда проецируется опора (0,0,0), то есть земля между ступнями; rotation — угол в ГРАДУСАХ (0/90/180/270, как ждёт js/hero.js), rot_index — номер рендера 0..3 в имени кадра; mul — крупность мира, обязана совпадать с растительностью (app.js: 1.35)",
+   "frames": [
+    {
+     "name": "hero_chop_0_0",
+     "x": 1,
+     "y": 1073,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "chop",
+     "frame": 0,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_0_1",
+     "x": 1,
+     "y": 1207,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "chop",
+     "frame": 0,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_0_2",
+     "x": 1,
+     "y": 1341,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "chop",
+     "frame": 0,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_0_3",
+     "x": 1,
+     "y": 1475,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "chop",
+     "frame": 0,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_1_0",
+     "x": 115,
+     "y": 1073,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "chop",
+     "frame": 1,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_1_1",
+     "x": 115,
+     "y": 1207,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "chop",
+     "frame": 1,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_1_2",
+     "x": 115,
+     "y": 1341,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "chop",
+     "frame": 1,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_1_3",
+     "x": 115,
+     "y": 1475,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "chop",
+     "frame": 1,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_2_0",
+     "x": 229,
+     "y": 1073,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "chop",
+     "frame": 2,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_2_1",
+     "x": 229,
+     "y": 1207,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "chop",
+     "frame": 2,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_2_2",
+     "x": 229,
+     "y": 1341,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "chop",
+     "frame": 2,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_2_3",
+     "x": 229,
+     "y": 1475,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "chop",
+     "frame": 2,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_3_0",
+     "x": 343,
+     "y": 1073,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "chop",
+     "frame": 3,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_3_1",
+     "x": 343,
+     "y": 1207,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "chop",
+     "frame": 3,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_3_2",
+     "x": 343,
+     "y": 1341,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "chop",
+     "frame": 3,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_3_3",
+     "x": 343,
+     "y": 1475,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "chop",
+     "frame": 3,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_4_0",
+     "x": 457,
+     "y": 1073,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "chop",
+     "frame": 4,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_4_1",
+     "x": 457,
+     "y": 1207,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "chop",
+     "frame": 4,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_4_2",
+     "x": 457,
+     "y": 1341,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "chop",
+     "frame": 4,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_4_3",
+     "x": 457,
+     "y": 1475,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "chop",
+     "frame": 4,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_5_0",
+     "x": 571,
+     "y": 1073,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "chop",
+     "frame": 5,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_5_1",
+     "x": 571,
+     "y": 1207,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "chop",
+     "frame": 5,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_5_2",
+     "x": 571,
+     "y": 1341,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "chop",
+     "frame": 5,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_5_3",
+     "x": 571,
+     "y": 1475,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "chop",
+     "frame": 5,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_6_0",
+     "x": 685,
+     "y": 1073,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "chop",
+     "frame": 6,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_6_1",
+     "x": 685,
+     "y": 1207,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "chop",
+     "frame": 6,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_6_2",
+     "x": 685,
+     "y": 1341,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "chop",
+     "frame": 6,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_6_3",
+     "x": 685,
+     "y": 1475,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "chop",
+     "frame": 6,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_7_0",
+     "x": 799,
+     "y": 1073,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "chop",
+     "frame": 7,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_7_1",
+     "x": 799,
+     "y": 1207,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "chop",
+     "frame": 7,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_7_2",
+     "x": 799,
+     "y": 1341,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "chop",
+     "frame": 7,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_chop_7_3",
+     "x": 799,
+     "y": 1475,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "chop",
+     "frame": 7,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_idle_0_0",
+     "x": 1,
+     "y": 1,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "idle",
+     "frame": 0,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_idle_0_1",
+     "x": 1,
+     "y": 135,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "idle",
+     "frame": 0,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_idle_0_2",
+     "x": 1,
+     "y": 269,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "idle",
+     "frame": 0,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_idle_0_3",
+     "x": 1,
+     "y": 403,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "idle",
+     "frame": 0,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_idle_1_0",
+     "x": 115,
+     "y": 1,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "idle",
+     "frame": 1,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_idle_1_1",
+     "x": 115,
+     "y": 135,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "idle",
+     "frame": 1,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_idle_1_2",
+     "x": 115,
+     "y": 269,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "idle",
+     "frame": 1,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_idle_1_3",
+     "x": 115,
+     "y": 403,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "idle",
+     "frame": 1,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_idle_2_0",
+     "x": 229,
+     "y": 1,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "idle",
+     "frame": 2,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_idle_2_1",
+     "x": 229,
+     "y": 135,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "idle",
+     "frame": 2,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_idle_2_2",
+     "x": 229,
+     "y": 269,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "idle",
+     "frame": 2,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_idle_2_3",
+     "x": 229,
+     "y": 403,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "idle",
+     "frame": 2,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_idle_3_0",
+     "x": 343,
+     "y": 1,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "idle",
+     "frame": 3,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_idle_3_1",
+     "x": 343,
+     "y": 135,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "idle",
+     "frame": 3,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_idle_3_2",
+     "x": 343,
+     "y": 269,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "idle",
+     "frame": 3,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_idle_3_3",
+     "x": 343,
+     "y": 403,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "idle",
+     "frame": 3,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_idle_4_0",
+     "x": 457,
+     "y": 1,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "idle",
+     "frame": 4,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_idle_4_1",
+     "x": 457,
+     "y": 135,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "idle",
+     "frame": 4,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_idle_4_2",
+     "x": 457,
+     "y": 269,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "idle",
+     "frame": 4,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_idle_4_3",
+     "x": 457,
+     "y": 403,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "idle",
+     "frame": 4,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_idle_5_0",
+     "x": 571,
+     "y": 1,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "idle",
+     "frame": 5,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_idle_5_1",
+     "x": 571,
+     "y": 135,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "idle",
+     "frame": 5,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_idle_5_2",
+     "x": 571,
+     "y": 269,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "idle",
+     "frame": 5,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_idle_5_3",
+     "x": 571,
+     "y": 403,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "idle",
+     "frame": 5,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_0_0",
+     "x": 1,
+     "y": 537,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "walk",
+     "frame": 0,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_0_1",
+     "x": 1,
+     "y": 671,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "walk",
+     "frame": 0,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_0_2",
+     "x": 1,
+     "y": 805,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "walk",
+     "frame": 0,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_0_3",
+     "x": 1,
+     "y": 939,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "walk",
+     "frame": 0,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_1_0",
+     "x": 115,
+     "y": 537,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "walk",
+     "frame": 1,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_1_1",
+     "x": 115,
+     "y": 671,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "walk",
+     "frame": 1,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_1_2",
+     "x": 115,
+     "y": 805,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "walk",
+     "frame": 1,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_1_3",
+     "x": 115,
+     "y": 939,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "walk",
+     "frame": 1,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_2_0",
+     "x": 229,
+     "y": 537,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "walk",
+     "frame": 2,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_2_1",
+     "x": 229,
+     "y": 671,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "walk",
+     "frame": 2,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_2_2",
+     "x": 229,
+     "y": 805,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "walk",
+     "frame": 2,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_2_3",
+     "x": 229,
+     "y": 939,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "walk",
+     "frame": 2,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_3_0",
+     "x": 343,
+     "y": 537,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "walk",
+     "frame": 3,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_3_1",
+     "x": 343,
+     "y": 671,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "walk",
+     "frame": 3,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_3_2",
+     "x": 343,
+     "y": 805,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "walk",
+     "frame": 3,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_3_3",
+     "x": 343,
+     "y": 939,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "walk",
+     "frame": 3,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_4_0",
+     "x": 457,
+     "y": 537,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "walk",
+     "frame": 4,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_4_1",
+     "x": 457,
+     "y": 671,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "walk",
+     "frame": 4,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_4_2",
+     "x": 457,
+     "y": 805,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "walk",
+     "frame": 4,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_4_3",
+     "x": 457,
+     "y": 939,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "walk",
+     "frame": 4,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_5_0",
+     "x": 571,
+     "y": 537,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "walk",
+     "frame": 5,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_5_1",
+     "x": 571,
+     "y": 671,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "walk",
+     "frame": 5,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_5_2",
+     "x": 571,
+     "y": 805,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "walk",
+     "frame": 5,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_5_3",
+     "x": 571,
+     "y": 939,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "walk",
+     "frame": 5,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_6_0",
+     "x": 685,
+     "y": 537,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "walk",
+     "frame": 6,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_6_1",
+     "x": 685,
+     "y": 671,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "walk",
+     "frame": 6,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_6_2",
+     "x": 685,
+     "y": 805,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "walk",
+     "frame": 6,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_6_3",
+     "x": 685,
+     "y": 939,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "walk",
+     "frame": 6,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_7_0",
+     "x": 799,
+     "y": 537,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "walk",
+     "frame": 7,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_7_1",
+     "x": 799,
+     "y": 671,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "walk",
+     "frame": 7,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_7_2",
+     "x": 799,
+     "y": 805,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "walk",
+     "frame": 7,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    },
+    {
+     "name": "hero_walk_7_3",
+     "x": 799,
+     "y": 939,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "walk",
+     "frame": 7,
+     "anchorX": 56.0,
+     "anchorY": 106.0,
+     "footprint": null
+    }
+   ],
+   "models": [],
+   "origin": "атлас унаследован — исходных моделей в репозитории нет"
+  },
+  {
+   "name": "house",
+   "path": "mapgen2/assets/house",
+   "image": "mapgen2/assets/house/atlas.png",
+   "size": [
+    1220,
+    1089
+   ],
+   "connected": false,
+   "pages": [],
+   "ppu": 80.0,
+   "az": 45.0,
+   "el": 35.264389682754654,
+   "res": [
+    512,
+    640
+   ],
+   "mul": 0.7156,
+   "cell": null,
+   "anims": {},
+   "variants": {
+    "a": [
+     3,
+     2
+    ],
+    "b": [
+     3,
+     2
+    ],
+    "c": [
+     3,
+     2
+    ]
+   },
+   "note": "дом жителя: 1 юнит модели = 1 клетка карты, пятно 3 x 2 (при повороте 2 x 3); anchorX/anchorY — точка опоры (центр пятна застройки); footprint — пятно в клетках по повороту; ground — наземный контур в клетках от опоры; mul — крупность спрайта",
+   "frames": [
+    {
+     "name": "vh_a_0",
+     "x": 2,
+     "y": 2,
+     "w": 301,
+     "h": 359,
+     "rotation": 0,
+     "variant": "a",
+     "anim": null,
+     "frame": null,
+     "anchorX": 147.0,
+     "anchorY": 244.0,
+     "footprint": [
+      3,
+      2
+     ]
+    },
+    {
+     "name": "vh_a_180",
+     "x": 612,
+     "y": 2,
+     "w": 301,
+     "h": 359,
+     "rotation": 180,
+     "variant": "a",
+     "anim": null,
+     "frame": null,
+     "anchorX": 147.0,
+     "anchorY": 244.0,
+     "footprint": [
+      3,
+      2
+     ]
+    },
+    {
+     "name": "vh_a_270",
+     "x": 917,
+     "y": 2,
+     "w": 301,
+     "h": 359,
+     "rotation": 270,
+     "variant": "a",
+     "anim": null,
+     "frame": null,
+     "anchorX": 147.0,
+     "anchorY": 244.0,
+     "footprint": [
+      2,
+      3
+     ]
+    },
+    {
+     "name": "vh_a_90",
+     "x": 307,
+     "y": 2,
+     "w": 301,
+     "h": 359,
+     "rotation": 90,
+     "variant": "a",
+     "anim": null,
+     "frame": null,
+     "anchorX": 147.0,
+     "anchorY": 244.0,
+     "footprint": [
+      2,
+      3
+     ]
+    },
+    {
+     "name": "vh_b_0",
+     "x": 2,
+     "y": 365,
+     "w": 301,
+     "h": 359,
+     "rotation": 0,
+     "variant": "b",
+     "anim": null,
+     "frame": null,
+     "anchorX": 147.0,
+     "anchorY": 244.0,
+     "footprint": [
+      3,
+      2
+     ]
+    },
+    {
+     "name": "vh_b_180",
+     "x": 612,
+     "y": 365,
+     "w": 301,
+     "h": 359,
+     "rotation": 180,
+     "variant": "b",
+     "anim": null,
+     "frame": null,
+     "anchorX": 147.0,
+     "anchorY": 244.0,
+     "footprint": [
+      3,
+      2
+     ]
+    },
+    {
+     "name": "vh_b_270",
+     "x": 917,
+     "y": 365,
+     "w": 301,
+     "h": 359,
+     "rotation": 270,
+     "variant": "b",
+     "anim": null,
+     "frame": null,
+     "anchorX": 147.0,
+     "anchorY": 244.0,
+     "footprint": [
+      2,
+      3
+     ]
+    },
+    {
+     "name": "vh_b_90",
+     "x": 307,
+     "y": 365,
+     "w": 301,
+     "h": 359,
+     "rotation": 90,
+     "variant": "b",
+     "anim": null,
+     "frame": null,
+     "anchorX": 147.0,
+     "anchorY": 244.0,
+     "footprint": [
+      2,
+      3
+     ]
+    },
+    {
+     "name": "vh_c_0",
+     "x": 2,
+     "y": 728,
+     "w": 301,
+     "h": 359,
+     "rotation": 0,
+     "variant": "c",
+     "anim": null,
+     "frame": null,
+     "anchorX": 147.0,
+     "anchorY": 244.0,
+     "footprint": [
+      3,
+      2
+     ]
+    },
+    {
+     "name": "vh_c_180",
+     "x": 612,
+     "y": 728,
+     "w": 301,
+     "h": 359,
+     "rotation": 180,
+     "variant": "c",
+     "anim": null,
+     "frame": null,
+     "anchorX": 147.0,
+     "anchorY": 244.0,
+     "footprint": [
+      3,
+      2
+     ]
+    },
+    {
+     "name": "vh_c_270",
+     "x": 917,
+     "y": 728,
+     "w": 301,
+     "h": 359,
+     "rotation": 270,
+     "variant": "c",
+     "anim": null,
+     "frame": null,
+     "anchorX": 147.0,
+     "anchorY": 244.0,
+     "footprint": [
+      2,
+      3
+     ]
+    },
+    {
+     "name": "vh_c_90",
+     "x": 307,
+     "y": 728,
+     "w": 301,
+     "h": 359,
+     "rotation": 90,
+     "variant": "c",
+     "anim": null,
+     "frame": null,
+     "anchorX": 147.0,
+     "anchorY": 244.0,
+     "footprint": [
+      2,
+      3
+     ]
+    }
+   ],
+   "models": [
+    "art/buildings/villager_house/out/house_a"
+   ],
+   "origin": "исходники: art/buildings/villager_house"
+  },
+  {
+   "name": "hut",
+   "path": "mapgen2/assets/hut",
+   "image": "mapgen2/assets/hut/atlas.png",
+   "size": [
+    1269,
+    1084
+   ],
+   "connected": false,
+   "pages": [],
+   "ppu": 80.0,
+   "az": 45.0,
+   "el": 35.264389682754654,
+   "res": [
+    512,
+    640
+   ],
+   "mul": null,
+   "cell": null,
+   "anims": {},
+   "variants": {
+    "a": [
+     3,
+     2
+    ],
+    "b": [
+     3,
+     2
+    ],
+    "c": [
+     3,
+     2
+    ]
+   },
+   "note": "спрайты хижины: 1 юнит модели = 1 клетка карты, пятно 3 x 2 (при повороте 2 x 3); anchorX/anchorY — центр пятна застройки",
+   "frames": [
+    {
+     "name": "hutrect_a_0",
+     "x": 2,
+     "y": 2,
+     "w": 299,
+     "h": 339,
+     "rotation": 0,
+     "variant": "a",
+     "anim": null,
+     "frame": null,
+     "anchorX": 147.0,
+     "anchorY": 210.0,
+     "footprint": [
+      3,
+      2
+     ]
+    },
+    {
+     "name": "hutrect_a_180",
+     "x": 636,
+     "y": 2,
+     "w": 299,
+     "h": 329,
+     "rotation": 180,
+     "variant": "a",
+     "anim": null,
+     "frame": null,
+     "anchorX": 152.0,
+     "anchorY": 200.0,
+     "footprint": [
+      3,
+      2
+     ]
+    },
+    {
+     "name": "hutrect_a_270",
+     "x": 953,
+     "y": 2,
+     "w": 298,
+     "h": 328,
+     "rotation": 270,
+     "variant": "a",
+     "anim": null,
+     "frame": null,
+     "anchorX": 147.0,
+     "anchorY": 199.0,
+     "footprint": [
+      2,
+      3
+     ]
+    },
+    {
+     "name": "hutrect_a_90",
+     "x": 319,
+     "y": 2,
+     "w": 298,
+     "h": 338,
+     "rotation": 90,
+     "variant": "a",
+     "anim": null,
+     "frame": null,
+     "anchorX": 151.0,
+     "anchorY": 209.0,
+     "footprint": [
+      2,
+      3
+     ]
+    },
+    {
+     "name": "hutrect_b_0",
+     "x": 2,
+     "y": 363,
+     "w": 300,
+     "h": 357,
+     "rotation": 0,
+     "variant": "b",
+     "anim": null,
+     "frame": null,
+     "anchorX": 150.0,
+     "anchorY": 228.0,
+     "footprint": [
+      3,
+      2
+     ]
+    },
+    {
+     "name": "hutrect_b_180",
+     "x": 636,
+     "y": 363,
+     "w": 300,
+     "h": 320,
+     "rotation": 180,
+     "variant": "b",
+     "anim": null,
+     "frame": null,
+     "anchorX": 150.0,
+     "anchorY": 191.0,
+     "footprint": [
+      3,
+      2
+     ]
+    },
+    {
+     "name": "hutrect_b_270",
+     "x": 953,
+     "y": 363,
+     "w": 298,
+     "h": 338,
+     "rotation": 270,
+     "variant": "b",
+     "anim": null,
+     "frame": null,
+     "anchorX": 150.0,
+     "anchorY": 209.0,
+     "footprint": [
+      2,
+      3
+     ]
+    },
+    {
+     "name": "hutrect_b_90",
+     "x": 319,
+     "y": 363,
+     "w": 298,
+     "h": 320,
+     "rotation": 90,
+     "variant": "b",
+     "anim": null,
+     "frame": null,
+     "anchorX": 148.0,
+     "anchorY": 191.0,
+     "footprint": [
+      2,
+      3
+     ]
+    },
+    {
+     "name": "hutrect_c_0",
+     "x": 2,
+     "y": 724,
+     "w": 310,
+     "h": 329,
+     "rotation": 0,
+     "variant": "c",
+     "anim": null,
+     "frame": null,
+     "anchorX": 155.0,
+     "anchorY": 196.0,
+     "footprint": [
+      3,
+      2
+     ]
+    },
+    {
+     "name": "hutrect_c_180",
+     "x": 636,
+     "y": 724,
+     "w": 310,
+     "h": 327,
+     "rotation": 180,
+     "variant": "c",
+     "anim": null,
+     "frame": null,
+     "anchorX": 155.0,
+     "anchorY": 194.0,
+     "footprint": [
+      3,
+      2
+     ]
+    },
+    {
+     "name": "hutrect_c_270",
+     "x": 953,
+     "y": 724,
+     "w": 313,
+     "h": 328,
+     "rotation": 270,
+     "variant": "c",
+     "anim": null,
+     "frame": null,
+     "anchorX": 157.0,
+     "anchorY": 195.0,
+     "footprint": [
+      2,
+      3
+     ]
+    },
+    {
+     "name": "hutrect_c_90",
+     "x": 319,
+     "y": 724,
+     "w": 313,
+     "h": 328,
+     "rotation": 90,
+     "variant": "c",
+     "anim": null,
+     "frame": null,
+     "anchorX": 156.0,
+     "anchorY": 195.0,
+     "footprint": [
+      2,
+      3
+     ]
+    }
+   ],
+   "models": [
+    "art/buildings/townhall/out/hutrect_a",
+    "art/buildings/townhall/out/hutrect_b",
+    "art/buildings/townhall/out/hutrect_c"
+   ],
+   "origin": "исходники: art/buildings/townhall"
+  },
+  {
+   "name": "lumbercamp",
+   "path": "mapgen2/assets/lumbercamp",
+   "image": "mapgen2/assets/lumbercamp/atlas.png",
+   "size": [
+    3005,
+    719
+   ],
+   "connected": true,
+   "pages": [
+    "игра",
+    "генератор карт"
+   ],
+   "ppu": 96.0,
+   "az": 45.0,
+   "el": 35.264389682754654,
+   "res": [
+    512,
+    640
+   ],
+   "mul": 0.7156,
+   "cell": null,
+   "anims": {},
+   "variants": {
+    "a": [
+     3,
+     3
+    ]
+   },
+   "note": "спрайты лагеря лесоруба: 1 юнит модели = 1 клетка карты, пятно 3 x 3; anchorX/anchorY — точка опоры (центр пятна); footprint — пятно в клетках; ground — наземный контур в клетках от опоры, посчитан ПО МОДЕЛИ (основание разреженное, сплошного цоколя нет — пиксельный замер врёт, см. шапку tools/pack_lumbercamp.py); mul — крупность",
+   "frames": [
+    {
+     "name": "lc_a_0",
+     "x": 2,
+     "y": 2,
+     "w": 747,
+     "h": 636,
+     "rotation": 0,
+     "variant": "a",
+     "anim": null,
+     "frame": null,
+     "anchorX": 355.0,
+     "anchorY": 389.0,
+     "footprint": [
+      3,
+      3
+     ]
+    },
+    {
+     "name": "lc_a_180",
+     "x": 1504,
+     "y": 2,
+     "w": 747,
+     "h": 546,
+     "rotation": 180,
+     "variant": "a",
+     "anim": null,
+     "frame": null,
+     "anchorX": 392.0,
+     "anchorY": 310.0,
+     "footprint": [
+      3,
+      3
+     ]
+    },
+    {
+     "name": "lc_a_270",
+     "x": 2255,
+     "y": 2,
+     "w": 661,
+     "h": 529,
+     "rotation": 270,
+     "variant": "a",
+     "anim": null,
+     "frame": null,
+     "anchorX": 325.0,
+     "anchorY": 278.0,
+     "footprint": [
+      3,
+      3
+     ]
+    },
+    {
+     "name": "lc_a_90",
+     "x": 753,
+     "y": 2,
+     "w": 661,
+     "h": 714,
+     "rotation": 90,
+     "variant": "a",
+     "anim": null,
+     "frame": null,
+     "anchorX": 335.0,
+     "anchorY": 437.0,
+     "footprint": [
+      3,
+      3
+     ]
+    }
+   ],
+   "models": [
+    "art/buildings/lumbercamp/out/lc_model"
+   ],
+   "origin": "art/buildings/lumbercamp/tools/building.py — .blend и GLB не выгружались"
+  },
+  {
+   "name": "sprites",
+   "path": "mapgen2/assets/sprites",
+   "image": "mapgen2/assets/sprites/atlas.png",
+   "size": [
+    1024,
+    1024
+   ],
+   "connected": true,
+   "pages": [
+    "игра",
+    "генератор карт"
+   ],
+   "ppu": 96.0,
+   "az": null,
+   "el": null,
+   "res": null,
+   "mul": null,
+   "cell": null,
+   "anims": {},
+   "variants": {},
+   "note": "anchorX/anchorY — пиксель внутри кадра, куда проецируется точка опоры модели",
+   "frames": [
+    {
+     "name": "bush_0",
+     "x": 672,
+     "y": 799,
+     "w": 74,
+     "h": 69,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 36.0,
+     "anchorY": 49.1,
+     "footprint": null
+    },
+    {
+     "name": "bush_180",
+     "x": 826,
+     "y": 799,
+     "w": 74,
+     "h": 69,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 38.0,
+     "anchorY": 48.1,
+     "footprint": null
+    },
+    {
+     "name": "bush_270",
+     "x": 903,
+     "y": 799,
+     "w": 74,
+     "h": 69,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 36.0,
+     "anchorY": 48.1,
+     "footprint": null
+    },
+    {
+     "name": "bush_90",
+     "x": 749,
+     "y": 799,
+     "w": 74,
+     "h": 69,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 38.0,
+     "anchorY": 49.1,
+     "footprint": null
+    },
+    {
+     "name": "bush_berry_0",
+     "x": 3,
+     "y": 653,
+     "w": 73,
+     "h": 69,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 35.5,
+     "anchorY": 49.1,
+     "footprint": null
+    },
+    {
+     "name": "bush_berry_180",
+     "x": 155,
+     "y": 653,
+     "w": 73,
+     "h": 69,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 37.5,
+     "anchorY": 48.1,
+     "footprint": null
+    },
+    {
+     "name": "bush_berry_270",
+     "x": 231,
+     "y": 653,
+     "w": 73,
+     "h": 69,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 35.5,
+     "anchorY": 48.1,
+     "footprint": null
+    },
+    {
+     "name": "bush_berry_90",
+     "x": 79,
+     "y": 653,
+     "w": 73,
+     "h": 69,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 37.5,
+     "anchorY": 49.1,
+     "footprint": null
+    },
+    {
+     "name": "flower_pink_0",
+     "x": 34,
+     "y": 534,
+     "w": 28,
+     "h": 30,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 13.0,
+     "anchorY": 21.8,
+     "footprint": null
+    },
+    {
+     "name": "flower_pink_180",
+     "x": 96,
+     "y": 534,
+     "w": 28,
+     "h": 30,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 8.2,
+     "anchorY": 24.2,
+     "footprint": null
+    },
+    {
+     "name": "flower_pink_270",
+     "x": 127,
+     "y": 534,
+     "w": 28,
+     "h": 30,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 13.0,
+     "anchorY": 24.2,
+     "footprint": null
+    },
+    {
+     "name": "flower_pink_90",
+     "x": 65,
+     "y": 534,
+     "w": 28,
+     "h": 30,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 8.2,
+     "anchorY": 21.8,
+     "footprint": null
+    },
+    {
+     "name": "flower_white_0",
+     "x": 791,
+     "y": 612,
+     "w": 28,
+     "h": 30,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 13.0,
+     "anchorY": 21.8,
+     "footprint": null
+    },
+    {
+     "name": "flower_white_180",
+     "x": 853,
+     "y": 612,
+     "w": 28,
+     "h": 30,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 8.2,
+     "anchorY": 24.2,
+     "footprint": null
+    },
+    {
+     "name": "flower_white_270",
+     "x": 884,
+     "y": 612,
+     "w": 28,
+     "h": 30,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 13.0,
+     "anchorY": 24.2,
+     "footprint": null
+    },
+    {
+     "name": "flower_white_90",
+     "x": 822,
+     "y": 612,
+     "w": 28,
+     "h": 30,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 8.2,
+     "anchorY": 21.8,
+     "footprint": null
+    },
+    {
+     "name": "flower_yellow_0",
+     "x": 915,
+     "y": 612,
+     "w": 28,
+     "h": 30,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 13.0,
+     "anchorY": 21.8,
+     "footprint": null
+    },
+    {
+     "name": "flower_yellow_180",
+     "x": 977,
+     "y": 612,
+     "w": 28,
+     "h": 30,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 8.2,
+     "anchorY": 24.2,
+     "footprint": null
+    },
+    {
+     "name": "flower_yellow_270",
+     "x": 3,
+     "y": 534,
+     "w": 28,
+     "h": 30,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 13.0,
+     "anchorY": 24.2,
+     "footprint": null
+    },
+    {
+     "name": "flower_yellow_90",
+     "x": 946,
+     "y": 612,
+     "w": 28,
+     "h": 30,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 8.2,
+     "anchorY": 21.8,
+     "footprint": null
+    },
+    {
+     "name": "grass_tuft_0",
+     "x": 551,
+     "y": 609,
+     "w": 26,
+     "h": 33,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 13.0,
+     "anchorY": 24.7,
+     "footprint": null
+    },
+    {
+     "name": "grass_tuft_180",
+     "x": 609,
+     "y": 609,
+     "w": 26,
+     "h": 33,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 6.5,
+     "anchorY": 27.5,
+     "footprint": null
+    },
+    {
+     "name": "grass_tuft_270",
+     "x": 638,
+     "y": 609,
+     "w": 26,
+     "h": 33,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 12.6,
+     "anchorY": 27.7,
+     "footprint": null
+    },
+    {
+     "name": "grass_tuft_90",
+     "x": 580,
+     "y": 609,
+     "w": 26,
+     "h": 33,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 6.9,
+     "anchorY": 24.5,
+     "footprint": null
+    },
+    {
+     "name": "ore_iron_0",
+     "x": 3,
+     "y": 570,
+     "w": 77,
+     "h": 72,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 40.0,
+     "anchorY": 49.3,
+     "footprint": null
+    },
+    {
+     "name": "ore_iron_180",
+     "x": 163,
+     "y": 570,
+     "w": 77,
+     "h": 72,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 57.4,
+     "anchorY": 44.2,
+     "footprint": null
+    },
+    {
+     "name": "ore_iron_270",
+     "x": 243,
+     "y": 570,
+     "w": 77,
+     "h": 72,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 43.6,
+     "anchorY": 42.4,
+     "footprint": null
+    },
+    {
+     "name": "ore_iron_90",
+     "x": 83,
+     "y": 570,
+     "w": 77,
+     "h": 72,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 53.8,
+     "anchorY": 51.1,
+     "footprint": null
+    },
+    {
+     "name": "reeds_0",
+     "x": 667,
+     "y": 585,
+     "w": 28,
+     "h": 57,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 14.0,
+     "anchorY": 47.0,
+     "footprint": null
+    },
+    {
+     "name": "reeds_180",
+     "x": 729,
+     "y": 585,
+     "w": 28,
+     "h": 57,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 22.2,
+     "anchorY": 47.2,
+     "footprint": null
+    },
+    {
+     "name": "reeds_270",
+     "x": 760,
+     "y": 585,
+     "w": 28,
+     "h": 57,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 18.3,
+     "anchorY": 45.0,
+     "footprint": null
+    },
+    {
+     "name": "reeds_90",
+     "x": 698,
+     "y": 585,
+     "w": 28,
+     "h": 57,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 17.9,
+     "anchorY": 49.2,
+     "footprint": null
+    },
+    {
+     "name": "rock_boulder_0",
+     "x": 451,
+     "y": 666,
+     "w": 55,
+     "h": 56,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 27.5,
+     "anchorY": 38.8,
+     "footprint": null
+    },
+    {
+     "name": "rock_boulder_180",
+     "x": 567,
+     "y": 666,
+     "w": 55,
+     "h": 56,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 27.5,
+     "anchorY": 38.8,
+     "footprint": null
+    },
+    {
+     "name": "rock_boulder_270",
+     "x": 625,
+     "y": 666,
+     "w": 55,
+     "h": 56,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 27.5,
+     "anchorY": 38.8,
+     "footprint": null
+    },
+    {
+     "name": "rock_boulder_90",
+     "x": 509,
+     "y": 666,
+     "w": 55,
+     "h": 56,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 27.5,
+     "anchorY": 38.8,
+     "footprint": null
+    },
+    {
+     "name": "rock_cluster_0",
+     "x": 683,
+     "y": 648,
+     "w": 82,
+     "h": 74,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 44.5,
+     "anchorY": 51.3,
+     "footprint": null
+    },
+    {
+     "name": "rock_cluster_180",
+     "x": 853,
+     "y": 648,
+     "w": 82,
+     "h": 74,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 60.6,
+     "anchorY": 44.2,
+     "footprint": null
+    },
+    {
+     "name": "rock_cluster_270",
+     "x": 938,
+     "y": 648,
+     "w": 82,
+     "h": 74,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 45.5,
+     "anchorY": 43.7,
+     "footprint": null
+    },
+    {
+     "name": "rock_cluster_90",
+     "x": 768,
+     "y": 648,
+     "w": 82,
+     "h": 74,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 59.6,
+     "anchorY": 51.8,
+     "footprint": null
+    },
+    {
+     "name": "rock_pebble_0",
+     "x": 307,
+     "y": 690,
+     "w": 33,
+     "h": 32,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 16.5,
+     "anchorY": 21.0,
+     "footprint": null
+    },
+    {
+     "name": "rock_pebble_180",
+     "x": 379,
+     "y": 690,
+     "w": 33,
+     "h": 32,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 16.5,
+     "anchorY": 21.0,
+     "footprint": null
+    },
+    {
+     "name": "rock_pebble_270",
+     "x": 415,
+     "y": 690,
+     "w": 33,
+     "h": 32,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 16.5,
+     "anchorY": 21.0,
+     "footprint": null
+    },
+    {
+     "name": "rock_pebble_90",
+     "x": 343,
+     "y": 690,
+     "w": 33,
+     "h": 32,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 16.5,
+     "anchorY": 21.0,
+     "footprint": null
+    },
+    {
+     "name": "salt_crystals_0",
+     "x": 323,
+     "y": 591,
+     "w": 54,
+     "h": 51,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 27.4,
+     "anchorY": 34.9,
+     "footprint": null
+    },
+    {
+     "name": "salt_crystals_180",
+     "x": 437,
+     "y": 591,
+     "w": 54,
+     "h": 51,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 13.1,
+     "anchorY": 41.4,
+     "footprint": null
+    },
+    {
+     "name": "salt_crystals_270",
+     "x": 494,
+     "y": 591,
+     "w": 54,
+     "h": 51,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 26.6,
+     "anchorY": 41.7,
+     "footprint": null
+    },
+    {
+     "name": "salt_crystals_90",
+     "x": 380,
+     "y": 591,
+     "w": 54,
+     "h": 51,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 13.8,
+     "anchorY": 34.6,
+     "footprint": null
+    },
+    {
+     "name": "tree_autumn_0",
+     "x": 443,
+     "y": 874,
+     "w": 107,
+     "h": 147,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 51.3,
+     "anchorY": 119.8,
+     "footprint": null
+    },
+    {
+     "name": "tree_autumn_180",
+     "x": 663,
+     "y": 874,
+     "w": 107,
+     "h": 147,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 55.7,
+     "anchorY": 117.6,
+     "footprint": null
+    },
+    {
+     "name": "tree_autumn_270",
+     "x": 773,
+     "y": 874,
+     "w": 107,
+     "h": 147,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 51.3,
+     "anchorY": 117.6,
+     "footprint": null
+    },
+    {
+     "name": "tree_autumn_90",
+     "x": 553,
+     "y": 874,
+     "w": 107,
+     "h": 147,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 55.7,
+     "anchorY": 119.8,
+     "footprint": null
+    },
+    {
+     "name": "tree_birch_0",
+     "x": 300,
+     "y": 732,
+     "w": 90,
+     "h": 136,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 47.2,
+     "anchorY": 110.6,
+     "footprint": null
+    },
+    {
+     "name": "tree_birch_180",
+     "x": 486,
+     "y": 732,
+     "w": 90,
+     "h": 136,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 42.8,
+     "anchorY": 112.8,
+     "footprint": null
+    },
+    {
+     "name": "tree_birch_270",
+     "x": 579,
+     "y": 732,
+     "w": 90,
+     "h": 136,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 47.2,
+     "anchorY": 112.8,
+     "footprint": null
+    },
+    {
+     "name": "tree_birch_90",
+     "x": 393,
+     "y": 732,
+     "w": 90,
+     "h": 136,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 42.8,
+     "anchorY": 110.6,
+     "footprint": null
+    },
+    {
+     "name": "tree_oak_0",
+     "x": 3,
+     "y": 874,
+     "w": 107,
+     "h": 147,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 50.9,
+     "anchorY": 120.0,
+     "footprint": null
+    },
+    {
+     "name": "tree_oak_180",
+     "x": 223,
+     "y": 874,
+     "w": 107,
+     "h": 147,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 56.1,
+     "anchorY": 117.4,
+     "footprint": null
+    },
+    {
+     "name": "tree_oak_270",
+     "x": 333,
+     "y": 874,
+     "w": 107,
+     "h": 147,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 50.9,
+     "anchorY": 117.4,
+     "footprint": null
+    },
+    {
+     "name": "tree_oak_90",
+     "x": 113,
+     "y": 874,
+     "w": 107,
+     "h": 147,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 56.1,
+     "anchorY": 120.0,
+     "footprint": null
+    },
+    {
+     "name": "tree_pine_0",
+     "x": 883,
+     "y": 881,
+     "w": 96,
+     "h": 140,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 49.1,
+     "anchorY": 115.1,
+     "footprint": null
+    },
+    {
+     "name": "tree_pine_180",
+     "x": 102,
+     "y": 728,
+     "w": 96,
+     "h": 140,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 46.9,
+     "anchorY": 113.9,
+     "footprint": null
+    },
+    {
+     "name": "tree_pine_270",
+     "x": 201,
+     "y": 728,
+     "w": 96,
+     "h": 140,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 46.9,
+     "anchorY": 115.1,
+     "footprint": null
+    },
+    {
+     "name": "tree_pine_90",
+     "x": 3,
+     "y": 728,
+     "w": 96,
+     "h": 140,
+     "rotation": null,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 49.1,
+     "anchorY": 113.9,
+     "footprint": null
+    }
+   ],
+   "models": [],
+   "origin": "атлас унаследован — исходных моделей в репозитории нет"
+  },
+  {
+   "name": "starter_house",
+   "path": "mapgen2/assets/starter_house",
+   "image": "mapgen2/assets/starter_house/atlas.png",
+   "size": [
+    2948,
+    793
+   ],
+   "connected": true,
+   "pages": [
+    "игра",
+    "генератор карт"
+   ],
+   "ppu": 96.0,
+   "az": 45.0,
+   "el": 35.264389682754654,
+   "res": [
+    512,
+    640
+   ],
+   "mul": 0.7156,
+   "cell": null,
+   "anims": {},
+   "variants": {
+    "a": [
+     2,
+     3
+    ]
+   },
+   "note": "стартовый дом жителя: 1 юнит модели = 1 клетка карты, пятно 2 x 3 (при повороте 3 x 2); anchorX/anchorY — точка опоры (центр пятна застройки); footprint — пятно в клетках по повороту; ground — наземный контур (цоколь вместе с двором) в клетках от опоры, посчитан ПО МОДЕЛИ — цоколь недосложен, двор каменных столбцов не даёт, пиксельный замер видит только ближний край основания (см. шапку tools/pack_atlas.py); mul — крупность",
+   "frames": [
+    {
+     "name": "sh_a_0",
+     "x": 2,
+     "y": 2,
+     "w": 733,
+     "h": 781,
+     "rotation": 0,
+     "variant": "a",
+     "anim": null,
+     "frame": null,
+     "anchorX": 366.0,
+     "anchorY": 486.0,
+     "footprint": [
+      2,
+      3
+     ]
+    },
+    {
+     "name": "sh_a_180",
+     "x": 1476,
+     "y": 2,
+     "w": 733,
+     "h": 789,
+     "rotation": 180,
+     "variant": "a",
+     "anim": null,
+     "frame": null,
+     "anchorX": 366.0,
+     "anchorY": 491.0,
+     "footprint": [
+      2,
+      3
+     ]
+    },
+    {
+     "name": "sh_a_270",
+     "x": 2213,
+     "y": 2,
+     "w": 726,
+     "h": 781,
+     "rotation": 270,
+     "variant": "a",
+     "anim": null,
+     "frame": null,
+     "anchorX": 361.0,
+     "anchorY": 487.0,
+     "footprint": [
+      3,
+      2
+     ]
+    },
+    {
+     "name": "sh_a_90",
+     "x": 739,
+     "y": 2,
+     "w": 726,
+     "h": 789,
+     "rotation": 90,
+     "variant": "a",
+     "anim": null,
+     "frame": null,
+     "anchorX": 364.0,
+     "anchorY": 491.0,
+     "footprint": [
+      3,
+      2
+     ]
+    }
+   ],
+   "models": [
+    "art/buildings/starter_house/out/starter_house_model"
+   ],
+   "origin": "исходники: art/buildings/starter_house"
+  },
+  {
+   "name": "townhall",
+   "path": "mapgen2/assets/townhall",
+   "image": "mapgen2/assets/townhall/atlas.png",
+   "size": [
+    1929,
+    1354
+   ],
+   "connected": true,
+   "pages": [
+    "игра",
+    "генератор карт"
+   ],
+   "ppu": 80.0,
+   "az": 45.0,
+   "el": 35.264389682754654,
+   "res": [
+    512,
+    640
+   ],
+   "mul": 0.7667,
+   "cell": null,
+   "anims": {},
+   "variants": {
+    "a": [
+     4,
+     3
+    ],
+    "b": [
+     4,
+     3
+    ],
+    "c": [
+     4,
+     3
+    ]
+   },
+   "note": "спрайты ратуши: 1 юнит модели = 1 клетка карты, anchorX/anchorY — точка опоры (центр пятна застройки); footprint — пятно в клетках по повороту; ground — наземный контур в клетках от опоры; mul — крупность спрайта",
+   "frames": [
+    {
+     "name": "townhall_a_0",
+     "x": 2,
+     "y": 2,
+     "w": 431,
+     "h": 440,
+     "rotation": 0,
+     "variant": "a",
+     "anim": null,
+     "frame": null,
+     "anchorX": 215.0,
+     "anchorY": 268.0,
+     "footprint": [
+      4,
+      3
+     ]
+    },
+    {
+     "name": "townhall_a_180",
+     "x": 966,
+     "y": 2,
+     "w": 431,
+     "h": 440,
+     "rotation": 180,
+     "variant": "a",
+     "anim": null,
+     "frame": null,
+     "anchorX": 216.0,
+     "anchorY": 268.0,
+     "footprint": [
+      4,
+      3
+     ]
+    },
+    {
+     "name": "townhall_a_270",
+     "x": 1448,
+     "y": 2,
+     "w": 434,
+     "h": 440,
+     "rotation": 270,
+     "variant": "a",
+     "anim": null,
+     "frame": null,
+     "anchorX": 218.0,
+     "anchorY": 268.0,
+     "footprint": [
+      3,
+      4
+     ]
+    },
+    {
+     "name": "townhall_a_90",
+     "x": 484,
+     "y": 2,
+     "w": 434,
+     "h": 441,
+     "rotation": 90,
+     "variant": "a",
+     "anim": null,
+     "frame": null,
+     "anchorX": 216.0,
+     "anchorY": 269.0,
+     "footprint": [
+      3,
+      4
+     ]
+    },
+    {
+     "name": "townhall_b_0",
+     "x": 2,
+     "y": 453,
+     "w": 434,
+     "h": 446,
+     "rotation": 0,
+     "variant": "b",
+     "anim": null,
+     "frame": null,
+     "anchorX": 218.0,
+     "anchorY": 268.0,
+     "footprint": [
+      4,
+      3
+     ]
+    },
+    {
+     "name": "townhall_b_180",
+     "x": 966,
+     "y": 453,
+     "w": 434,
+     "h": 446,
+     "rotation": 180,
+     "variant": "b",
+     "anim": null,
+     "frame": null,
+     "anchorX": 216.0,
+     "anchorY": 268.0,
+     "footprint": [
+      4,
+      3
+     ]
+    },
+    {
+     "name": "townhall_b_270",
+     "x": 1448,
+     "y": 453,
+     "w": 478,
+     "h": 446,
+     "rotation": 270,
+     "variant": "b",
+     "anim": null,
+     "frame": null,
+     "anchorX": 242.0,
+     "anchorY": 268.0,
+     "footprint": [
+      3,
+      4
+     ]
+    },
+    {
+     "name": "townhall_b_90",
+     "x": 484,
+     "y": 453,
+     "w": 478,
+     "h": 447,
+     "rotation": 90,
+     "variant": "b",
+     "anim": null,
+     "frame": null,
+     "anchorX": 236.0,
+     "anchorY": 269.0,
+     "footprint": [
+      3,
+      4
+     ]
+    },
+    {
+     "name": "townhall_c_0",
+     "x": 2,
+     "y": 904,
+     "w": 431,
+     "h": 436,
+     "rotation": 0,
+     "variant": "c",
+     "anim": null,
+     "frame": null,
+     "anchorX": 215.0,
+     "anchorY": 268.0,
+     "footprint": [
+      4,
+      3
+     ]
+    },
+    {
+     "name": "townhall_c_180",
+     "x": 966,
+     "y": 904,
+     "w": 431,
+     "h": 436,
+     "rotation": 180,
+     "variant": "c",
+     "anim": null,
+     "frame": null,
+     "anchorX": 216.0,
+     "anchorY": 268.0,
+     "footprint": [
+      4,
+      3
+     ]
+    },
+    {
+     "name": "townhall_c_270",
+     "x": 1448,
+     "y": 904,
+     "w": 434,
+     "h": 436,
+     "rotation": 270,
+     "variant": "c",
+     "anim": null,
+     "frame": null,
+     "anchorX": 218.0,
+     "anchorY": 268.0,
+     "footprint": [
+      3,
+      4
+     ]
+    },
+    {
+     "name": "townhall_c_90",
+     "x": 484,
+     "y": 904,
+     "w": 434,
+     "h": 437,
+     "rotation": 90,
+     "variant": "c",
+     "anim": null,
+     "frame": null,
+     "anchorX": 216.0,
+     "anchorY": 269.0,
+     "footprint": [
+      3,
+      4
+     ]
+    }
+   ],
+   "models": [
+    "art/buildings/townhall/out/townhall_a",
+    "art/buildings/townhall/out/townhall_b",
+    "art/buildings/townhall/out/townhall_c"
+   ],
+   "origin": "art/buildings/townhall/tools/hut.py — GLB ратуши не выгружался, только спрайты"
+  },
+  {
+   "name": "villager",
+   "path": "mapgen2/assets/villager",
+   "image": "mapgen2/assets/villager/atlas.png",
+   "size": [
+    912,
+    3216
+   ],
+   "connected": true,
+   "pages": [
+    "игра",
+    "генератор карт"
+   ],
+   "ppu": 96.0,
+   "az": 45.0,
+   "el": 35.264389682754654,
+   "res": [
+    112,
+    132
+   ],
+   "mul": 1.35,
+   "cell": [
+    112,
+    132
+   ],
+   "anims": {
+    "idle": {
+     "frames": 6,
+     "fps": 8.0,
+     "loop": true
+    },
+    "walk": {
+     "frames": 8,
+     "fps": 12.0,
+     "loop": true
+    },
+    "work": {
+     "frames": 8,
+     "fps": 12.0,
+     "loop": false
+    }
+   },
+   "variants": {},
+   "note": "спрайты жителя (мужчина, variant=m): 1 юнит модели = 1 клетка карты; клетка и опора те же, что у героя (112x132, anchor 56,106 — земля между ступнями); mul обязан совпадать с растительностью (app.js: 1.35); поворот — угол в градусах (0/45/.../315): модель смотрит в +X, поворот на 90° даёт +Y, на 45° — диагональ между ними. Игра берёт БЛИЖАЙШИЙ объявленный поворот (js/hero.js: nearestRot), поэтому число поворотов в атласе — его дело, а не её. Камера игры — из квадранта +X+Y (js/render.js: sx=(x−y), sy=(x+y), ближе тот, у кого x+y больше)",
+   "frames": [
+    {
+     "name": "villager_idle_0_0",
+     "x": 1,
+     "y": 1,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "idle",
+     "frame": 0,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_0_1",
+     "x": 1,
+     "y": 135,
+     "w": 112,
+     "h": 132,
+     "rotation": 45,
+     "variant": null,
+     "anim": "idle",
+     "frame": 0,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_0_2",
+     "x": 1,
+     "y": 269,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "idle",
+     "frame": 0,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_0_3",
+     "x": 1,
+     "y": 403,
+     "w": 112,
+     "h": 132,
+     "rotation": 135,
+     "variant": null,
+     "anim": "idle",
+     "frame": 0,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_0_4",
+     "x": 1,
+     "y": 537,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "idle",
+     "frame": 0,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_0_5",
+     "x": 1,
+     "y": 671,
+     "w": 112,
+     "h": 132,
+     "rotation": 225,
+     "variant": null,
+     "anim": "idle",
+     "frame": 0,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_0_6",
+     "x": 1,
+     "y": 805,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "idle",
+     "frame": 0,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_0_7",
+     "x": 1,
+     "y": 939,
+     "w": 112,
+     "h": 132,
+     "rotation": 315,
+     "variant": null,
+     "anim": "idle",
+     "frame": 0,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_1_0",
+     "x": 115,
+     "y": 1,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "idle",
+     "frame": 1,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_1_1",
+     "x": 115,
+     "y": 135,
+     "w": 112,
+     "h": 132,
+     "rotation": 45,
+     "variant": null,
+     "anim": "idle",
+     "frame": 1,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_1_2",
+     "x": 115,
+     "y": 269,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "idle",
+     "frame": 1,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_1_3",
+     "x": 115,
+     "y": 403,
+     "w": 112,
+     "h": 132,
+     "rotation": 135,
+     "variant": null,
+     "anim": "idle",
+     "frame": 1,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_1_4",
+     "x": 115,
+     "y": 537,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "idle",
+     "frame": 1,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_1_5",
+     "x": 115,
+     "y": 671,
+     "w": 112,
+     "h": 132,
+     "rotation": 225,
+     "variant": null,
+     "anim": "idle",
+     "frame": 1,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_1_6",
+     "x": 115,
+     "y": 805,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "idle",
+     "frame": 1,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_1_7",
+     "x": 115,
+     "y": 939,
+     "w": 112,
+     "h": 132,
+     "rotation": 315,
+     "variant": null,
+     "anim": "idle",
+     "frame": 1,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_2_0",
+     "x": 229,
+     "y": 1,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "idle",
+     "frame": 2,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_2_1",
+     "x": 229,
+     "y": 135,
+     "w": 112,
+     "h": 132,
+     "rotation": 45,
+     "variant": null,
+     "anim": "idle",
+     "frame": 2,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_2_2",
+     "x": 229,
+     "y": 269,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "idle",
+     "frame": 2,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_2_3",
+     "x": 229,
+     "y": 403,
+     "w": 112,
+     "h": 132,
+     "rotation": 135,
+     "variant": null,
+     "anim": "idle",
+     "frame": 2,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_2_4",
+     "x": 229,
+     "y": 537,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "idle",
+     "frame": 2,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_2_5",
+     "x": 229,
+     "y": 671,
+     "w": 112,
+     "h": 132,
+     "rotation": 225,
+     "variant": null,
+     "anim": "idle",
+     "frame": 2,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_2_6",
+     "x": 229,
+     "y": 805,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "idle",
+     "frame": 2,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_2_7",
+     "x": 229,
+     "y": 939,
+     "w": 112,
+     "h": 132,
+     "rotation": 315,
+     "variant": null,
+     "anim": "idle",
+     "frame": 2,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_3_0",
+     "x": 343,
+     "y": 1,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "idle",
+     "frame": 3,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_3_1",
+     "x": 343,
+     "y": 135,
+     "w": 112,
+     "h": 132,
+     "rotation": 45,
+     "variant": null,
+     "anim": "idle",
+     "frame": 3,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_3_2",
+     "x": 343,
+     "y": 269,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "idle",
+     "frame": 3,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_3_3",
+     "x": 343,
+     "y": 403,
+     "w": 112,
+     "h": 132,
+     "rotation": 135,
+     "variant": null,
+     "anim": "idle",
+     "frame": 3,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_3_4",
+     "x": 343,
+     "y": 537,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "idle",
+     "frame": 3,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_3_5",
+     "x": 343,
+     "y": 671,
+     "w": 112,
+     "h": 132,
+     "rotation": 225,
+     "variant": null,
+     "anim": "idle",
+     "frame": 3,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_3_6",
+     "x": 343,
+     "y": 805,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "idle",
+     "frame": 3,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_3_7",
+     "x": 343,
+     "y": 939,
+     "w": 112,
+     "h": 132,
+     "rotation": 315,
+     "variant": null,
+     "anim": "idle",
+     "frame": 3,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_4_0",
+     "x": 457,
+     "y": 1,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "idle",
+     "frame": 4,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_4_1",
+     "x": 457,
+     "y": 135,
+     "w": 112,
+     "h": 132,
+     "rotation": 45,
+     "variant": null,
+     "anim": "idle",
+     "frame": 4,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_4_2",
+     "x": 457,
+     "y": 269,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "idle",
+     "frame": 4,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_4_3",
+     "x": 457,
+     "y": 403,
+     "w": 112,
+     "h": 132,
+     "rotation": 135,
+     "variant": null,
+     "anim": "idle",
+     "frame": 4,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_4_4",
+     "x": 457,
+     "y": 537,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "idle",
+     "frame": 4,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_4_5",
+     "x": 457,
+     "y": 671,
+     "w": 112,
+     "h": 132,
+     "rotation": 225,
+     "variant": null,
+     "anim": "idle",
+     "frame": 4,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_4_6",
+     "x": 457,
+     "y": 805,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "idle",
+     "frame": 4,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_4_7",
+     "x": 457,
+     "y": 939,
+     "w": 112,
+     "h": 132,
+     "rotation": 315,
+     "variant": null,
+     "anim": "idle",
+     "frame": 4,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_5_0",
+     "x": 571,
+     "y": 1,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "idle",
+     "frame": 5,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_5_1",
+     "x": 571,
+     "y": 135,
+     "w": 112,
+     "h": 132,
+     "rotation": 45,
+     "variant": null,
+     "anim": "idle",
+     "frame": 5,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_5_2",
+     "x": 571,
+     "y": 269,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "idle",
+     "frame": 5,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_5_3",
+     "x": 571,
+     "y": 403,
+     "w": 112,
+     "h": 132,
+     "rotation": 135,
+     "variant": null,
+     "anim": "idle",
+     "frame": 5,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_5_4",
+     "x": 571,
+     "y": 537,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "idle",
+     "frame": 5,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_5_5",
+     "x": 571,
+     "y": 671,
+     "w": 112,
+     "h": 132,
+     "rotation": 225,
+     "variant": null,
+     "anim": "idle",
+     "frame": 5,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_5_6",
+     "x": 571,
+     "y": 805,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "idle",
+     "frame": 5,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_idle_5_7",
+     "x": 571,
+     "y": 939,
+     "w": 112,
+     "h": 132,
+     "rotation": 315,
+     "variant": null,
+     "anim": "idle",
+     "frame": 5,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_0_0",
+     "x": 1,
+     "y": 1073,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "walk",
+     "frame": 0,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_0_1",
+     "x": 1,
+     "y": 1207,
+     "w": 112,
+     "h": 132,
+     "rotation": 45,
+     "variant": null,
+     "anim": "walk",
+     "frame": 0,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_0_2",
+     "x": 1,
+     "y": 1341,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "walk",
+     "frame": 0,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_0_3",
+     "x": 1,
+     "y": 1475,
+     "w": 112,
+     "h": 132,
+     "rotation": 135,
+     "variant": null,
+     "anim": "walk",
+     "frame": 0,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_0_4",
+     "x": 1,
+     "y": 1609,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "walk",
+     "frame": 0,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_0_5",
+     "x": 1,
+     "y": 1743,
+     "w": 112,
+     "h": 132,
+     "rotation": 225,
+     "variant": null,
+     "anim": "walk",
+     "frame": 0,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_0_6",
+     "x": 1,
+     "y": 1877,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "walk",
+     "frame": 0,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_0_7",
+     "x": 1,
+     "y": 2011,
+     "w": 112,
+     "h": 132,
+     "rotation": 315,
+     "variant": null,
+     "anim": "walk",
+     "frame": 0,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_1_0",
+     "x": 115,
+     "y": 1073,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "walk",
+     "frame": 1,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_1_1",
+     "x": 115,
+     "y": 1207,
+     "w": 112,
+     "h": 132,
+     "rotation": 45,
+     "variant": null,
+     "anim": "walk",
+     "frame": 1,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_1_2",
+     "x": 115,
+     "y": 1341,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "walk",
+     "frame": 1,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_1_3",
+     "x": 115,
+     "y": 1475,
+     "w": 112,
+     "h": 132,
+     "rotation": 135,
+     "variant": null,
+     "anim": "walk",
+     "frame": 1,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_1_4",
+     "x": 115,
+     "y": 1609,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "walk",
+     "frame": 1,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_1_5",
+     "x": 115,
+     "y": 1743,
+     "w": 112,
+     "h": 132,
+     "rotation": 225,
+     "variant": null,
+     "anim": "walk",
+     "frame": 1,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_1_6",
+     "x": 115,
+     "y": 1877,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "walk",
+     "frame": 1,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_1_7",
+     "x": 115,
+     "y": 2011,
+     "w": 112,
+     "h": 132,
+     "rotation": 315,
+     "variant": null,
+     "anim": "walk",
+     "frame": 1,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_2_0",
+     "x": 229,
+     "y": 1073,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "walk",
+     "frame": 2,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_2_1",
+     "x": 229,
+     "y": 1207,
+     "w": 112,
+     "h": 132,
+     "rotation": 45,
+     "variant": null,
+     "anim": "walk",
+     "frame": 2,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_2_2",
+     "x": 229,
+     "y": 1341,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "walk",
+     "frame": 2,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_2_3",
+     "x": 229,
+     "y": 1475,
+     "w": 112,
+     "h": 132,
+     "rotation": 135,
+     "variant": null,
+     "anim": "walk",
+     "frame": 2,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_2_4",
+     "x": 229,
+     "y": 1609,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "walk",
+     "frame": 2,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_2_5",
+     "x": 229,
+     "y": 1743,
+     "w": 112,
+     "h": 132,
+     "rotation": 225,
+     "variant": null,
+     "anim": "walk",
+     "frame": 2,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_2_6",
+     "x": 229,
+     "y": 1877,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "walk",
+     "frame": 2,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_2_7",
+     "x": 229,
+     "y": 2011,
+     "w": 112,
+     "h": 132,
+     "rotation": 315,
+     "variant": null,
+     "anim": "walk",
+     "frame": 2,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_3_0",
+     "x": 343,
+     "y": 1073,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "walk",
+     "frame": 3,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_3_1",
+     "x": 343,
+     "y": 1207,
+     "w": 112,
+     "h": 132,
+     "rotation": 45,
+     "variant": null,
+     "anim": "walk",
+     "frame": 3,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_3_2",
+     "x": 343,
+     "y": 1341,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "walk",
+     "frame": 3,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_3_3",
+     "x": 343,
+     "y": 1475,
+     "w": 112,
+     "h": 132,
+     "rotation": 135,
+     "variant": null,
+     "anim": "walk",
+     "frame": 3,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_3_4",
+     "x": 343,
+     "y": 1609,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "walk",
+     "frame": 3,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_3_5",
+     "x": 343,
+     "y": 1743,
+     "w": 112,
+     "h": 132,
+     "rotation": 225,
+     "variant": null,
+     "anim": "walk",
+     "frame": 3,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_3_6",
+     "x": 343,
+     "y": 1877,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "walk",
+     "frame": 3,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_3_7",
+     "x": 343,
+     "y": 2011,
+     "w": 112,
+     "h": 132,
+     "rotation": 315,
+     "variant": null,
+     "anim": "walk",
+     "frame": 3,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_4_0",
+     "x": 457,
+     "y": 1073,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "walk",
+     "frame": 4,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_4_1",
+     "x": 457,
+     "y": 1207,
+     "w": 112,
+     "h": 132,
+     "rotation": 45,
+     "variant": null,
+     "anim": "walk",
+     "frame": 4,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_4_2",
+     "x": 457,
+     "y": 1341,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "walk",
+     "frame": 4,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_4_3",
+     "x": 457,
+     "y": 1475,
+     "w": 112,
+     "h": 132,
+     "rotation": 135,
+     "variant": null,
+     "anim": "walk",
+     "frame": 4,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_4_4",
+     "x": 457,
+     "y": 1609,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "walk",
+     "frame": 4,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_4_5",
+     "x": 457,
+     "y": 1743,
+     "w": 112,
+     "h": 132,
+     "rotation": 225,
+     "variant": null,
+     "anim": "walk",
+     "frame": 4,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_4_6",
+     "x": 457,
+     "y": 1877,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "walk",
+     "frame": 4,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_4_7",
+     "x": 457,
+     "y": 2011,
+     "w": 112,
+     "h": 132,
+     "rotation": 315,
+     "variant": null,
+     "anim": "walk",
+     "frame": 4,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_5_0",
+     "x": 571,
+     "y": 1073,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "walk",
+     "frame": 5,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_5_1",
+     "x": 571,
+     "y": 1207,
+     "w": 112,
+     "h": 132,
+     "rotation": 45,
+     "variant": null,
+     "anim": "walk",
+     "frame": 5,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_5_2",
+     "x": 571,
+     "y": 1341,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "walk",
+     "frame": 5,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_5_3",
+     "x": 571,
+     "y": 1475,
+     "w": 112,
+     "h": 132,
+     "rotation": 135,
+     "variant": null,
+     "anim": "walk",
+     "frame": 5,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_5_4",
+     "x": 571,
+     "y": 1609,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "walk",
+     "frame": 5,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_5_5",
+     "x": 571,
+     "y": 1743,
+     "w": 112,
+     "h": 132,
+     "rotation": 225,
+     "variant": null,
+     "anim": "walk",
+     "frame": 5,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_5_6",
+     "x": 571,
+     "y": 1877,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "walk",
+     "frame": 5,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_5_7",
+     "x": 571,
+     "y": 2011,
+     "w": 112,
+     "h": 132,
+     "rotation": 315,
+     "variant": null,
+     "anim": "walk",
+     "frame": 5,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_6_0",
+     "x": 685,
+     "y": 1073,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "walk",
+     "frame": 6,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_6_1",
+     "x": 685,
+     "y": 1207,
+     "w": 112,
+     "h": 132,
+     "rotation": 45,
+     "variant": null,
+     "anim": "walk",
+     "frame": 6,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_6_2",
+     "x": 685,
+     "y": 1341,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "walk",
+     "frame": 6,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_6_3",
+     "x": 685,
+     "y": 1475,
+     "w": 112,
+     "h": 132,
+     "rotation": 135,
+     "variant": null,
+     "anim": "walk",
+     "frame": 6,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_6_4",
+     "x": 685,
+     "y": 1609,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "walk",
+     "frame": 6,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_6_5",
+     "x": 685,
+     "y": 1743,
+     "w": 112,
+     "h": 132,
+     "rotation": 225,
+     "variant": null,
+     "anim": "walk",
+     "frame": 6,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_6_6",
+     "x": 685,
+     "y": 1877,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "walk",
+     "frame": 6,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_6_7",
+     "x": 685,
+     "y": 2011,
+     "w": 112,
+     "h": 132,
+     "rotation": 315,
+     "variant": null,
+     "anim": "walk",
+     "frame": 6,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_7_0",
+     "x": 799,
+     "y": 1073,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "walk",
+     "frame": 7,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_7_1",
+     "x": 799,
+     "y": 1207,
+     "w": 112,
+     "h": 132,
+     "rotation": 45,
+     "variant": null,
+     "anim": "walk",
+     "frame": 7,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_7_2",
+     "x": 799,
+     "y": 1341,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "walk",
+     "frame": 7,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_7_3",
+     "x": 799,
+     "y": 1475,
+     "w": 112,
+     "h": 132,
+     "rotation": 135,
+     "variant": null,
+     "anim": "walk",
+     "frame": 7,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_7_4",
+     "x": 799,
+     "y": 1609,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "walk",
+     "frame": 7,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_7_5",
+     "x": 799,
+     "y": 1743,
+     "w": 112,
+     "h": 132,
+     "rotation": 225,
+     "variant": null,
+     "anim": "walk",
+     "frame": 7,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_7_6",
+     "x": 799,
+     "y": 1877,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "walk",
+     "frame": 7,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_walk_7_7",
+     "x": 799,
+     "y": 2011,
+     "w": 112,
+     "h": 132,
+     "rotation": 315,
+     "variant": null,
+     "anim": "walk",
+     "frame": 7,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_0_0",
+     "x": 1,
+     "y": 2145,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "work",
+     "frame": 0,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_0_1",
+     "x": 1,
+     "y": 2279,
+     "w": 112,
+     "h": 132,
+     "rotation": 45,
+     "variant": null,
+     "anim": "work",
+     "frame": 0,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_0_2",
+     "x": 1,
+     "y": 2413,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "work",
+     "frame": 0,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_0_3",
+     "x": 1,
+     "y": 2547,
+     "w": 112,
+     "h": 132,
+     "rotation": 135,
+     "variant": null,
+     "anim": "work",
+     "frame": 0,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_0_4",
+     "x": 1,
+     "y": 2681,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "work",
+     "frame": 0,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_0_5",
+     "x": 1,
+     "y": 2815,
+     "w": 112,
+     "h": 132,
+     "rotation": 225,
+     "variant": null,
+     "anim": "work",
+     "frame": 0,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_0_6",
+     "x": 1,
+     "y": 2949,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "work",
+     "frame": 0,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_0_7",
+     "x": 1,
+     "y": 3083,
+     "w": 112,
+     "h": 132,
+     "rotation": 315,
+     "variant": null,
+     "anim": "work",
+     "frame": 0,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_1_0",
+     "x": 115,
+     "y": 2145,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "work",
+     "frame": 1,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_1_1",
+     "x": 115,
+     "y": 2279,
+     "w": 112,
+     "h": 132,
+     "rotation": 45,
+     "variant": null,
+     "anim": "work",
+     "frame": 1,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_1_2",
+     "x": 115,
+     "y": 2413,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "work",
+     "frame": 1,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_1_3",
+     "x": 115,
+     "y": 2547,
+     "w": 112,
+     "h": 132,
+     "rotation": 135,
+     "variant": null,
+     "anim": "work",
+     "frame": 1,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_1_4",
+     "x": 115,
+     "y": 2681,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "work",
+     "frame": 1,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_1_5",
+     "x": 115,
+     "y": 2815,
+     "w": 112,
+     "h": 132,
+     "rotation": 225,
+     "variant": null,
+     "anim": "work",
+     "frame": 1,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_1_6",
+     "x": 115,
+     "y": 2949,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "work",
+     "frame": 1,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_1_7",
+     "x": 115,
+     "y": 3083,
+     "w": 112,
+     "h": 132,
+     "rotation": 315,
+     "variant": null,
+     "anim": "work",
+     "frame": 1,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_2_0",
+     "x": 229,
+     "y": 2145,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "work",
+     "frame": 2,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_2_1",
+     "x": 229,
+     "y": 2279,
+     "w": 112,
+     "h": 132,
+     "rotation": 45,
+     "variant": null,
+     "anim": "work",
+     "frame": 2,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_2_2",
+     "x": 229,
+     "y": 2413,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "work",
+     "frame": 2,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_2_3",
+     "x": 229,
+     "y": 2547,
+     "w": 112,
+     "h": 132,
+     "rotation": 135,
+     "variant": null,
+     "anim": "work",
+     "frame": 2,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_2_4",
+     "x": 229,
+     "y": 2681,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "work",
+     "frame": 2,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_2_5",
+     "x": 229,
+     "y": 2815,
+     "w": 112,
+     "h": 132,
+     "rotation": 225,
+     "variant": null,
+     "anim": "work",
+     "frame": 2,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_2_6",
+     "x": 229,
+     "y": 2949,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "work",
+     "frame": 2,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_2_7",
+     "x": 229,
+     "y": 3083,
+     "w": 112,
+     "h": 132,
+     "rotation": 315,
+     "variant": null,
+     "anim": "work",
+     "frame": 2,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_3_0",
+     "x": 343,
+     "y": 2145,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "work",
+     "frame": 3,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_3_1",
+     "x": 343,
+     "y": 2279,
+     "w": 112,
+     "h": 132,
+     "rotation": 45,
+     "variant": null,
+     "anim": "work",
+     "frame": 3,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_3_2",
+     "x": 343,
+     "y": 2413,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "work",
+     "frame": 3,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_3_3",
+     "x": 343,
+     "y": 2547,
+     "w": 112,
+     "h": 132,
+     "rotation": 135,
+     "variant": null,
+     "anim": "work",
+     "frame": 3,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_3_4",
+     "x": 343,
+     "y": 2681,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "work",
+     "frame": 3,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_3_5",
+     "x": 343,
+     "y": 2815,
+     "w": 112,
+     "h": 132,
+     "rotation": 225,
+     "variant": null,
+     "anim": "work",
+     "frame": 3,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_3_6",
+     "x": 343,
+     "y": 2949,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "work",
+     "frame": 3,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_3_7",
+     "x": 343,
+     "y": 3083,
+     "w": 112,
+     "h": 132,
+     "rotation": 315,
+     "variant": null,
+     "anim": "work",
+     "frame": 3,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_4_0",
+     "x": 457,
+     "y": 2145,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "work",
+     "frame": 4,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_4_1",
+     "x": 457,
+     "y": 2279,
+     "w": 112,
+     "h": 132,
+     "rotation": 45,
+     "variant": null,
+     "anim": "work",
+     "frame": 4,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_4_2",
+     "x": 457,
+     "y": 2413,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "work",
+     "frame": 4,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_4_3",
+     "x": 457,
+     "y": 2547,
+     "w": 112,
+     "h": 132,
+     "rotation": 135,
+     "variant": null,
+     "anim": "work",
+     "frame": 4,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_4_4",
+     "x": 457,
+     "y": 2681,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "work",
+     "frame": 4,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_4_5",
+     "x": 457,
+     "y": 2815,
+     "w": 112,
+     "h": 132,
+     "rotation": 225,
+     "variant": null,
+     "anim": "work",
+     "frame": 4,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_4_6",
+     "x": 457,
+     "y": 2949,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "work",
+     "frame": 4,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_4_7",
+     "x": 457,
+     "y": 3083,
+     "w": 112,
+     "h": 132,
+     "rotation": 315,
+     "variant": null,
+     "anim": "work",
+     "frame": 4,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_5_0",
+     "x": 571,
+     "y": 2145,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "work",
+     "frame": 5,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_5_1",
+     "x": 571,
+     "y": 2279,
+     "w": 112,
+     "h": 132,
+     "rotation": 45,
+     "variant": null,
+     "anim": "work",
+     "frame": 5,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_5_2",
+     "x": 571,
+     "y": 2413,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "work",
+     "frame": 5,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_5_3",
+     "x": 571,
+     "y": 2547,
+     "w": 112,
+     "h": 132,
+     "rotation": 135,
+     "variant": null,
+     "anim": "work",
+     "frame": 5,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_5_4",
+     "x": 571,
+     "y": 2681,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "work",
+     "frame": 5,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_5_5",
+     "x": 571,
+     "y": 2815,
+     "w": 112,
+     "h": 132,
+     "rotation": 225,
+     "variant": null,
+     "anim": "work",
+     "frame": 5,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_5_6",
+     "x": 571,
+     "y": 2949,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "work",
+     "frame": 5,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_5_7",
+     "x": 571,
+     "y": 3083,
+     "w": 112,
+     "h": 132,
+     "rotation": 315,
+     "variant": null,
+     "anim": "work",
+     "frame": 5,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_6_0",
+     "x": 685,
+     "y": 2145,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "work",
+     "frame": 6,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_6_1",
+     "x": 685,
+     "y": 2279,
+     "w": 112,
+     "h": 132,
+     "rotation": 45,
+     "variant": null,
+     "anim": "work",
+     "frame": 6,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_6_2",
+     "x": 685,
+     "y": 2413,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "work",
+     "frame": 6,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_6_3",
+     "x": 685,
+     "y": 2547,
+     "w": 112,
+     "h": 132,
+     "rotation": 135,
+     "variant": null,
+     "anim": "work",
+     "frame": 6,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_6_4",
+     "x": 685,
+     "y": 2681,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "work",
+     "frame": 6,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_6_5",
+     "x": 685,
+     "y": 2815,
+     "w": 112,
+     "h": 132,
+     "rotation": 225,
+     "variant": null,
+     "anim": "work",
+     "frame": 6,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_6_6",
+     "x": 685,
+     "y": 2949,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "work",
+     "frame": 6,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_6_7",
+     "x": 685,
+     "y": 3083,
+     "w": 112,
+     "h": 132,
+     "rotation": 315,
+     "variant": null,
+     "anim": "work",
+     "frame": 6,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_7_0",
+     "x": 799,
+     "y": 2145,
+     "w": 112,
+     "h": 132,
+     "rotation": 0,
+     "variant": null,
+     "anim": "work",
+     "frame": 7,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_7_1",
+     "x": 799,
+     "y": 2279,
+     "w": 112,
+     "h": 132,
+     "rotation": 45,
+     "variant": null,
+     "anim": "work",
+     "frame": 7,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_7_2",
+     "x": 799,
+     "y": 2413,
+     "w": 112,
+     "h": 132,
+     "rotation": 90,
+     "variant": null,
+     "anim": "work",
+     "frame": 7,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_7_3",
+     "x": 799,
+     "y": 2547,
+     "w": 112,
+     "h": 132,
+     "rotation": 135,
+     "variant": null,
+     "anim": "work",
+     "frame": 7,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_7_4",
+     "x": 799,
+     "y": 2681,
+     "w": 112,
+     "h": 132,
+     "rotation": 180,
+     "variant": null,
+     "anim": "work",
+     "frame": 7,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_7_5",
+     "x": 799,
+     "y": 2815,
+     "w": 112,
+     "h": 132,
+     "rotation": 225,
+     "variant": null,
+     "anim": "work",
+     "frame": 7,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_7_6",
+     "x": 799,
+     "y": 2949,
+     "w": 112,
+     "h": 132,
+     "rotation": 270,
+     "variant": null,
+     "anim": "work",
+     "frame": 7,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "villager_work_7_7",
+     "x": 799,
+     "y": 3083,
+     "w": 112,
+     "h": 132,
+     "rotation": 315,
+     "variant": null,
+     "anim": "work",
+     "frame": 7,
+     "anchorX": 57.0,
+     "anchorY": 107.0,
+     "footprint": null
+    }
+   ],
+   "models": [
+    "art/props/axe/out/axe_a",
+    "art/props/axe/out/axe_b",
+    "art/props/axe/out/axe_c",
+    "art/characters/villager/out/villager"
+   ],
+   "origin": "исходники: art/props/axe, art/characters/villager"
+  },
+  {
+   "name": "waves",
+   "path": "mapgen2/assets/waves",
+   "image": "mapgen2/assets/waves/atlas.png",
+   "size": [
+    1497,
+    664
+   ],
+   "connected": true,
+   "pages": [
+    "игра",
+    "генератор карт"
+   ],
+   "ppu": 120.0,
+   "az": 45.0,
+   "el": 35.264389682754654,
+   "res": [
+    768,
+    960
+   ],
+   "mul": null,
+   "cell": null,
+   "anims": {},
+   "variants": {},
+   "note": "спрайты волн: 1 юнит модели = 1 клетка карты, anchorX/anchorY — центр вала на уровне воды; rotation 0 — вал вдоль течения, 90 — поперёк",
+   "frames": [
+    {
+     "name": "wave_0_0",
+     "x": 2,
+     "y": 2,
+     "w": 370,
+     "h": 215,
+     "rotation": 0,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 185.0,
+     "anchorY": 107.0,
+     "footprint": null
+    },
+    {
+     "name": "wave_0_90",
+     "x": 376,
+     "y": 2,
+     "w": 367,
+     "h": 217,
+     "rotation": 90,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 183.0,
+     "anchorY": 109.0,
+     "footprint": null
+    },
+    {
+     "name": "wave_1_0",
+     "x": 750,
+     "y": 2,
+     "w": 273,
+     "h": 157,
+     "rotation": 0,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 138.0,
+     "anchorY": 75.0,
+     "footprint": null
+    },
+    {
+     "name": "wave_1_90",
+     "x": 1124,
+     "y": 2,
+     "w": 265,
+     "h": 161,
+     "rotation": 90,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 127.0,
+     "anchorY": 79.0,
+     "footprint": null
+    },
+    {
+     "name": "wave_2_0",
+     "x": 2,
+     "y": 223,
+     "w": 200,
+     "h": 122,
+     "rotation": 0,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 107.0,
+     "anchorY": 57.0,
+     "footprint": null
+    },
+    {
+     "name": "wave_2_90",
+     "x": 376,
+     "y": 223,
+     "w": 205,
+     "h": 119,
+     "rotation": 90,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 95.0,
+     "anchorY": 56.0,
+     "footprint": null
+    },
+    {
+     "name": "wave_3_0",
+     "x": 750,
+     "y": 223,
+     "w": 148,
+     "h": 86,
+     "rotation": 0,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 85.0,
+     "anchorY": 39.0,
+     "footprint": null
+    },
+    {
+     "name": "wave_3_90",
+     "x": 1124,
+     "y": 223,
+     "w": 142,
+     "h": 89,
+     "rotation": 90,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 64.0,
+     "anchorY": 38.0,
+     "footprint": null
+    },
+    {
+     "name": "wave_4_0",
+     "x": 2,
+     "y": 444,
+     "w": 122,
+     "h": 76,
+     "rotation": 0,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 69.0,
+     "anchorY": 34.0,
+     "footprint": null
+    },
+    {
+     "name": "wave_4_90",
+     "x": 376,
+     "y": 444,
+     "w": 124,
+     "h": 73,
+     "rotation": 90,
+     "variant": null,
+     "anim": null,
+     "frame": null,
+     "anchorX": 55.0,
+     "anchorY": 32.0,
+     "footprint": null
+    }
+   ],
+   "models": [
+    "art/fx/waves/out/wave_0",
+    "art/fx/waves/out/wave_1",
+    "art/fx/waves/out/wave_2",
+    "art/fx/waves/out/wave_3",
+    "art/fx/waves/out/wave_4"
+   ],
+   "origin": "art/fx/waves/tools — геометрия на чистом Python, .blend и GLB не выгружались"
+  }
+ ]
+}

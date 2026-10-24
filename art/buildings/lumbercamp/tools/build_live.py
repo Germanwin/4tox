@@ -54,6 +54,7 @@ def _pin(name, path):
 
 
 F = _pin('forge', os.path.join(HERE, 'forge.py'))
+V = _pin('village', os.path.join(HERE, 'village.py'))
 BL = _pin('blender_live', os.path.join(HERE, 'blender_live.py'))
 BLD = _pin('forge_building', os.path.join(HERE, 'building.py'))
 
@@ -104,16 +105,16 @@ def config():
 def main():
     cfg = config()
     t0 = time.time()
-    pal = F.Palette()
-    cal = BL.Calibration(cfg.get('cal'), pal)
     sc = BL.use_scene(cfg['scene'])
     print('сцена сборки: %r (сцен в файле: %s)'
           % (sc.name, [s.name for s in bpy.data.scenes]))
-    print('палитра: %d семейств, калибровка %s'
-          % (len(pal.FAMILIES), 'файл' if cfg.get('cal') else 'встроенная'))
-    diffs = pal.check()
-    if diffs:
-        print('ВНИМАНИЕ: встроенные цвета разошлись со скиллом: %s' % diffs)
+    # ПАЛИТРА ДЕРЕВНИ: зоны берутся у ратуши (`village.py`), тоновый автомат и
+    # калибровка атласа природы здесь больше не участвуют — см. `village.py`.
+    print('палитра: деревня, зон %d (%s)'
+          % (len(V.ZONES), ', '.join(sorted(V.ZONES))))
+    for zone in sorted(V.ZONES):
+        print('   %-8s <- ратуша %-8s #%06X' % (zone, V.paint_name(zone),
+                                                 V.paint(zone)[0]))
     BL.setup(sc, cfg['prefix'], ppu=cfg['ppu'], res=cfg['res'],
              samples=cfg['samples'])
     os.makedirs(os.path.join(ROOT, 'renders'), exist_ok=True)
@@ -126,11 +127,14 @@ def main():
             raw = os.path.join(ROOT, 'renders', name + '_raw.png')
             BL.clear_own(sc, cfg['prefix'], keep=('cam', 'sun'))
             parts = BLD.build(var)
-            ob, slots, fams = BL.build_object(parts, cfg['prefix'] + 'building',
-                                              cfg['prefix'], pal, cal, sc)
+            # Один материал на зону, как у ратуши.  Тона ПО НОРМАЛИ здесь не
+            # пересчитываются после поворота: краска от поворота не зависит, а
+            # затенение даёт сцена — ровно как у ратуши на её четырёх кадрах.
+            ob, slots, fams = BL.build_object_zones(parts,
+                                                    cfg['prefix'] + 'building',
+                                                    cfg['prefix'], sc)
             if rot:
                 BL.rotate_meshes(rot, cfg['prefix'], sc)
-                BL.assign_tones(ob, slots, fams, pal)   # тона — ПОСЛЕ поворота
             BL.render_to(raw, sc)
             size = BL.world_size([ob])
             frames[name] = dict(variant=var, rotation=rot, raw=raw,
@@ -146,8 +150,9 @@ def main():
     if cfg['save_blend'] or cfg['export'] or cfg['viewport'] or cfg['closeups']:
         BL.clear_own(sc, cfg['prefix'], keep=('cam', 'sun'))
         parts = BLD.build(cfg['variants'][0])
-        ob, slots, fams = BL.build_object(parts, cfg['prefix'] + 'building',
-                                          cfg['prefix'], pal, cal, sc)
+        ob, slots, fams = BL.build_object_zones(parts,
+                                                cfg['prefix'] + 'building',
+                                                cfg['prefix'], sc)
     if cfg['closeups']:
         shots = cfg.get('shots') or [
             ('cu_%s' % cfg['tag'], (2.6, 2.2, 1.9), (0.0, 0.0, 0.9), 50.0)]

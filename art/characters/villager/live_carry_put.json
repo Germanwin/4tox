@@ -1,0 +1,4 @@
+{"variant": "m", "anims": "carry_put", "frames": null,
+ "rotations": [0, 45, 90, 135, 180, 225, 270, 315], "samples": 16, "ppu": 96,
+ "res": [144, 192], "export": false, "save_blend": false, "viewport": true,
+ "tag": "vg"}

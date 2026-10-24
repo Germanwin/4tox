@@ -1,0 +1,16 @@
+{
+ "raw": "rn_townhall_90_raw.png",
+ "anchor": [
+  216,
+  269
+ ],
+ "size": [
+  434,
+  399
+ ],
+ "ppu": 80.0,
+ "mul": 0.7667,
+ "outline": true,
+ "shadow": false,
+ "target_frame": "townhall_a_90"
+}

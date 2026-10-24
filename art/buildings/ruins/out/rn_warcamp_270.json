@@ -1,0 +1,16 @@
+{
+ "raw": "rn_warcamp_270_raw.png",
+ "anchor": [
+  262,
+  281
+ ],
+ "size": [
+  518,
+  474
+ ],
+ "ppu": 96.0,
+ "mul": 0.7973,
+ "outline": true,
+ "shadow": false,
+ "target_frame": "wc_270"
+}

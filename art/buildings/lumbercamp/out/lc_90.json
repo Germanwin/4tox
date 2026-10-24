@@ -1,5 +1,5 @@
 {
- "path": "out/lc_90.png",
+ "raw": "lc_x_90_raw.png",
  "anchor": [
   335,
   437
@@ -8,5 +8,7 @@
   661,
   714
  ],
- "ppu": 96.0
+ "ppu": 96.0,
+ "outline": true,
+ "dilate": 1
 }

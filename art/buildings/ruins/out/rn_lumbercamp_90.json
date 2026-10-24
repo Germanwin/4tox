@@ -1,0 +1,16 @@
+{
+ "raw": "rn_lumbercamp_90_raw.png",
+ "anchor": [
+  335,
+  437
+ ],
+ "size": [
+  661,
+  714
+ ],
+ "ppu": 96.0,
+ "mul": 0.7156,
+ "outline": true,
+ "shadow": false,
+ "target_frame": "lc_a_90"
+}

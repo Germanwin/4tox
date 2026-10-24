@@ -27,7 +27,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
-sys.path.append(os.path.join(os.path.dirname(ROOT), 'townhall', 'tools'))
+# Свет, рендер и материалы берутся у ратуши (art/buildings/townhall/tools/
+# thpipe.py), а камера — своя (scene.py: канон игры, а не thpipe).
+# Путь считается ОТ КОРНЯ РЕПОЗИТОРИЯ: до 2026-10-15 здесь стояло
+# `dirname(ROOT)/townhall/tools`, то есть art/characters/townhall/tools —
+# каталога нет. Ошибка не всплывала, пока живая сессия Blender была не
+# первой: thpipe уже лежал в sys.modules от чужого проекта, и import
+# молча брал кэш. Свежий Blender это вскрыл («No module named thpipe»).
+REPO = os.path.abspath(os.path.join(ROOT, '..', '..', '..'))
+sys.path.append(os.path.join(REPO, 'art', 'buildings', 'townhall', 'tools'))
 
 import thpipe as P                                              # noqa: E402
 import palette as PAL                                           # noqa: E402
@@ -236,14 +244,14 @@ def tone_census(ob):
 # --------------------------------------------------------------------------
 # КАДР
 # --------------------------------------------------------------------------
-def build_variant(variant=None, pose=None, name=None, axe=False):
-    parts = H.build(variant=variant or VARIANT, pose=pose, axe=axe)
+def build_variant(variant=None, pose=None, name=None, axe=False, logs=False):
+    parts = H.build(variant=variant or VARIANT, pose=pose, axe=axe, logs=logs)
     ob = make_object(parts, name or OBJ_NAME)
     return [ob], parts
 
 
 def render_frame(anim, frame, rot, samples, out_png, scene=None, ppu=None,
-                 variant=None, res=None, axe=None):
+                 variant=None, res=None, axe=None, logs=None):
     """Один кадр: почистить своих, собрать позу, повернуть, разложить тона, рендер."""
     import scene as SC
     scene = scene or bpy.context.scene
@@ -252,10 +260,15 @@ def render_frame(anim, frame, rot, samples, out_png, scene=None, ppu=None,
     SC.setup(target=(0.0, 0.0, TARGET_Z), ppu=ppu or PPU, res=res, samples=samples)
     pose = PO.pose(anim, frame, variant or VARIANT) if anim else None
     name = '%s_%s_%d_%d' % (MAT_PREFIX.rstrip('_'), anim or 'rest', frame, rot)
-    # Топор — только в рубке (anim='work'): в покое и на шаге руки свободны.
-    # Явный аргумент axe перебивает это правило (им же снимается топор в тестах).
-    objs, parts = build_variant(variant, pose, name=name,
-                                axe=(anim == 'work') if axe is None else bool(axe))
+    # Что в руках — из ОДНОГО места (poses.PROPS), а не из условия на имя
+    # анимации: анимаций с предметом теперь три (work и walk_axe с топором,
+    # carry с охапкой), и условие в сборке разошлось бы с poses при первой же
+    # правке. Явные аргументы перебивают правило (ими снимается топор в тестах).
+    want = PO.props(anim) if anim else {}
+    objs, parts = build_variant(
+        variant, pose, name=name,
+        axe=want.get('axe', False) if axe is None else bool(axe),
+        logs=want.get('logs', False) if logs is None else bool(logs))
     if rot:
         rotate_meshes(rot, scene)
         for o in objs:

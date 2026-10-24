@@ -1,0 +1,140 @@
+{
+ "verdict": "PASS",
+ "parts": 89,
+ "tris": 1106,
+ "materials": [
+  "rn_ash",
+  "rn_beam",
+  "rn_char",
+  "rn_dirt",
+  "rn_moss",
+  "rn_plank",
+  "rn_stone",
+  "rn_stone2",
+  "rn_thatch",
+  "rn_thatch2",
+  "rn_timber",
+  "rn_wall"
+ ],
+ "bbox": [
+  [
+   -0.9834463000297546,
+   -1.4835996627807617,
+   0.0
+  ],
+  [
+   0.9901299476623535,
+   1.5026270151138306,
+   2.0667312145233154
+  ]
+ ],
+ "spec": {
+  "class": "building",
+  "ground_z": 0.0,
+  "ground_tol": 0.02,
+  "attach_tol": 0.02986,
+  "floating_tol": 0.07466,
+  "glue_tol": 0.01,
+  "corridor": 0.12,
+  "plinth_overhang": null,
+  "wall_band": [
+   0.2,
+   0.45
+  ],
+  "cells": {
+   "count": [
+    2,
+    3
+   ],
+   "size": 1.0,
+   "margin": 0.0
+  },
+  "palette_tol": 26,
+  "palette_space": "raw",
+  "door_re": "(door|gate|win|окн|двер|ворот|ставн)",
+  "wall_re": "(wall|стен|gable|щипец|timber|каркас)",
+  "ignore_re": "^(rn_cam|rn_sun|light|camera|sun|key|fill|rim|ground_plane)",
+  "max_coplanar_pairs": 0,
+  "_": "СПЕК РУИНЫ «house» для gate.py (3d-model-acceptance). Пороги из проекта: пятно типа, палитра руин, класс. Провал не перетолковывается — правится модель или пишется в отчёт.",
+  "_model": "дом жителя: 2 x 3 клетки, стены и двускатная кровля обрушены",
+  "_palette_note": "12 красок ратуши дословно + char/ash (ruin_palette.py): единственные новые цвета, оба тёмные.",
+  "_budget_tris": [
+   300,
+   1500
+  ]
+ },
+ "rows": [
+  {
+   "level": "INFO",
+   "check": "C1_INVENTORY",
+   "text": "деталей 89, трис 1106, материалов 12, габарит 1.974 x 2.986 x 2.067, земля z=0.000"
+  },
+  {
+   "level": "INFO",
+   "check": "C1_INVENTORY",
+   "text": "порог примыкания 0.0299, порог «висит» 0.0747, земля 0.000, коридор проёма 0.120"
+  },
+  {
+   "level": "INFO",
+   "check": "C3_GROUND",
+   "text": "на земле 25 деталей из 89"
+  },
+  {
+   "level": "PASS",
+   "check": "C2_PRIMITIVES",
+   "text": "остатков примитивов и дефолтных материалов нет"
+  },
+  {
+   "level": "INFO",
+   "check": "C12_GROUPS",
+   "text": "тел в модели: 1; главное — 89 деталей; отдельно: нет"
+  },
+  {
+   "level": "PASS",
+   "check": "C4_HANGING",
+   "text": "все 89 деталей на земле или примкнуты к опоре (зазор <= 0.030)"
+  },
+  {
+   "level": "WARN",
+   "check": "C5_PLINTH",
+   "text": "наземные детали (24, по именам) выходят за стены (порог не задан): -X 0.033, +X 0.107, -Y 0.005, +Y 0.032\n      виновники: rn_trench_stone_0 (+0.107), rn_trench_stone_1 (+0.103) | порог не задан в spec: смотреть глазами",
+   "worst": 0.10720151662826538,
+   "over": {
+    "-X": 0.03317677974700928,
+    "+X": 0.10720151662826538,
+    "-Y": 0.005034685134887695,
+    "+Y": 0.03248190879821777
+   }
+  },
+  {
+   "level": "WARN",
+   "check": "C7_OPENINGS",
+   "text": "полотна двери/окна не нашлись — проверка проёма не сделана"
+  },
+  {
+   "level": "PASS",
+   "check": "C8_COPLANAR",
+   "text": "совпадающих плоскостей нет"
+  },
+  {
+   "level": "PASS",
+   "check": "C9_MESH",
+   "text": "нулевых граней и висячих вершин нет"
+  },
+  {
+   "level": "WARN",
+   "check": "C9_MESH",
+   "text": "вывернутые замкнутые детали (нормали внутрь): rn_plinth_loose_1, rn_burnt_floor#0"
+  },
+  {
+   "level": "PASS",
+   "check": "C10_PALETTE",
+   "text": "все 12 материалов в палитре канона (Δ <= 26, пространство raw)"
+  },
+  {
+   "level": "PASS",
+   "check": "C11_FOOTPRINT",
+   "text": "основание 1.95 x 2.97, зазор до кромок 0.016 (>= 0.000), по середине"
+  }
+ ]
+}

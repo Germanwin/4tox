@@ -1,0 +1,94 @@
+{
+ "name": "villager",
+ "parts": 23,
+ "verts": 384,
+ "tris": 670,
+ "families": {
+  "iron": {
+   "parts": 1,
+   "tris": 36
+  },
+  "leather": {
+   "parts": 2,
+   "tris": 72
+  },
+  "skin": {
+   "parts": 11,
+   "tris": 256
+  },
+  "stone": {
+   "parts": 3,
+   "tris": 112
+  },
+  "trunk": {
+   "parts": 6,
+   "tris": 194
+  }
+ },
+ "bbox": {
+  "x": [
+   -0.165,
+   0.445
+  ],
+  "y": [
+   -0.149,
+   0.163
+  ],
+  "z": [
+   0.0,
+   0.997
+  ]
+ },
+ "size": [
+  0.61,
+  0.312,
+  0.997
+ ],
+ "height": 0.997,
+ "head_share": 0.22,
+ "shoulder_share": 0.292,
+ "fingertip_share": 0.395,
+ "knee_share": 0.301,
+ "foot_offset": -0.082,
+ "sym_pairs": {
+  "mirrored": 4,
+  "broken": [
+   "shin_l",
+   "boot_l",
+   "uparm_l",
+   "forearm_l",
+   "sleeve_l",
+   "thumb_l",
+   "shin_r",
+   "boot_r",
+   "uparm_r",
+   "forearm_r",
+   "sleeve_r",
+   "thumb_r"
+  ]
+ },
+ "cloth_cover": [
+  0.024451253633640424,
+  0.441,
+  0.044
+ ],
+ "normal_issues": [],
+ "normal_issue_count": 0,
+ "too_small": [],
+ "axe": {
+  "angle_off": 0.0,
+  "fist_dist": 0.0,
+  "grip": [
+   0.082,
+   0.082
+  ],
+  "box": [
+   43.0,
+   -43.0,
+   9.8,
+   -82.4
+  ],
+  "tris": 670,
+  "verts": 384
+ }
+}

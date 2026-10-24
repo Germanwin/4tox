@@ -1,0 +1,22 @@
+{
+ "scene": "starter_house",
+ "prefix": "sh_",
+ "variants": [
+  null
+ ],
+ "rotations": [
+  0
+ ],
+ "ppu": 96.0,
+ "res": [
+  512,
+  640
+ ],
+ "samples": 32,
+ "export": true,
+ "save_blend": true,
+ "viewport": true,
+ "closeups": false,
+ "tag": "starter_house",
+ "out": "out"
+}

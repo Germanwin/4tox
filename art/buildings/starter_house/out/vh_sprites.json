@@ -1,0 +1,91 @@
+{
+ "ppu": 80.0,
+ "ortho": 8.0,
+ "res": [
+  512,
+  640
+ ],
+ "az_deg": 45.0,
+ "el_deg": 35.264389682754654,
+ "footprint": [
+  3,
+  2
+ ],
+ "variants": [
+  "a"
+ ],
+ "note": "дом жителя: 1 юнит = 1 клетка; пятно 3 x 2 (при повороте 2 x 3); anchorX/anchorY — центр пятна",
+ "shadow": {
+  "a": 196.0,
+  "b": 46.0,
+  "angle_deg": 8.0,
+  "alpha": 0.42,
+  "blur": 3.5,
+  "shift": [
+   22.0,
+   82.0
+  ]
+ },
+ "outline": {
+  "rgb": [
+   14,
+   18,
+   14
+  ],
+  "dilate": 1
+ },
+ "frames": {
+  "sh_0": {
+   "file": "sh_0.png",
+   "w": 405,
+   "h": 349,
+   "anchorX": 180.0,
+   "anchorY": 204.0,
+   "variant": "a",
+   "rotation": 0,
+   "footprint": [
+    3,
+    2
+   ]
+  },
+  "sh_90": {
+   "file": "sh_90.png",
+   "w": 405,
+   "h": 357,
+   "anchorX": 180.0,
+   "anchorY": 212.0,
+   "variant": "a",
+   "rotation": 90,
+   "footprint": [
+    2,
+    3
+   ]
+  },
+  "sh_180": {
+   "file": "sh_180.png",
+   "w": 405,
+   "h": 357,
+   "anchorX": 180.0,
+   "anchorY": 212.0,
+   "variant": "a",
+   "rotation": 180,
+   "footprint": [
+    3,
+    2
+   ]
+  },
+  "sh_270": {
+   "file": "sh_270.png",
+   "w": 405,
+   "h": 350,
+   "anchorX": 180.0,
+   "anchorY": 205.0,
+   "variant": "a",
+   "rotation": 270,
+   "footprint": [
+    2,
+    3
+   ]
+  }
+ }
+}

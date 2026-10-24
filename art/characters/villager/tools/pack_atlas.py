@@ -53,7 +53,13 @@ def main():
     src = json.load(open(src_path, encoding='utf-8'))
     frames = src['frames']
     anims = src.get('anims', {})
-    order = [a for a in ('idle', 'walk', 'work') if a in anims] or \
+    # Порядок строк атласа. Новые анимации ДОПИСЫВАЮТСЯ В КОНЕЦ, а не
+    # вставляются по алфавиту: упаковщик кладёт каждую анимацию в свою полосу
+    # строк, и вставка в середину сдвинула бы уже подключённые кадры в атласе —
+    # игра грузит их по координатам, но сверка «старые кадры не поехали»
+    # (docs/PIPELINE.md, шаг 4) стала бы бессмысленной: сравнивать было бы нечего.
+    order = [a for a in ('idle', 'walk', 'work', 'carry', 'walk_axe',
+                         'carry_put') if a in anims] or \
         sorted({f['anim'] for f in frames.values()})
 
     # раскладка: строка = (анимация, поворот), столбец = кадр

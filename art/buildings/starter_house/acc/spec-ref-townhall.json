@@ -1,0 +1,14 @@
+{
+  "class": "building",
+  "ground_z": 0.0,
+  "ground_tol": 0.02,
+  "cells": {"count": [4, 3], "size": 1.3043, "margin": 0.12},
+  "palette": ["#93714A","#5E3D1E","#8A6238","#A07C4C","#A8823C","#8E6C2C","#8E9498","#6E747A","#466B34","#1A140E","#7A6244","#3A3A3E"],
+  "palette_space": "raw",
+  "palette_tol": 26,
+  "plinth_overhang": null,
+  "max_coplanar_pairs": 0,
+  "wall_re": "(wall|стен|сруб|log|frame|каркас|обмазк|daub|timber)",
+  "door_re": "(door|gate|win|окн|двер|ворот|ставн|калитк)",
+  "ignore_re": "^(light|camera|sun|ground|floor|plane|key|fill|rim)"
+}

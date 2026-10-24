@@ -10,7 +10,7 @@
   "townhall_b_0": {
    "file": "th_b_0.png",
    "w": 434,
-   "h": 446,
+   "h": 406,
    "anchorX": 218.0,
    "anchorY": 268.0,
    "variant": "b",
@@ -26,7 +26,7 @@
   "townhall_b_90": {
    "file": "th_b_90.png",
    "w": 478,
-   "h": 447,
+   "h": 399,
    "anchorX": 236.0,
    "anchorY": 269.0,
    "variant": "b",
@@ -35,7 +35,7 @@
   "townhall_b_180": {
    "file": "th_b_180.png",
    "w": 434,
-   "h": 446,
+   "h": 405,
    "anchorX": 216.0,
    "anchorY": 268.0,
    "variant": "b",
@@ -44,7 +44,7 @@
   "townhall_b_270": {
    "file": "th_b_270.png",
    "w": 478,
-   "h": 446,
+   "h": 398,
    "anchorX": 242.0,
    "anchorY": 268.0,
    "variant": "b",
@@ -53,7 +53,7 @@
   "townhall_a_0": {
    "file": "th_a_0.png",
    "w": 431,
-   "h": 440,
+   "h": 400,
    "anchorX": 215.0,
    "anchorY": 268.0,
    "variant": "a",
@@ -69,7 +69,7 @@
   "townhall_a_90": {
    "file": "th_a_90.png",
    "w": 434,
-   "h": 441,
+   "h": 399,
    "anchorX": 216.0,
    "anchorY": 269.0,
    "variant": "a",
@@ -78,7 +78,7 @@
   "townhall_a_180": {
    "file": "th_a_180.png",
    "w": 431,
-   "h": 440,
+   "h": 398,
    "anchorX": 216.0,
    "anchorY": 268.0,
    "variant": "a",
@@ -87,7 +87,7 @@
   "townhall_a_270": {
    "file": "th_a_270.png",
    "w": 434,
-   "h": 440,
+   "h": 398,
    "anchorX": 218.0,
    "anchorY": 268.0,
    "variant": "a",
@@ -96,7 +96,7 @@
   "townhall_c_0": {
    "file": "th_c_0.png",
    "w": 431,
-   "h": 436,
+   "h": 400,
    "anchorX": 215.0,
    "anchorY": 268.0,
    "variant": "c",
@@ -112,7 +112,7 @@
   "townhall_c_90": {
    "file": "th_c_90.png",
    "w": 434,
-   "h": 437,
+   "h": 399,
    "anchorX": 216.0,
    "anchorY": 269.0,
    "variant": "c",
@@ -121,7 +121,7 @@
   "townhall_c_180": {
    "file": "th_c_180.png",
    "w": 431,
-   "h": 436,
+   "h": 398,
    "anchorX": 216.0,
    "anchorY": 268.0,
    "variant": "c",
@@ -130,7 +130,7 @@
   "townhall_c_270": {
    "file": "th_c_270.png",
    "w": 434,
-   "h": 436,
+   "h": 398,
    "anchorX": 218.0,
    "anchorY": 268.0,
    "variant": "c",

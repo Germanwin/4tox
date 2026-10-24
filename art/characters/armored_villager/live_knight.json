@@ -1,0 +1,4 @@
+{"variant": "k", "anims": "idle,walk,work",
+ "rotations": [0, 45, 90, 135, 180, 225, 270, 315],
+ "samples": 24, "ppu": 96, "res": [144, 192], "axe": false,
+ "export": false, "save_blend": false, "viewport": false, "tag": "kn"}

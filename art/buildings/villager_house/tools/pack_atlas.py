@@ -5,14 +5,34 @@
 Читает `out/vh_sprites.json` (его пишет tools/compose.py) и складывает 12 кадров
 — 3 варианта x 4 поворота — в `assets/house/atlas.png` + `atlas.json` + `atlas.js`
 ровно в том формате, что `assets/townhall/` и `assets/hut/`: игра читает `ppu`,
-`frames[].anchorX/anchorY` и `footprint` и сама считает масштаб по осям.
+`frames[].anchorX/anchorY`, `footprint`, `ground` и `mul` и сама считает
+масштаб по осям.
 
 Пятно застройки — 3 x 2 клетки (X — длинная сторона), при повороте 90/270 — 2 x 3.
 `atlas.js` нужен потому, что страница генератора открывается по file://, а fetch
 JSON в этом режиме запрещён.
+
+НАЗЕМНЫЙ КОНТУР И КРУПНОСТЬ — КАК У РАТУШИ
+-------------------------------------------
+Два поля, которых у дома раньше не было, а у ратуши есть:
+
+* `ground` — наземный контур (цоколь вместе с крыльцом и приступком) в клетках
+  от точки опоры. Меряется по пикселям кадра тем же правилом, что в
+  `mapgen2/tools/pack_townhall.py::ground_contact`: нижний непрозрачный пиксель
+  столбца, и только там, где виден камень цоколя (иначе в контур попадает свес
+  кровли). По нему игра ставит дом СЕРЕДИНОЙ ОСНОВАНИЯ в середину пятна: по
+  модели основание стоит не по середине — крыльцо у варианта B выходит вперёд.
+  Проверяет `mapgen2/tools/place.js`.
+
+* `mul` — крупность спрайта. Правило посадки (`mapgen2/js/buildings.js`) —
+  зазор 1/3 клетки по длинной стороне пятна; заказчик 2026-10-14 попросил,
+  чтобы отступы у всех построек были такие же, как у ратуши, а ратуша с
+  2026-10-13 стоит на 8 % мельче правила. Значит, общая крупность —
+  `fitMul(сторона) * 0.92`, для пятна 3 клетки это 0.7156. Меряет `place.js`.
 """
 import argparse
 import json
+import math
 import os
 import sys
 
@@ -28,9 +48,55 @@ VARIANTS = ('a', 'b', 'c')
 ROTATIONS = (0, 90, 180, 270)
 PAD = 2
 
+# Крупность: правило посадки минус общая поправка 8 % (см. шапку).
+SIDE = 3                                   # длинная сторона пятна, клетки
+MARGIN_K = 0.92
+MUL = round((1.0 - 2.0 * (1.0 / 3.0) / SIDE) * MARGIN_K, 4)
+
 
 def footprint(rotation):
     return [3, 2] if rotation % 180 == 0 else [2, 3]
+
+
+def is_stone(r, g, b):
+    """Камень цоколя: серо-голубой, зелёного больше красного, синий не уехал."""
+    return abs(g - b) <= 14 and 0 < g - r <= 40 and 55 <= g <= 215
+
+
+def ground_contact(img, ax, ay, ppu, az_deg, el_deg):
+    """Наземный контур кадра в клетках карты, относительно точки опоры.
+
+    Правило то же, что у ратуши (`mapgen2/tools/pack_townhall.py`): нижний
+    непрозрачный пиксель каждого столбца, но только там, где виден цоколь —
+    выше цоколя столбец может кончаться свесом кровли, и без этого ограничения
+    в контур попадает она. Мягкая тень не считается: у неё альфа ниже
+    непрозрачной.
+    """
+    px = img.load()
+    w, h = img.size
+    ca = math.cos(math.radians(az_deg))
+    pxc = ca * ppu                       # пикселей кадра на клетку по экранному X
+    pyc = math.sin(math.radians(el_deg)) * pxc
+    stone_col = [any(px[x, y][3] >= 250 and is_stone(*px[x, y][:3]) for y in range(h))
+                 for x in range(w)]
+    has_stone = any(stone_col)
+    xs, ys = [], []
+    for x in range(w):
+        if has_stone and not stone_col[x]:
+            continue                     # выше цоколя столбец кончается свесом
+        for y in range(h - 1, -1, -1):
+            if px[x, y][3] < 250:
+                continue                 # мягкая тень: не земля
+            if not has_stone and y < ay - 1.2 * pyc:
+                break                    # камень не нашли — отсекаем свес по высоте
+            dx = (x - ax) / pxc
+            dy = (y - ay) / pyc
+            xs.append((dx + dy) / 2)     # вдоль длинной оси карты
+            ys.append((dy - dx) / 2)     # вдоль короткой
+            break
+    if not xs:
+        return [0.0, 0.0, 0.0, 0.0]
+    return [round(min(xs), 3), round(max(xs), 3), round(min(ys), 3), round(max(ys), 3)]
 
 
 def main():
@@ -59,7 +125,10 @@ def main():
             tiles.append((key, img))
             frames.append(dict(name=key, img=img, variant=v, rotation=rot,
                                anchorX=f['anchorX'], anchorY=f['anchorY'],
-                               footprint=f['footprint']))
+                               footprint=f['footprint'],
+                               ground=ground_contact(
+                                   img, float(f['anchorX']), float(f['anchorY']),
+                                   src['ppu'], src['az_deg'], src['el_deg'])))
 
     # раскладка: 4 поворота в ряд на вариант (как у ратуши и хижины)
     cols, rows = len(ROTATIONS), len(variants)
@@ -76,7 +145,9 @@ def main():
             anchorX=round(fr['anchorX'] + PAD, 2),
             anchorY=round(fr['anchorY'] + PAD, 2),
             variant=fr['variant'], rotation=fr['rotation'],
-            footprint=footprint(fr['rotation']))
+            footprint=footprint(fr['rotation']),
+            # Наземный контур (цоколь вместе с крыльцом), клетки от точки опоры.
+            ground=fr['ground'])
 
     os.makedirs(args.dst, exist_ok=True)
     atlas.save(os.path.join(args.dst, 'atlas.png'))
@@ -84,8 +155,11 @@ def main():
         atlas='atlas.png', ppu=src['ppu'], az_deg=src['az_deg'],
         el_deg=src['el_deg'], res=src['res'],
         variants={v: [3, 2] for v in variants},
+        mul=MUL,
         note='дом жителя: 1 юнит модели = 1 клетка карты, пятно 3 x 2 '
-             '(при повороте 2 x 3); anchorX/anchorY — центр пятна застройки',
+             '(при повороте 2 x 3); anchorX/anchorY — точка опоры (центр пятна '
+             'застройки); footprint — пятно в клетках по повороту; ground — '
+             'наземный контур в клетках от опоры; mul — крупность спрайта',
         shadow=src.get('shadow'), outline=src.get('outline'),
         frames=out_frames)
     with open(os.path.join(args.dst, 'atlas.json'), 'w', encoding='utf-8') as f:

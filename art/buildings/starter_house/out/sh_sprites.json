@@ -1,0 +1,89 @@
+{
+ "ppu": 96.0,
+ "scale_4x": 384.0,
+ "footprint": [
+  2,
+  3
+ ],
+ "prefix": "sh",
+ "shadow": {
+  "x": 0.0,
+  "y": 0.0,
+  "a": null,
+  "b": null,
+  "alpha": null,
+  "drawn": false
+ },
+ "frames": {
+  "sh_0": {
+   "path": "/Users/hermmoment/coding/4tox/art/buildings/starter_house/out/sh_0.png",
+   "anchor": [
+    366,
+    486
+   ],
+   "size": [
+    733,
+    781
+   ],
+   "ppu": 96.0,
+   "rotation": 0,
+   "scale": 1
+  },
+  "sh_90": {
+   "path": "/Users/hermmoment/coding/4tox/art/buildings/starter_house/out/sh_90.png",
+   "anchor": [
+    364,
+    491
+   ],
+   "size": [
+    726,
+    789
+   ],
+   "ppu": 96.0,
+   "rotation": 90,
+   "scale": 1
+  },
+  "sh_180": {
+   "path": "/Users/hermmoment/coding/4tox/art/buildings/starter_house/out/sh_180.png",
+   "anchor": [
+    366,
+    491
+   ],
+   "size": [
+    733,
+    789
+   ],
+   "ppu": 96.0,
+   "rotation": 180,
+   "scale": 1
+  },
+  "sh_270": {
+   "path": "/Users/hermmoment/coding/4tox/art/buildings/starter_house/out/sh_270.png",
+   "anchor": [
+    361,
+    487
+   ],
+   "size": [
+    726,
+    781
+   ],
+   "ppu": 96.0,
+   "rotation": 270,
+   "scale": 1
+  },
+  "sh_0@4x": {
+   "path": "/Users/hermmoment/coding/4tox/art/buildings/starter_house/out/sh_0@4x.png",
+   "anchor": [
+    1453,
+    1936
+   ],
+   "size": [
+    2906,
+    3106
+   ],
+   "ppu": 384.0,
+   "rotation": 0,
+   "scale": 4
+  }
+ }
+}

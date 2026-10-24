@@ -1,0 +1,43 @@
+{
+ "_": "СПЕК РУИНЫ «lumbercamp» для gate.py (3d-model-acceptance). Пороги из проекта: пятно типа, палитра руин, класс. Провал не перетолковывается — правится модель или пишется в отчёт.",
+ "_model": "лагерь лесоруба: навес упал, столбы и двор сломаны",
+ "class": "yard",
+ "ground_z": 0.0,
+ "ground_tol": 0.02,
+ "cells": {
+  "count": [
+   3,
+   3
+  ],
+  "size": 1.0,
+  "margin": 0.0
+ },
+ "palette": [
+  "#93714A",
+  "#5E3D1E",
+  "#8A6238",
+  "#A07C4C",
+  "#A8823C",
+  "#8E6C2C",
+  "#8E9498",
+  "#6E747A",
+  "#466B34",
+  "#1A140E",
+  "#7A6244",
+  "#3A3A3E",
+  "#171009",
+  "#2A2722"
+ ],
+ "palette_space": "raw",
+ "palette_tol": 26,
+ "_palette_note": "12 красок ратуши дословно + char/ash (ruin_palette.py): единственные новые цвета, оба тёмные.",
+ "plinth_overhang": null,
+ "max_coplanar_pairs": 0,
+ "wall_re": "(wall|стен|gable|щипец|timber|каркас)",
+ "door_re": "(door|gate|win|окн|двер|ворот|ставн)",
+ "ignore_re": "^(rn_cam|rn_sun|light|camera|sun|key|fill|rim|ground_plane)",
+ "_budget_tris": [
+  300,
+  1500
+ ]
+}

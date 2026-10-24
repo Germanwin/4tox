@@ -1,9 +1,13 @@
-/* house.js — прямоугольная house 3 x 2 на настоящей карте генератора.
+/* house.js — стартовый дом жителя (тип `house`, пятно 2 x 3) на настоящей карте.
 
- * Ставит спрайты из assets/hut/atlas.png на карту тем же масштабом, что и
- * js/buildings.js: z / (2*cos(az)*ppu) по X и z / (4*sin(el)*cos(az)*ppu)
+ * Ставит спрайты из assets/starter_house/atlas.png на карту тем же масштабом,
+ * что и js/buildings.js: z / (2*cos(az)*ppu) по X и z / (4*sin(el)*cos(az)*ppu)
  * по Y, опора — центр пятна застройки. Пятно подсвечивается ромбами клеток,
- * чтобы было видно, что house занимает ровно 3 x 2.
+ * чтобы было видно, что дом занимает ровно 2 x 3 (при повороте 3 x 2) и что
+ * два дома встают рядом, не наезжая друг на друга.
+ *
+ * Атлас берётся из игры (assets/starter_house/) — того же файла, что грузит
+ * страница: если упаковщик не прогнали, кадр будет старый, и это видно.
  *
  * Игра не меняется: атлас и отрисовка подставляются со стороны через CDP.
  *
@@ -17,7 +21,7 @@ const path = require('path');
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const url = process.argv[2] || 'file://' + path.join(__dirname, '..', 'index.html');
 const OUT = path.join(__dirname, 'out');
-const ASSETS = path.join(__dirname, '..', 'assets', 'house');
+const ASSETS = path.join(__dirname, '..', 'assets', 'starter_house');
 const PORT = 9900 + (process.pid % 90);
 const PROFILE = '/tmp/dsh-hut-' + process.pid;
 
@@ -29,7 +33,26 @@ const chrome = spawn(CHROME, [
   '--headless=new', '--remote-debugging-port=' + PORT, '--user-data-dir=' + PROFILE,
   '--no-first-run', '--allow-file-access-from-files', '--hide-scrollbars',
   '--window-size=1400,900', 'about:blank'
-], { stdio: 'ignore' });
+], { stdio: 'ignore', detached: true });
+
+/* Гасим Chrome ЦЕЛОЙ ГРУППОЙ процессов.
+
+   kill по одному pid убивает только сам браузер, а его хелперы — рендерер,
+   GPU, утилиты — остаются жить: страница в них продолжает крутиться на 60
+   кадрах в секунду и есть процессор. Один прогон приёмки оставляет восемь
+   таких процессов, пять прогонов — сорок, и машина занята целиком: композитор
+   системы не успевает, и тормозит всё, включая игру в соседнем окне. Поэтому
+   браузер запускается отдельной группой (detached), а гасится её номер. */
+function killChrome() {
+  try { process.kill(-chrome.pid, 'SIGKILL'); } catch (e) { /* уже погашен */ }
+}
+
+/* И на прерывании тоже: Ctrl-C по длинной приёмке не должен оставлять
+   браузер работать. */
+['SIGINT', 'SIGTERM'].forEach(function (sig) {
+  process.on(sig, function () { killChrome(); process.exit(130); });
+});
+
 
 const getJSON = (u) => new Promise((res, rej) => {
   http.get(u, (r) => { let b = ''; r.on('data', (c) => b += c); r.on('end', () => res(JSON.parse(b))); }).on('error', rej);
@@ -76,7 +99,7 @@ const getJSON = (u) => new Promise((res, rej) => {
     console.log('  ' + name + '.png');
   };
 
-  /* Инъекция атласа хижины: картинка data-url + метаданные + функция отрисовки
+  /* Инъекция атласа дома: картинка data-url + метаданные + функция отрисовки
      в масштабе js/buildings.js. Пятно рисуем ромбами клеток. */
   await js(`(() => {
     window.__house = { meta: ${JSON.stringify(meta)}, img: new Image() };
@@ -89,12 +112,12 @@ const getJSON = (u) => new Promise((res, rej) => {
   const row = async (items, gap) => js(`(() => {
     const g = window.__mapgen, r = g.renderer, w = g.getWorld(), T = window.WorldGen.T;
     const H = window.__house, meta = H.meta, img = H.img;
-    document.getElementById('seed').value = 'дом-3x2';
+    document.getElementById('seed').value = 'стартовый-дом-2x3';
     g.regenerate(false);
     const W = w.width, HH = w.height;
     const items = ${JSON.stringify(items)};
     const stepX = ${gap}, stepY = -${gap};
-    const fpOf = (rot) => (rot % 180 === 0) ? [3, 2] : [2, 3];
+    const fpOf = (rot) => (rot % 180 === 0) ? [2, 3] : [3, 2];
     const spotsAt = (bx, by) => items.map((it, i) => ({
       variant: it[0], rot: it[1], x: bx + stepX * i, y: by + stepY * i
     }));
@@ -145,9 +168,10 @@ const getJSON = (u) => new Promise((res, rej) => {
     // зум: ряд должен влезть в кадр
     const span = (items.length - 1) * ${gap} + 4.5;
     r.cam.zoom = Math.min(84, (r.cssW - 60) / span);
+    const fp0 = fpOf(best[0].rot), fp1 = fpOf(best[best.length - 1].rot);
     const c0 = best[0], c1 = best[best.length - 1];
-    r.centerOn(c0.x + 1.5 + (c1.x + 1.5 - c0.x - 1.5) / 2,
-               c0.y + 1 + (c1.y + 1 - c0.y - 1) / 2 + 0.6);
+    r.centerOn(c0.x + fp0[0] / 2 + (c1.x + fp1[0] / 2 - c0.x - fp0[0] / 2) / 2,
+               c0.y + fp0[1] / 2 + (c1.y + fp1[1] / 2 - c0.y - fp0[1] / 2) / 2 + 0.6);
     return { spots: best, zoom: r.cam.zoom, clean: !!clean, crowd: bestScore };
   })()`);
 
@@ -165,7 +189,7 @@ const getJSON = (u) => new Promise((res, rej) => {
     const ca = Math.cos(az);
     const scx = z / (2 * ca * ppu), scy = z / (4 * Math.sin(el) * ca * ppu);
     for (const s of r.__houses) {
-      const f = meta.frames['vh_' + s.variant + '_' + s.rot];
+      const f = meta.frames['sh_' + s.variant + '_' + s.rot];
       if (!f) continue;
       const fp = f.footprint;
       const dw = f.w * scx, dh = f.h * scy;
@@ -176,7 +200,8 @@ const getJSON = (u) => new Promise((res, rej) => {
     if (${showFootprint ? 'true' : 'false'}) {
       const hw = z * 0.5, hh = z * 0.25;
       for (const s of r.__houses) {
-        const fp = (s.rot % 180 === 0) ? [3, 2] : [2, 3];
+        const f = meta.frames['sh_' + s.variant + '_' + s.rot];
+        const fp = f ? f.footprint : ((s.rot % 180 === 0) ? [2, 3] : [3, 2]);
         ctx.beginPath();
         for (let j = 0; j < fp[1]; j++) for (let i = 0; i < fp[0]; i++) {
           const cx = r.sx(s.x + i + 0.5, s.y + j + 0.5), cy = r.sy(s.x + i + 0.5, s.y + j + 0.5);
@@ -195,26 +220,29 @@ const getJSON = (u) => new Promise((res, rej) => {
              sx: r.sx(r.__houses[0].x + 1.5, r.__houses[0].y + 1), n: r.__houses.length };
   })()`);
 
-  console.log('house 3 x 2 на карте:');
-  const variants = await row([['a', 0], ['b', 0], ['c', 0]], 6);
-  console.log('  три варианта: ' + (variants ? JSON.stringify(variants.spots.map(s => [s.variant, s.x, s.y])) +
-    ', зум ' + variants.zoom.toFixed(0) + (variants.clean ? ', чистое поле' : '') : 'нет места'));
-  const shot1 = await draw(false);
-  fs.writeFileSync(path.join(OUT, 'house-map-variants.png'),
-    Buffer.from(shot1.png.split(',')[1], 'base64'));
-  console.log('  house-map-variants.png  (зум ' + shot1.zoom.toFixed(0) + ', хижин ' + shot1.n + ')');
-
+  console.log('стартовый дом (тип house) 2 x 3 на карте:');
   const rotations = await row([['a', 0], ['a', 90], ['a', 180], ['a', 270]], 5);
   console.log('  четыре поворота: ' + (rotations ? JSON.stringify(rotations.spots.map(s => [s.rot, s.x, s.y])) : 'нет места'));
-  const shot2 = await draw(true);
+  const shot1 = await draw(true);
   fs.writeFileSync(path.join(OUT, 'house-map-rotations.png'),
+    Buffer.from(shot1.png.split(',')[1], 'base64'));
+  console.log('  house-map-rotations.png  (зум ' + shot1.zoom.toFixed(0) +
+    (rotations && rotations.clean ? ', чистое поле' : '') + ')');
+
+  /* Два дома рядом: у пятна остаётся зазор 1/3 клетки по длинной стороне, и по
+     нему две постройки встают вплотную, не наезжая друг на друга (правило
+     заказчика 2026-10-13 — то, ради чего зазор вообще делается). */
+  const pair = await row([['a', 0], ['a', 0]], 4);
+  console.log('  два дома рядом: ' + (pair ? JSON.stringify(pair.spots.map(s => [s.x, s.y])) : 'нет места'));
+  const shot2 = await draw(true);
+  fs.writeFileSync(path.join(OUT, 'house-map-neighbours.png'),
     Buffer.from(shot2.png.split(',')[1], 'base64'));
-  console.log('  house-map-rotations.png');
+  console.log('  house-map-neighbours.png');
 
   if (errors.length) { console.log('\nошибки:'); errors.forEach(e => console.log('  ' + e)); process.exitCode = 1; }
   else console.log('\nошибок в консоли нет');
 
-  ws.close(); chrome.kill('SIGKILL');
+  ws.close(); killChrome();
   try { fs.rmSync(PROFILE, { recursive: true, force: true }); } catch (e) {}
   process.exit(process.exitCode || 0);
-})().catch(e => { console.error('ошибка: ' + (e && e.stack || e)); chrome.kill('SIGKILL'); process.exit(1); });
+})().catch(e => { console.error('ошибка: ' + (e && e.stack || e)); killChrome(); process.exit(1); });

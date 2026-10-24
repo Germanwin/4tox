@@ -1,0 +1,25 @@
+{
+ "ppu": 80.0,
+ "ortho": 8.0,
+ "res": [
+  512,
+  640
+ ],
+ "tag": "shexp",
+ "el_deg": 35.264389682754654,
+ "az_deg": 45.0,
+ "frames": {
+  "shexp_0": {
+   "tris": 808,
+   "verts": 852,
+   "objects": 1,
+   "parts": 106,
+   "size": 2.405,
+   "footprint": [
+    2.642,
+    3.24
+   ],
+   "rotation": 0
+  }
+ }
+}

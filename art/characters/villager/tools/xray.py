@@ -339,11 +339,15 @@ def projected_px(M, ppu=96.0):
     return out
 
 
-def report(do_coplanar=True, gap_max=0.06, pose=None, axe=False):
+def report(do_coplanar=True, gap_max=0.06, pose=None, axe=False, logs=False):
     """Просвет фигуры. `pose` — поза кадра (например, удар рубки): топор и
     поднятая рука появляются только в ней, и без этого аргумента их детали в
-    отчёт не попадают вовсе (tools/axe_probe.py зовёт его так)."""
-    parts = H.build(pose=pose, axe=axe)
+    отчёт не попадают вовсе (tools/axe_probe.py зовёт его так).
+
+    `axe` / `logs` — предметы в руках: без них просвет кадра носки покажет
+    фигуру с ПУСТЫМИ руками и честно не увидит ни одного бревна, то есть
+    промолчит про ровно то, ради чего его и зовут."""
+    parts = H.build(pose=pose, axe=axe, logs=logs)
     M = mesh(parts)
     L = ['деталей %d, трис %d, вершин %d' % (len(parts), len(M['T']), len(M['V'])),
          'габарит X %.3f..%.3f  Y %.3f..%.3f  Z %.3f..%.3f'
@@ -407,7 +411,13 @@ def main():
         if args.anim:
             import poses as PO
             pose = PO.pose(args.anim, args.frame)
-        text, _ = report(do_coplanar=not args.no_coplanar, pose=pose, axe=args.axe)
+        want = {}
+        if args.anim:
+            import poses as PO
+            want = PO.props(args.anim)
+        text, _ = report(do_coplanar=not args.no_coplanar, pose=pose,
+                         axe=args.axe or want.get('axe', False),
+                         logs=want.get('logs', False))
         print(text)
         if args.save:
             open(args.save, 'w', encoding='utf-8').write(text + '\n')

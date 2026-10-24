@@ -1,0 +1,5 @@
+/Users/hermmoment/coding/4tox/art/buildings/barracks/out/sheet_br_a.png
+/Users/hermmoment/coding/4tox/art/buildings/barracks/renders/closeups_br_a.png
+/Users/hermmoment/coding/4tox/art/buildings/barracks/out/sheet_br_b.png
+/Users/hermmoment/coding/4tox/art/buildings/barracks/renders/closeups_br_b.png
+/Users/hermmoment/coding/4tox/art/buildings/barracks/out/br_vs_village.png

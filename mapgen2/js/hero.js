@@ -396,6 +396,7 @@
     var objs = world.objects, keep = [];
     for (var i = 0; i < objs.length; i++) if (objs[i] !== tree) keep.push(objs[i]);
     if (keep.length === objs.length) return false;
+    if (tree && tree.id !== undefined && world.removedIds) world.removedIds.push(tree.id);
     world.objects = keep;
     if (world._heroBlocked) {
       delete world._heroBlocked.cells[key(Math.floor(tree.x), Math.floor(tree.y))];
@@ -412,6 +413,11 @@
   global.Hero = {
     load: load, build: build, create: create, update: update,
     sprite: sprite, scaleAt: scaleAt, frameCount: frameCount, fps: fps,
+    /* loops наружу нужен жителю: сдача брёвен — НЕ цикл (`carry_put`,
+       loop:false), и её проход играется один раз (js/villager.js: putStep).
+       Спрашивать про это атлас, а не помнить числом, — то же правило, по
+       которому имена анимаций не выписаны в движке. */
+    loops: loops,
     nearestRot: nearestRot,
     order: order, chop: chop, cancel: cancel, nearestTree: nearestTree,
     objectAt: objectAt, canStand: canStand, free: free, isLand: isLand,

@@ -1,0 +1,35 @@
+{
+ "ppu": 384.0,
+ "res": [
+  2048,
+  2560
+ ],
+ "scene": "barracks",
+ "prefix": "br_",
+ "el_deg": 35.264389682754654,
+ "az_deg": 45.0,
+ "sun": [
+  -0.36108487844467163,
+  0.3009040653705597,
+  0.8826518654823303
+ ],
+ "frames": {
+  "br4t_a_90": {
+   "variant": "a",
+   "rotation": 90,
+   "raw": "/Users/hermmoment/coding/4tox/art/buildings/barracks/renders/br4t_a_90_raw.png",
+   "tris": 1428,
+   "verts": 1378,
+   "parts": 164,
+   "size": [
+    2.936,
+    4.011,
+    2.822
+   ],
+   "footprint": [
+    2.936,
+    4.011
+   ]
+  }
+ }
+}

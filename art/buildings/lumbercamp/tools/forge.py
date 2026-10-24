@@ -137,6 +137,62 @@ def prism_x(poly_yz, x0, x1, keep=None):
     return verts, faces
 
 
+def prism(poly, a0, a1, axis):
+    """Призма вдоль ЛЮБОЙ оси: 0 = X, 1 = Y, 2 = Z.  Нормали — наружу.
+
+    `prism_x` умеет только ось X (контур в `(y, z)`).  Для оси Y (торцы
+    поленьев в `+Y`, брёвна вдоль двора) и оси Z (кадка, пень, колода — круг в
+    плане) нужен общий случай, и он же избавляет от `box` там, где сечение
+    круглое или гранёное.
+
+    Контур задаётся в порядке возрастания номеров оставшихся осей: для X —
+    `(y, z)`, для Y — `(x, z)`, для Z — `(x, y)`.  Обход выправляется знаком
+    площади — как в `prism_x`.  Для оси Y одной выправки мало: перестановка
+    `(X, Z)` нечётная, и нормали выходят внутрь, поэтому обход дополнительно
+    инвертируется.  Проверяется `canon.check_normals`: у призмы с вывернутым
+    обходом знаковый объём отрицательный.
+
+    Сечение даёт `ngon`; одинаковым сечениям давай РАЗНУЮ фазу — иначе у
+    соседей по ряду боковины ложатся в одну плоскость и это читается как
+    z-fighting (поленница лагеря: доля 0.70).
+    """
+    if a1 < a0:
+        a0, a1 = a1, a0
+    i, j = [k for k in range(3) if k != axis]
+    p = list(poly)
+    area = 0.5 * sum(p[k][0] * p[(k + 1) % len(p)][1]
+                     - p[(k + 1) % len(p)][0] * p[k][1]
+                     for k in range(len(p)))
+    if area < 0.0:
+        p = p[::-1]
+    n = len(p)
+
+    def mk(a, uv):
+        q = [0.0, 0.0, 0.0]
+        q[axis], q[i], q[j] = a, uv[0], uv[1]
+        return tuple(q)
+
+    verts = [mk(a0, uv) for uv in p] + [mk(a1, uv) for uv in p]
+    faces = [(k, (k + 1) % n, n + (k + 1) % n, n + k) for k in range(n)]
+    faces.append(tuple(range(n - 1, -1, -1)))           # торец a0
+    faces.append(tuple(range(n, 2 * n)))                # торец a1
+    if axis == 1:
+        faces = [tuple(reversed(f)) for f in faces]
+    return verts, faces
+
+
+def ngon(cx, cy, r, n, phase=0.0, ry=None):
+    """Правильный n-угольник в плане: сечение бревна, пня, кадки, колоды.
+
+    `r` — радиус по X, `ry` — по Y (по умолчанию равен `r`).  Контур идёт
+    против часовой стрелки, какого обхода ждёт `prism(..., axis=2)`.
+    """
+    ry = r if ry is None else ry
+    return [(cx + r * math.cos(phase + 2.0 * math.pi * k / n),
+             cy + ry * math.sin(phase + 2.0 * math.pi * k / n))
+            for k in range(n)]
+
+
 def bar(p0, p1, sx, sy, see=(), caps=(), over=0.0):
     """Брусок из p0 в p1 (p0/p1 — центры торцов), сечение sx (поперёк) x sy.
 

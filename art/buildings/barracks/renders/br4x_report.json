@@ -1,0 +1,154 @@
+{
+ "ppu": 384.0,
+ "res": [
+  2048,
+  2560
+ ],
+ "scene": "barracks",
+ "prefix": "br_",
+ "el_deg": 35.264389682754654,
+ "az_deg": 45.0,
+ "sun": [
+  -0.36108487844467163,
+  0.3009040653705597,
+  0.8826518654823303
+ ],
+ "frames": {
+  "br4x_a_0": {
+   "variant": "a",
+   "rotation": 0,
+   "raw": "/Users/hermmoment/coding/4tox/art/buildings/barracks/renders/br4x_a_0_raw.png",
+   "tris": 1434,
+   "verts": 1251,
+   "parts": 164,
+   "size": [
+    4.011,
+    2.936,
+    2.822
+   ],
+   "footprint": [
+    4.011,
+    2.936
+   ]
+  },
+  "br4x_a_90": {
+   "variant": "a",
+   "rotation": 90,
+   "raw": "/Users/hermmoment/coding/4tox/art/buildings/barracks/renders/br4x_a_90_raw.png",
+   "tris": 1434,
+   "verts": 1251,
+   "parts": 164,
+   "size": [
+    2.936,
+    4.011,
+    2.822
+   ],
+   "footprint": [
+    2.936,
+    4.011
+   ]
+  },
+  "br4x_a_180": {
+   "variant": "a",
+   "rotation": 180,
+   "raw": "/Users/hermmoment/coding/4tox/art/buildings/barracks/renders/br4x_a_180_raw.png",
+   "tris": 1434,
+   "verts": 1251,
+   "parts": 164,
+   "size": [
+    4.011,
+    2.936,
+    2.822
+   ],
+   "footprint": [
+    4.011,
+    2.936
+   ]
+  },
+  "br4x_a_270": {
+   "variant": "a",
+   "rotation": 270,
+   "raw": "/Users/hermmoment/coding/4tox/art/buildings/barracks/renders/br4x_a_270_raw.png",
+   "tris": 1434,
+   "verts": 1251,
+   "parts": 164,
+   "size": [
+    2.936,
+    4.011,
+    2.822
+   ],
+   "footprint": [
+    2.936,
+    4.011
+   ]
+  },
+  "br4x_b_0": {
+   "variant": "b",
+   "rotation": 0,
+   "raw": "/Users/hermmoment/coding/4tox/art/buildings/barracks/renders/br4x_b_0_raw.png",
+   "tris": 1398,
+   "verts": 1225,
+   "parts": 162,
+   "size": [
+    4.011,
+    2.941,
+    2.822
+   ],
+   "footprint": [
+    4.011,
+    2.941
+   ]
+  },
+  "br4x_b_90": {
+   "variant": "b",
+   "rotation": 90,
+   "raw": "/Users/hermmoment/coding/4tox/art/buildings/barracks/renders/br4x_b_90_raw.png",
+   "tris": 1398,
+   "verts": 1225,
+   "parts": 162,
+   "size": [
+    2.941,
+    4.011,
+    2.822
+   ],
+   "footprint": [
+    2.941,
+    4.011
+   ]
+  },
+  "br4x_b_180": {
+   "variant": "b",
+   "rotation": 180,
+   "raw": "/Users/hermmoment/coding/4tox/art/buildings/barracks/renders/br4x_b_180_raw.png",
+   "tris": 1398,
+   "verts": 1225,
+   "parts": 162,
+   "size": [
+    4.011,
+    2.941,
+    2.822
+   ],
+   "footprint": [
+    4.011,
+    2.941
+   ]
+  },
+  "br4x_b_270": {
+   "variant": "b",
+   "rotation": 270,
+   "raw": "/Users/hermmoment/coding/4tox/art/buildings/barracks/renders/br4x_b_270_raw.png",
+   "tris": 1398,
+   "verts": 1225,
+   "parts": 162,
+   "size": [
+    2.941,
+    4.011,
+    2.822
+   ],
+   "footprint": [
+    2.941,
+    4.011
+   ]
+  }
+ }
+}

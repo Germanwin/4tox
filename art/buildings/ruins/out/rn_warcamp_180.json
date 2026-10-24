@@ -1,0 +1,16 @@
+{
+ "raw": "rn_warcamp_180_raw.png",
+ "anchor": [
+  256,
+  342
+ ],
+ "size": [
+  506,
+  556
+ ],
+ "ppu": 96.0,
+ "mul": 0.7973,
+ "outline": true,
+ "shadow": false,
+ "target_frame": "wc_180"
+}

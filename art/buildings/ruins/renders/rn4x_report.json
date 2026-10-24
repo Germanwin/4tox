@@ -1,0 +1,108 @@
+{
+ "scene": "ruins",
+ "prefix": "rn_",
+ "frames": {
+  "house_0": {
+   "type": "house",
+   "rotation": 0,
+   "raw": "/Users/hermmoment/coding/4tox/art/buildings/ruins/renders/rn_house_0@4x_raw.png",
+   "ppu": 384.0,
+   "res": [
+    2048,
+    2560
+   ],
+   "tris": 1106,
+   "verts": 794,
+   "parts": 88,
+   "size": [
+    1.974,
+    2.986,
+    2.067
+   ],
+   "footprint": [
+    1.974,
+    2.986
+   ]
+  },
+  "house_90": {
+   "type": "house",
+   "rotation": 90,
+   "raw": "/Users/hermmoment/coding/4tox/art/buildings/ruins/renders/rn_house_90@4x_raw.png",
+   "ppu": 384.0,
+   "res": [
+    2048,
+    2560
+   ],
+   "tris": 1106,
+   "verts": 794,
+   "parts": 88,
+   "size": [
+    2.986,
+    1.974,
+    2.067
+   ],
+   "footprint": [
+    2.986,
+    1.974
+   ]
+  },
+  "house_180": {
+   "type": "house",
+   "rotation": 180,
+   "raw": "/Users/hermmoment/coding/4tox/art/buildings/ruins/renders/rn_house_180@4x_raw.png",
+   "ppu": 384.0,
+   "res": [
+    2048,
+    2560
+   ],
+   "tris": 1106,
+   "verts": 794,
+   "parts": 88,
+   "size": [
+    1.974,
+    2.986,
+    2.067
+   ],
+   "footprint": [
+    1.974,
+    2.986
+   ]
+  },
+  "house_270": {
+   "type": "house",
+   "rotation": 270,
+   "raw": "/Users/hermmoment/coding/4tox/art/buildings/ruins/renders/rn_house_270@4x_raw.png",
+   "ppu": 384.0,
+   "res": [
+    2048,
+    2560
+   ],
+   "tris": 1106,
+   "verts": 794,
+   "parts": 88,
+   "size": [
+    2.986,
+    1.974,
+    2.067
+   ],
+   "footprint": [
+    2.986,
+    1.974
+   ]
+  }
+ },
+ "el_deg": 35.264389682754654,
+ "az_deg": 45.0,
+ "sun": [
+  -0.36108487844467163,
+  0.3009040653705597,
+  0.8826518654823303
+ ],
+ "ppu": {
+  "townhall": 80.0,
+  "house": 96.0,
+  "lumbercamp": 96.0,
+  "barracks": 96.0,
+  "warcamp": 96.0
+ }
+}

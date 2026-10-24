@@ -31,7 +31,26 @@ const chrome = spawn(CHROME, [
   '--headless=new', '--remote-debugging-port=' + PORT, '--user-data-dir=' + PROFILE,
   '--no-first-run', '--allow-file-access-from-files', '--hide-scrollbars',
   '--window-size=1400,900', 'about:blank'
-], { stdio: 'ignore' });
+], { stdio: 'ignore', detached: true });
+
+/* Гасим Chrome ЦЕЛОЙ ГРУППОЙ процессов.
+
+   kill по одному pid убивает только сам браузер, а его хелперы — рендерер,
+   GPU, утилиты — остаются жить: страница в них продолжает крутиться на 60
+   кадрах в секунду и есть процессор. Один прогон приёмки оставляет восемь
+   таких процессов, пять прогонов — сорок, и машина занята целиком: композитор
+   системы не успевает, и тормозит всё, включая игру в соседнем окне. Поэтому
+   браузер запускается отдельной группой (detached), а гасится её номер. */
+function killChrome() {
+  try { process.kill(-chrome.pid, 'SIGKILL'); } catch (e) { /* уже погашен */ }
+}
+
+/* И на прерывании тоже: Ctrl-C по длинной приёмке не должен оставлять
+   браузер работать. */
+['SIGINT', 'SIGTERM'].forEach(function (sig) {
+  process.on(sig, function () { killChrome(); process.exit(130); });
+});
+
 
 const getJSON = (u) => new Promise((res, rej) => {
   http.get(u, (r) => { let b = ''; r.on('data', (c) => b += c); r.on('end', () => res(JSON.parse(b))); }).on('error', rej);
@@ -243,6 +262,68 @@ const getJSON = (u) => new Promise((res, rej) => {
       `камера ${b2.x.toFixed(1)},${b2.y.toFixed(1)} -> ${a2.x.toFixed(1)},${a2.y.toFixed(1)}`);
   }
 
+  /* --- 5c. дрожь руки и русская раскладка -------------------------- *
+   *
+   * Заказчик (2026-10-24): «у друзей на Windows тупо ЛКМ не работает».
+   * Причина была в пороге: он считался по СУММЕ пройденного пути и был 6 px,
+   * поэтому обычная дрожь мыши (5–12 px за полсекунды) превращала клик в
+   * панораму, а постановка здания срывалась. Теперь дрожь — расстояние от
+   * ТОЧКИ НАЖАТИЯ, клик терпит 8 px, камера едет только после порога.
+   *
+   * И вторая причина: буквы сравнивались с `e.key`, а на русской раскладке
+   * физическая W приходит как «ц». Имя клавиши теперь берётся по `e.code`
+   * (js/keys.js), и «ц» обязана двигать камеру так же, как «w».
+   */
+  {
+    const setup = await js(`(() => { const r = window.__mapgen.renderer;
+      const b = r.world.landBounds;
+      r.cam.zoom = Math.min(r.maxZoom, Math.max(r.minZoom * 1.5, 32));
+      r.centerOn((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2);
+      r.clampCamera();
+      return [r.cam.x, r.cam.y]; })()`);
+    const [sx, sy] = px(400, 300);
+    await mouse('mousePressed', sx, sy);
+    for (let i = 1; i <= 3; i++) {
+      await mouse('mouseMoved', sx + i * 2, sy + Math.round(i / 2), { down: true });
+    }
+    await mouse('mouseReleased', sx + 6, sy + 2);
+    await new Promise(r => setTimeout(r, 150));
+    const afterJitter = await js(`[window.__mapgen.renderer.cam.x, window.__mapgen.renderer.cam.y]`);
+    check('дрожащий клик (7 px) не уводит камеру',
+      Math.abs(afterJitter[0] - setup[0]) < 1e-6 &&
+      Math.abs(afterJitter[1] - setup[1]) < 1e-6,
+      `${setup.map(v => v.toFixed(1)).join(',')} -> ${afterJitter.map(v => v.toFixed(1)).join(',')}`);
+
+    /* Настоящее перетаскивание по-прежнему двигает карту: порог не должен
+       съесть панораму. */
+    const dragFrom = await js(`[window.__mapgen.renderer.cam.x, window.__mapgen.renderer.cam.y]`);
+    await mouse('mousePressed', sx, sy);
+    for (let i = 1; i <= 4; i++) {
+      await mouse('mouseMoved', sx + i * 20, sy + i * 10, { down: true });
+    }
+    await mouse('mouseReleased', sx + 80, sy + 40);
+    await new Promise(r => setTimeout(r, 150));
+    const afterDrag = await js(`[window.__mapgen.renderer.cam.x, window.__mapgen.renderer.cam.y]`);
+    check('перетаскивание дальше порога панорамирует',
+      Math.hypot(afterDrag[0] - dragFrom[0], afterDrag[1] - dragFrom[1]) > 0.5,
+      `${dragFrom.map(v => v.toFixed(1)).join(',')} -> ${afterDrag.map(v => v.toFixed(1)).join(',')}`);
+
+    /* Русская раскладка: key — «ц», место — KeyW. */
+    await js(`(() => { const r = window.__mapgen.renderer;
+      r.fitIsland(); return 1; })()`);
+    const cyrBefore = await js(`window.__mapgen.renderer.cam`);
+    await key('keyDown', 'ц', 'KeyW', 87);
+    await new Promise(r => setTimeout(r, 500));
+    await key('keyUp', 'ц', 'KeyW', 87);
+    await new Promise(r => setTimeout(r, 120));
+    const cyrAfter = await js(`window.__mapgen.renderer.cam`);
+    check('«ц» на месте W панорамирует, как «w»',
+      cyrAfter.y < cyrBefore.y - 1,
+      `камера ${cyrBefore.y.toFixed(1)} -> ${cyrAfter.y.toFixed(1)}`);
+    check('keys.js подключён у генератора',
+      await js(`!!(window.Keys && window.Keys.name({ code: 'KeyW', key: 'ц' }) === 'w')`));
+  }
+
   /* --- 5d. предел панорамы: остров не теряется ---------------------- *
    *
    * Панорама конечна: камеру нельзя увести так, чтобы остров пропал с
@@ -392,7 +473,7 @@ const getJSON = (u) => new Promise((res, rej) => {
   }
 
   console.log('\n' + (fails ? 'ПРОВАЛЕНО проверок: ' + fails : 'все проверки управления пройдены'));
-  ws.close(); chrome.kill('SIGKILL');
+  ws.close(); killChrome();
   try { fs.rmSync(PROFILE, { recursive: true, force: true }); } catch (e) {}
   process.exit(fails ? 1 : 0);
-})().catch(e => { console.error('ошибка: ' + e.message); chrome.kill('SIGKILL'); process.exit(1); });
+})().catch(e => { console.error('ошибка: ' + e.message); killChrome(); process.exit(1); });

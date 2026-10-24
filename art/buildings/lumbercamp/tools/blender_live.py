@@ -34,6 +34,7 @@ import bpy
 from mathutils import Matrix, Vector
 
 import forge as F
+import village as V
 
 AZ = math.radians(45.0)
 EL = math.atan(1.0 / math.sqrt(2.0))            # 35.2644 — ромб 2:1
@@ -328,6 +329,48 @@ def build_object(parts, name, prefix, palette=None, cal=None, scene=None):
         poly.use_smooth = False
     assign_tones(ob, slots, fam_of_face, pal)
     return ob, slots, fam_of_face
+
+
+def build_object_zones(parts, name, prefix, scene=None):
+    """Собрать меш и покрасить его ЗОНАМИ ПАЛИТРЫ РАТУШИ — ОДИН материал на зону.
+
+    Ратуша (`townhall/tools/townhall.py`) красится именно так: у каждой детали
+    свой материал, а фасеты различаются ЕСТЕСТВЕННЫМ затенением — верх светлее,
+    отвёрнутая от солнца грань темнее.  Лагерь переведён на ту же краску
+    (`village.py`, задача заказчика «в цветовой гамме ратуши»), и чтобы цвета
+    сошлись не «примерно», а тождественно, мало взять те же hex: нужна та же
+    СХЕМА раскладки по материалам.  Тоновый автомат (`build_object` +
+    `assign_tones`) квантует затенение в три тона и снова развёл бы лагерь с
+    ратушей — у той затенение непрерывное; для других проектов он оставлен.
+
+    Слоты создаются только под те зоны, которые в модели есть, в
+    алфавитном порядке — порядок слотов детерминирован между прогонами.
+    """
+    scene = scene or bpy.context.scene
+    verts, faces, zone_of_face = [], [], []
+    for p in parts:
+        off = len(verts)
+        verts.extend([tuple(v) for v in p['verts']])
+        for f in p['faces']:
+            faces.append(tuple(off + i for i in f))
+            zone_of_face.append(p['family'])
+    me = bpy.data.meshes.new(name)
+    me.from_pydata(verts, [], faces)
+    me.validate(verbose=False)
+    me.update()
+    ob = bpy.data.objects.new(name, me)
+    (scene.collection if scene else bpy.context.collection).objects.link(ob)
+    slots = sorted(set(zone_of_face))
+    idx = {}
+    for i, zone in enumerate(slots):
+        hex_lin, rough, spec = V.paint(zone)
+        ob.data.materials.append(make_material(prefix + zone, hex_lin,
+                                               rough=rough, spec=spec))
+        idx[zone] = i
+    for i, poly in enumerate(me.polygons):
+        poly.use_smooth = False
+        poly.material_index = idx[zone_of_face[i]]
+    return ob, slots, zone_of_face
 
 
 def assign_tones(ob, slots, fam_of_face=None, palette=None):

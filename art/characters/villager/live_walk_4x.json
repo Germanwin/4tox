@@ -1,0 +1,4 @@
+{"variant": "m", "anims": "walk", "frames": null,
+ "rotations": [0, 45, 90, 135, 180, 225, 270, 315], "samples": 16, "ppu": 384,
+ "res": [576, 768], "export": false, "save_blend": false, "viewport": false,
+ "tag": "vg4"}

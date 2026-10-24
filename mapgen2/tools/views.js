@@ -20,7 +20,26 @@ const chrome = spawn(CHROME, [
   '--headless=new', '--remote-debugging-port=' + PORT, '--user-data-dir=' + PROFILE,
   '--no-first-run', '--allow-file-access-from-files', '--hide-scrollbars',
   '--window-size=1400,900', 'about:blank'
-], { stdio: 'ignore' });
+], { stdio: 'ignore', detached: true });
+
+/* Гасим Chrome ЦЕЛОЙ ГРУППОЙ процессов.
+
+   kill по одному pid убивает только сам браузер, а его хелперы — рендерер,
+   GPU, утилиты — остаются жить: страница в них продолжает крутиться на 60
+   кадрах в секунду и есть процессор. Один прогон приёмки оставляет восемь
+   таких процессов, пять прогонов — сорок, и машина занята целиком: композитор
+   системы не успевает, и тормозит всё, включая игру в соседнем окне. Поэтому
+   браузер запускается отдельной группой (detached), а гасится её номер. */
+function killChrome() {
+  try { process.kill(-chrome.pid, 'SIGKILL'); } catch (e) { /* уже погашен */ }
+}
+
+/* И на прерывании тоже: Ctrl-C по длинной приёмке не должен оставлять
+   браузер работать. */
+['SIGINT', 'SIGTERM'].forEach(function (sig) {
+  process.on(sig, function () { killChrome(); process.exit(130); });
+});
+
 
 const getJSON = (u) => new Promise((res, rej) => {
   http.get(u, (r) => { let b = ''; r.on('data', (c) => b += c); r.on('end', () => res(JSON.parse(b))); }).on('error', rej);
@@ -123,7 +142,7 @@ const getJSON = (u) => new Promise((res, rej) => {
   if (errors.length) { console.log('\nошибки:'); errors.forEach(e => console.log('  ' + e)); }
   else console.log('\nошибок в консоли нет');
 
-  ws.close(); chrome.kill('SIGKILL');
+  ws.close(); killChrome();
   try { fs.rmSync(PROFILE, { recursive: true, force: true }); } catch (e) {}
   process.exit(0);
-})().catch(e => { console.error('ошибка: ' + e.message); chrome.kill('SIGKILL'); process.exit(1); });
+})().catch(e => { console.error('ошибка: ' + e.message); killChrome(); process.exit(1); });

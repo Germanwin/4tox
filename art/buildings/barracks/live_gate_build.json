@@ -1,0 +1,20 @@
+{
+ "scene": "barracks",
+ "prefix": "br_",
+ "variants": [
+  "a"
+ ],
+ "rotations": [],
+ "ppu": 96.0,
+ "res": [
+  512,
+  640
+ ],
+ "samples": 64,
+ "export": false,
+ "save_blend": false,
+ "viewport": false,
+ "tag": "brgate",
+ "closeups": false,
+ "gate": true
+}

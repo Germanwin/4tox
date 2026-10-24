@@ -64,6 +64,10 @@ $PY tools/blmcp.py run tools/build_live.py --config live_4x.json
 
 `compose.py` превращает сырой рендер в спрайт: кладёт кадр в клетку, рисует
 тень по канону, обводит силуэт контуром, обрезает и запоминает точку опоры.
+У зданий этой игры тень выключена ключом `--no-shadow` (правило заказчика
+2026-10-17, «убери тени у зданий»): рамка кадра и точка опоры от ключа не
+меняются, а пятна под силуэтом не остаётся. У природы (деревья, камни, кусты)
+тень на месте.
 
 На выходе — `out/<тег>_<поворот>.png` и **манифест** `out/<тег>_sprites.json`.
 Манифест — это промежуточный формат между проектом и упаковщиком: имена файлов,
@@ -80,11 +84,27 @@ $PY tools/blmcp.py run tools/build_live.py --config live_4x.json
 
 Готовые кадры прогоняют стиль-гейтом — он ловит то, что глазами не поймать:
 долю пикселей вне палитры, крупность фасетов, толщину контура, ширину тени.
+Строка гейта «ТЕНЬ» у построек этой игры падает намеренно — тени у зданий нет
+(правило заказчика 2026-10-17), а гейт требует мягкое пятно под силуэтом;
+остальные строки в силе.
 
 ```bash
 $PY3 tools/gate.py                 # у кого есть
 python3 ~/.dsh/skills/4tox-lowpoly-3d/scripts/audit.py --kind building <кадры>
+
+# у проекта своя палитра — постройки деревни (ратуша, дом, лагерь) красятся
+# краской ратуши, а не палитрой атласа природы
+python3 ~/.dsh/skills/4tox-lowpoly-3d/scripts/audit.py --kind building \
+    --palette tools/village_palette.json <кадры>
 ```
+
+Палитра по умолчанию — атлас природы (`mapgen2/assets/sprites/atlas.png`):
+деревья, камни, трава, инструменты. Постройки деревни в неё не попадают: у
+ратуши своя краска, снятая с эталона, и доля пикселей «в палитре канона» у неё
+33 %. Для них палитра снимается пробой
+(`art/buildings/lumbercamp/tools/village_probe.py`) и подставляется ключом
+`--palette`. Подробности — `art/buildings/lumbercamp/README.md`, раздел
+«Палитра».
 
 Канон стиля, палитра и пороги живут в скилле `4tox-lowpoly-3d`, а не здесь:
 здесь только ссылка, чтобы не расползались две версии чисел.
@@ -101,8 +121,14 @@ python3 ~/.dsh/skills/4tox-lowpoly-3d/scripts/audit.py --kind building <кадр
 | `mapgen2/tools/pack_hut_rect.py` | `art/buildings/townhall/out/hutrect_sprites.json` | `mapgen2/assets/hut/` |
 | `mapgen2/tools/pack_waves.py` | `art/fx/waves/out/sprites.json` | `mapgen2/assets/waves/` |
 | `art/buildings/lumbercamp/tools/pack_lumbercamp.py` | `out/lc_<поворот>.{png,json}` | `mapgen2/assets/lumbercamp/` |
+| `art/buildings/starter_house/tools/pack_atlas.py` | `out/sh_sprites.json` | `mapgen2/assets/starter_house/` |
 | `art/buildings/villager_house/tools/pack_atlas.py` | `out/vh_sprites.json` | `mapgen2/assets/house/` |
 | `art/characters/villager/tools/pack_atlas.py` | `out/vg_sprites.json` | `mapgen2/assets/villager/` |
+
+Какой атлас читает тип постройки, решает `mapgen2/js/buildings.js::TYPES`: тип
+`house` (дом жителя) с 2026-10-14 читает `assets/starter_house/` — стартовый дом.
+Прежний дом жителя (`assets/house/`) остался в игре целым файлом, но страница
+его не грузит: одна постройка — один атлас, и переключается это строкой в TYPES.
 
 Три файла — одно и то же разными способами:
 
@@ -142,6 +168,14 @@ python3 ~/.dsh/skills/4tox-lowpoly-3d/scripts/audit.py --kind building <кадр
 Поля `footprint`, `mul` и `ground` — не украшение: без них постройка встанет
 «примерно» в пятно, вплотную к краю или не по середине. Требование к посадке —
 в [AGENTS.md](../AGENTS.md).
+
+**Перед модели — `+Y`.** Так собраны все постройки (дверь дома, дверь с
+крыльцом у ратуши, двор под навесом у лагеря, вход в казарму, точка сбора
+военного лагеря), и на этом стоит правило игры
+«постройка смотрит передом вправо-вниз»: в кадре атласа перед на повороте 0
+стоит на левой стене, на 90 — на правой, а поворот 90° игра и берёт
+(`Buildings.FACE_ROT`, разбор — в шапке `js/buildings.js`). Новую постройку
+собирай так же, передом в `+Y`: иначе она встанет к камере боком или спиной.
 
 ---
 

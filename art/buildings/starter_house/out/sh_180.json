@@ -1,0 +1,14 @@
+{
+ "raw": "sh_x_180_raw.png",
+ "anchor": [
+  366,
+  491
+ ],
+ "size": [
+  733,
+  789
+ ],
+ "ppu": 96.0,
+ "outline": true,
+ "dilate": 1
+}

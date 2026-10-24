@@ -1,0 +1,97 @@
+{
+ "name": "villager",
+ "parts": 33,
+ "verts": 440,
+ "tris": 678,
+ "families": {
+  "leaf_autumn": {
+   "parts": 8,
+   "tris": 32
+  },
+  "leather": {
+   "parts": 2,
+   "tris": 72
+  },
+  "skin": {
+   "parts": 11,
+   "tris": 256
+  },
+  "stone": {
+   "parts": 3,
+   "tris": 112
+  },
+  "trunk": {
+   "parts": 9,
+   "tris": 206
+  }
+ },
+ "bbox": {
+  "x": [
+   -0.17,
+   0.274
+  ],
+  "y": [
+   -0.246,
+   0.19
+  ],
+  "z": [
+   0.0,
+   0.981
+  ]
+ },
+ "size": [
+  0.444,
+  0.436,
+  0.981
+ ],
+ "height": 0.981,
+ "head_share": 0.207,
+ "shoulder_share": 0.291,
+ "fingertip_share": 0.533,
+ "knee_share": 0.306,
+ "foot_offset": -0.0,
+ "sym_pairs": {
+  "mirrored": 0,
+  "broken": [
+   "thigh_l",
+   "shin_l",
+   "boot_l",
+   "uparm_l",
+   "forearm_l",
+   "sleeve_l",
+   "thumb_l",
+   "thigh_r",
+   "shin_r",
+   "boot_r",
+   "uparm_r",
+   "forearm_r",
+   "sleeve_r",
+   "thumb_r",
+   "ear_l",
+   "ear_r"
+  ]
+ },
+ "cloth_cover": [
+  0.04618918801640348,
+  0.452,
+  0.055
+ ],
+ "normal_issues": [],
+ "normal_issue_count": 0,
+ "too_small": [],
+ "logs": {
+  "logs": 4,
+  "ends": 8,
+  "body_gap": 0.0298,
+  "arm_gap": -0.016,
+  "leg_gap": 0.0414,
+  "box": [
+   41.2,
+   -41.2,
+   21.2,
+   -82.7
+  ],
+  "tris": 678,
+  "verts": 440
+ }
+}

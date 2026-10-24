@@ -33,7 +33,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
-import forge as F                                              # noqa: E402
+import forge as F
+try:
+    import village as V
+except ImportError:                                   # чужой генератор
+    V = None                                              # noqa: E402
 
 SUN = np.array([-0.36, 0.30, 0.88])
 SUN = SUN / np.linalg.norm(SUN)
@@ -118,14 +122,28 @@ def cam_basis(az_deg, el_deg):
 
 
 def flat_rgb(M, palette=None):
-    """(m,3) sRGB 0..1 на треугольник: семейство + тон по нормали."""
+    """(m,3) sRGB 0..1 на треугольник: краска зоны + затенение по нормали.
+
+    Лагерь красится ЗОНАМИ ПАЛИТРЫ РАТУШИ (`tools/village.py`) — один материал
+    на зону, затенение естественное, как у ратуши.  Поэтому здесь два случая:
+
+    * зона деревни — цвет = краска ратуши, умноженная на затенение
+      (`village.preview_rgb`); это ПРЕДПРОСМОТР без Blender, нужный, чтобы
+      посмотреть силуэт и изнанки, а не чтобы утверждать цвет;
+    * семейство атласа природы — прежний путь: тон из палитры скилла по
+      нормали (оставлен для чужих генераторов, которые ещё зовут `xray`).
+    """
     P = palette or F.Palette()
     b = np.clip(M['N'] @ SUN, 0.0, None) + 0.15
     out = np.zeros((len(M['T']), 3))
     for fam in set(M['fam'].tolist()):
+        sel = M['fam'] == fam
+        if V is not None and fam in V.ZONES:
+            out[sel] = np.stack([np.array(V.preview_rgb(fam, n))
+                                 for n in M['N'][sel]])
+            continue
         light, mid = P.thresholds(fam)
         tones = [np.array(P.hex_rgb(t)) / 255.0 for t in P.tones(fam)]
-        sel = M['fam'] == fam
         bb = b[sel]
         t = np.where(bb >= light, 0, np.where(bb >= mid, 1, 2))
         out[sel] = np.stack([tones[int(x)] for x in t])

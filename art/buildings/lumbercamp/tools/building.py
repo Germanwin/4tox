@@ -17,6 +17,14 @@
 Ярусы снизу вверх: опорные камни -> столбы -> прогоны -> кровля, и отдельно
 двор, который ставится на землю.
 
+ПАЛИТРА (2026-10-15).  Заказчик: «сделай так, чтобы модель лагеря была в
+цветовой гамме ратуши, а то он как будто из другого дерева сделан».  Поэтому
+третьим аргументом `F.part` идёт уже НЕ семейство атласа природы (`trunk` —
+кора дерева, `leaf_autumn` — осенняя крона), а ЗОНА ПАЛИТРЫ РАТУШИ: `timber`
+(каркас), `plank` (пилёное дерево), `board`/`board2` (тёс кровли и плита под
+ним), `stone`, `iron`, `dark`.  Что это за цвета и почему они взяты у ратуши
+дословно — `tools/village.py`.  Менять цвет детали теперь можно только там.
+
 Оси: X — ширина навеса, Y — его глубина, +Y — сторона, откуда смотрит камера
 (азимут 45°).  Торцы поленьев и кромка топора направлены в +Y: именно эту
 сторону видно в спрайте.
@@ -25,6 +33,7 @@ import math
 import random
 
 import forge as F
+import village as V
 
 # --------------------------------------------------------------------------
 # КАНОННЫЕ РАЗМЕРЫ ЭТОЙ ПОСТРОЙКИ
@@ -96,8 +105,16 @@ BARREL = (1.20, 0.95)                 # кадка
 
 
 # --------------------------------------------------------------------------
-# ПРИМИТИВЫ, КОТОРЫХ НЕТ В forge (призмы вдоль Y и Z)
+# ПРИМИТИВЫ ДВОРА: призмы вдоль Y и Z
 # --------------------------------------------------------------------------
+# Обновлено 2026-10-14: эти два примитива перенесены в скилл — теперь они есть
+# и в `forge` (`forge.prism(poly, a0, a1, axis)`, `forge.ngon(cx, cy, r, n,
+# phase)`), потому что двор без них не собрать: поленнице нужны торцы в +Y,
+# кадке и пням — круг в плане, а `forge.prism_x` умеет только ось X.
+# Локальные копии оставлены намеренно (проект должен работать на своём снимке
+# инструментов, даже если скилл уедет), но equivalence проверена числом:
+# локальные `prism`/`ngon` и forge-овские дают одни и те же вершины и грани на
+# всех трёх осях и разных фазах.
 def prism(poly, a0, a1, axis):
     """Призма вдоль оси `axis` (0 = X, 1 = Y, 2 = Z) по контуру в двух других.
 
@@ -190,7 +207,7 @@ def build_posts(parts, rng):
             v, f = F.box(sx_, sy_, FOOT_H - 0.03, POST_T, POST_T,
                          z1 - FOOT_H + 0.03,
                          keep=('+x', '-x', '+y', '-y', '+z', '-z'))
-            F.part(parts, 'post_' + tag, 'trunk', v, f, jit=0.004, seed=seed + 1)
+            F.part(parts, 'post_' + tag, 'timber', v, f, jit=0.004, seed=seed + 1)
 
 
 def build_plates(parts):
@@ -210,7 +227,7 @@ def build_plates(parts):
         # задней кромки между ним и плитой остаётся клин).  Автоотсев считает
         # верхнюю грань закрытой и снимает её — и в щели светит изнанка того же
         # прогона (полоса 1133 px на сетке ракурсов).
-        F.part(parts, 'plate_%d' % k, 'trunk', v, f, jit=0.003, seed=200 + k,
+        F.part(parts, 'plate_%d' % k, 'timber', v, f, jit=0.003, seed=200 + k,
                nocull=True)
 
 
@@ -232,7 +249,7 @@ def build_roof(parts, rng):
     # детали кончаются одной плоскостью, получается пара «совпадающих
     # плоскостей» с долей 0.97 — то самое мерцание, которое ловит `coplanar`.
     v, f = F.prism_x(prof, ROOF_X0 + 0.010, ROOF_X1 - 0.010)
-    F.part(parts, 'roof_base', 'leaf_autumn', v, f, jit=0.002, seed=300,
+    F.part(parts, 'roof_base', 'board2', v, f, jit=0.002, seed=300,
            nocull=True)
 
     rows, cols = 3, 3
@@ -260,7 +277,7 @@ def build_roof(parts, rng):
             if x1 - x0 < 0.30:
                 continue
             v, f = F.prism_x(pr, x0, x1)
-            F.part(parts, 'board_%d_%d' % (r, k), 'leaf_autumn', v, f,
+            F.part(parts, 'board_%d_%d' % (r, k), 'board', v, f,
                    jit=0.002, seed=310 + r * 7 + k)
     # лобовые доски по торцам ската — призма по тому же контуру: брусок нижним
     # углом вышел бы выше тёса, и снизу была бы видна изнанка.  Верх доски выше
@@ -271,13 +288,13 @@ def build_roof(parts, rng):
               (ROOF_YF, z_under(ROOF_YF) + ROOF_BASE_T + 0.052),
               (ROOF_YB, z_under(ROOF_YB) + ROOF_BASE_T + 0.052)]
         v, f = F.prism_x(pr, sx_ - 0.035, sx_ + 0.035)
-        F.part(parts, 'barge_%d' % int(round(sx_ * 100)), 'trunk', v, f,
+        F.part(parts, 'barge_%d' % int(round(sx_ * 100)), 'timber', v, f,
                jit=0.002, seed=340 + int(round(sx_ * 100)) % 97)
     # карнизная доска по передней кромке: закрывает торец плиты и тёса
     v, f = F.bar((ROOF_X0 + 0.02, ROOF_YF - 0.015, z_under(ROOF_YF) + 0.02),
                  (ROOF_X1 - 0.02, ROOF_YF - 0.015, z_under(ROOF_YF) + 0.02),
                  0.05, 0.13, caps=(0, 1))
-    F.part(parts, 'eave_board', 'trunk', v, f, jit=0.002, seed=360)
+    F.part(parts, 'eave_board', 'timber', v, f, jit=0.002, seed=360)
 
 
 # --------------------------------------------------------------------------
@@ -306,7 +323,7 @@ def build_woodpile(parts, rng):
             # плоскость — это ловится как z-fighting (доля 0.70).
             ph = math.pi / 6.0 + ri * 0.30 + rng.uniform(-0.03, 0.03)
             v, f = prism(ngon(cx, zc, r, 6, phase=ph), y0, y1, 1)
-            F.part(parts, 'log_pile_%d_%d' % (ri, k), 'trunk', v, f,
+            F.part(parts, 'log_pile_%d_%d' % (ri, k), 'plank', v, f,
                    jit=0.004, seed=400 + ri * 13 + k)
         z += 2.0 * r * 0.94
 
@@ -327,16 +344,16 @@ def build_block_axe(parts, rng):
     # Верхний венец начинается на 0.02, а не на 0: если обе детали колоды
     # кончаются одной плоскостью на земле, это пара «совпадающих плоскостей».
     v, f = prism(ngon(cx, cy, BLOCK_R, 8, phase=math.pi / 8.0), 0.02, BLOCK_H, 2)
-    F.part(parts, 'chopping_block', 'trunk', v, f, jit=0.005, seed=500)
+    F.part(parts, 'chopping_block', 'plank', v, f, jit=0.005, seed=500)
     v, f = prism(ngon(cx, cy, BLOCK_R + 0.018, 8, phase=0.0),
                  0.0, 0.09, 2)
-    F.part(parts, 'block_shoe', 'trunk', v, f, jit=0.004, seed=501)
+    F.part(parts, 'block_shoe', 'plank', v, f, jit=0.004, seed=501)
 
     axe = []
     # Топор крупнее канонного жителя (0.46): в спрайте 96 ppu рукоять канонного
     # диаметра — 3 px, она пропадала, и топор читался светлой щепкой на колоде.
     v, f = prism(ngon(0.0, 0.0, 0.042, 6, phase=math.pi / 6.0), 0.0, 0.47, 2)
-    F.part(axe, 'axe_handle', 'trunk', v, f, jit=0.002, seed=502)
+    F.part(axe, 'axe_handle', 'plank', v, f, jit=0.002, seed=502)
     # Контур в (y, z): ОБУХ слева (y = -0.144), КРОМКА справа (y = +0.144) —
     # канонные оси `axe.py`.  Кромка параллельна рукояти, поэтому «воткнуть
     # кромкой вниз» при вертикальной рукояти нельзя: топор ПРИСЛОНЁН к колоде
@@ -348,7 +365,7 @@ def build_block_axe(parts, rng):
     v = taper_edge(v, -0.144, 0.144, 0.16)
     F.part(axe, 'axe_head', 'stone', v, f, jit=0.001, seed=503)
     v, f = prism(ngon(0.0, 0.0, 0.052, 6, phase=0.0), 0.440, 0.490, 2)
-    F.part(axe, 'axe_lashing', 'leather', v, f, jit=0.001, seed=504)
+    F.part(axe, 'axe_lashing', 'dark', v, f, jit=0.001, seed=504)
 
     # Топор ПРИСЛОНЁН к колоде, а не воткнут: при любой «воткнутой» позе
     # рукоять уходит за колоду и в спрайте от топора остаётся одна голова
@@ -382,21 +399,21 @@ def build_sawhorses(parts, rng):
                          caps=(0, 1))
             F.part(parts, 'horse_leg_%d_%d' % (int(round(sy_ * 100)),
                                                int(round(sx_ * 100))),
-                   'trunk', v, f, jit=0.003,
+                   'timber', v, f, jit=0.003,
                    seed=600 + int(round(sy_ * 10 + sx_ * 10)))
     v, f = F.bar((hx, hy - 0.50, rail_z), (hx, hy + 0.50, rail_z),
                  0.09, 0.09, caps=(0, 1))
     # nocull: верх жерди закрыт бревном, но закрыт НЕ вплотную — между плоским
     # верхом и круглым боком бревна остаётся клин.  Автоотсев снимает верхнюю
     # грань, и в этот клин с косого луча видно изнанку жерди (135 px на кадре).
-    F.part(parts, 'horse_rail', 'trunk', v, f, jit=0.003, seed=610,
+    F.part(parts, 'horse_rail', 'timber', v, f, jit=0.003, seed=610,
            nocull=True)
     # Бревно кладётся ПЛОСКИМ низом (phase=0), а не ребром: ребром оно стоит на
     # жерди по линии, и клин под ним открыт.  Утоплено в жердь на 0.005 — стык
     # «плоскость в плоскость» дал бы совпадающие плоскости.
     v, f = prism(ngon(hx, rail_z + 0.045 + 0.866 * 0.105 - 0.005, 0.105, 6,
                       phase=0.0), hy - 0.62, hy + 0.62, 1)
-    F.part(parts, 'horse_log', 'trunk', v, f, jit=0.004, seed=620)
+    F.part(parts, 'horse_log', 'plank', v, f, jit=0.004, seed=620)
 
 
 def build_stumps(parts, rng):
@@ -407,7 +424,7 @@ def build_stumps(parts, rng):
         v = [(p[0], p[1],
               p[2] - 0.035 * ((p[0] - sx_) + (p[1] - sy_)) / (2 * r))
              for p in v]
-        F.part(parts, 'stump_%d' % k, 'trunk', v, f, jit=0.005, seed=700 + k)
+        F.part(parts, 'stump_%d' % k, 'plank', v, f, jit=0.005, seed=700 + k)
 
 
 def build_logs(parts, rng):
@@ -419,7 +436,7 @@ def build_logs(parts, rng):
     for k, (sy_, y0, y1) in enumerate(((0.35, -0.50, 0.30), (0.70, -0.42, 0.26))):
         v, f = prism(ngon(sy_, LOG_R * 1.15, 0.11, 6, phase=math.pi / 6.0),
                      y0, y1, 0)
-        F.part(parts, 'log_%d' % k, 'trunk', v, f, jit=0.004, seed=800 + k)
+        F.part(parts, 'log_%d' % k, 'plank', v, f, jit=0.004, seed=800 + k)
 
 
 def build_barrel(parts, rng):
@@ -428,7 +445,7 @@ def build_barrel(parts, rng):
     for k, (r, z0, z1) in enumerate(((0.112, 0.0, 0.09), (0.132, 0.09, 0.25),
                                      (0.114, 0.25, 0.34))):
         v, f = prism(ngon(bx, by, r, 6, phase=math.pi / 6.0), z0, z1, 2)
-        F.part(parts, 'barrel_%d' % k, 'trunk', v, f, jit=0.003, seed=900 + k)
+        F.part(parts, 'barrel_%d' % k, 'plank', v, f, jit=0.003, seed=900 + k)
     v, f = prism(ngon(bx, by, 0.090, 6, phase=0.0), 0.30, 0.345, 2)
     F.part(parts, 'barrel_water', 'iron', v, f, jit=0.002, seed=910)
 
@@ -446,11 +463,11 @@ def build_fence(parts, rng):
         v, f = F.box(1.34 + rng.uniform(-0.02, 0.02), fy, 0.0, 0.13, 0.13, h,
                      rz=math.radians(rng.uniform(-5, 5)),
                      keep=('+x', '-x', '+y', '-y', '+z', '-z'))
-        F.part(parts, 'picket_%d' % k, 'trunk', v, f, jit=0.005, seed=1000 + k)
+        F.part(parts, 'picket_%d' % k, 'timber', v, f, jit=0.005, seed=1000 + k)
     for k, rz_ in enumerate((0.46, 0.20)):
         v, f = F.bar((1.32, fy0 - 0.10, rz_), (1.32, fy0 + 1.30, rz_),
                      0.055, 0.075, caps=(0, 1))
-        F.part(parts, 'fence_rail_%d' % k, 'trunk', v, f, jit=0.003,
+        F.part(parts, 'fence_rail_%d' % k, 'timber', v, f, jit=0.003,
                seed=1010 + k)
 
 
@@ -473,6 +490,14 @@ def build(variant=None):
     build_fence(parts, rng)
     F.ground(parts)
     F.autocull(parts)
+    # Каждая деталь обязана попасть в палитру ратуши.  Опечатка в имени зоны
+    # иначе доехала бы до Blender'а и молча покрасила деталь чужим материалом
+    # (у `build_object_zones` неизвестная зона — это KeyError, но лучше упасть
+    # здесь, где видно, какая именно деталь виновата).
+    for p in parts:
+        if p['family'] not in V.ZONES:
+            raise KeyError('деталь %r: зоны %r нет в village.ZONES'
+                           % (p['name'], p['family']))
     return parts
 
 

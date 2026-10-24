@@ -1,0 +1,17 @@
+конфиг: /Users/hermmoment/coding/4tox/art/buildings/barracks/live_gate_build.json
+сцена сборки: 'barracks' (сцен в файле: ['barracks', 'Scene'])
+палитра: деревня, зон 12 (beam, dark, dirt, iron, moss, plank, stone, stone2, thatch, thatch2, timber, wall)
+   beam     <- ратуша beam     #8A6238
+   dark     <- ратуша dark     #1A140E
+   dirt     <- ратуша dirt     #7A6244
+   iron     <- ратуша iron     #3A3A3E
+   moss     <- ратуша moss     #466B34
+   plank    <- ратуша plank    #A07C4C
+   stone    <- ратуша stone    #8E9498
+   stone2   <- ратуша stone2   #6E747A
+   thatch   <- ратуша thatch   #A8823C
+   thatch2  <- ратуша thatch2  #8E6C2C
+   timber   <- ратуша timber   #5E3D1E
+   wall     <- ратуша wall     #93714A
+СЦЕНА ДЛЯ ПРИЁМКИ: объектов 164, деталей 164
+brgate_report.json записан; кадров 0, время 0.1 с

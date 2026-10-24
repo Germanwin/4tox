@@ -1,0 +1,109 @@
+{
+ "parts": 88,
+ "verts": 794,
+ "tris": 1106,
+ "families": {
+  "ash": {
+   "parts": 5,
+   "tris": 76
+  },
+  "beam": {
+   "parts": 3,
+   "tris": 40
+  },
+  "char": {
+   "parts": 30,
+   "tris": 348
+  },
+  "dirt": {
+   "parts": 1,
+   "tris": 4
+  },
+  "moss": {
+   "parts": 3,
+   "tris": 22
+  },
+  "plank": {
+   "parts": 2,
+   "tris": 22
+  },
+  "stone": {
+   "parts": 20,
+   "tris": 222
+  },
+  "stone2": {
+   "parts": 4,
+   "tris": 46
+  },
+  "thatch": {
+   "parts": 4,
+   "tris": 48
+  },
+  "thatch2": {
+   "parts": 5,
+   "tris": 60
+  },
+  "timber": {
+   "parts": 4,
+   "tris": 46
+  },
+  "wall": {
+   "parts": 7,
+   "tris": 172
+  }
+ },
+ "bbox": {
+  "x": [
+   -0.983,
+   0.99
+  ],
+  "y": [
+   -1.484,
+   1.503
+  ],
+  "z": [
+   0.0,
+   2.067
+  ]
+ },
+ "size": [
+  1.974,
+  2.986,
+  2.067
+ ],
+ "tiers": {
+  "plinth_top": 0.15,
+  "wall_top": 1.22,
+  "ridge": null,
+  "roof_top": 2.067
+ },
+ "pitch_deg": null,
+ "over_slope": 0.0,
+ "over_end": 0.0,
+ "over_slope_ratio": 0.0,
+ "over_end_ratio": 0.0,
+ "roof_wall_ratio": null,
+ "box": {
+  "x": [
+   -0.9834463284417938,
+   0.9901299267665067
+  ],
+  "y": [
+   -1.4835996078788276,
+   1.502627033230914
+  ],
+  "z": [
+   0.0,
+   2.066731301908471
+  ]
+ },
+ "normal_issues": [],
+ "normal_issue_count": 0
+}
+--- канон ---
+OK   полигонаж 1106 в бюджете класса ruin 300..1500
+OK   высота постройки 2.07 (канон 1.55..2.35)
+OK   высота стен 1.07 (канон 0.45..1.25)
+OK   габарит 1.97 x 2.99 в пятне 2x3 (запас 0.03)
+OK   деталей мельче 0.02 — 0
+ИТОГ: ПРИНЯТО

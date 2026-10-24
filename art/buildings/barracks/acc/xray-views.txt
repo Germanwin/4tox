@@ -1,0 +1,20 @@
+=== вариант a: изнанки по видам ===
+  gable_-1           19 px  45/-25
+  win_s0_sill         8 px  45/-25
+  win_f0_mh           7 px  45/-25
+  win_f2_sill         7 px  45/-25
+  win_f1_sill         6 px  45/-25
+  win_f0_sill         4 px  45/-25
+  win_s0_mh           4 px  45/-25
+  win_f0_mv           3 px  45/-25
+  win_f2_mv           2 px  45/-25
+  win_s0_mv           2 px  45/-25
+  сумма по канонным видам (4 поворота + низкий 45/8): 0 px
+=== вариант b: изнанки по видам ===
+  gable_-1           19 px  45/-25
+  win_s0_sill         8 px  45/-25
+  win_f1_sill         6 px  45/-25
+  win_s0_mh           4 px  45/-25
+  win_s0_mv           2 px  45/-25
+  grind_axle          1 px  45/-25
+  сумма по канонным видам (4 поворота + низкий 45/8): 0 px

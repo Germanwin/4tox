@@ -1,0 +1,20 @@
+{
+ "scene": "barracks",
+ "prefix": "br_",
+ "variants": [
+  "a",
+  "b"
+ ],
+ "rotations": [],
+ "ppu": 96.0,
+ "res": [
+  512,
+  640
+ ],
+ "samples": 64,
+ "export": true,
+ "save_blend": true,
+ "viewport": true,
+ "tag": "br",
+ "closeups": false
+}

@@ -1,0 +1,140 @@
+{
+ "verdict": "PASS",
+ "parts": 575,
+ "tris": 1124,
+ "materials": [
+  "dark",
+  "iron",
+  "moss",
+  "plank",
+  "stone",
+  "stone2",
+  "thatch",
+  "thatch2",
+  "timber",
+  "wall"
+ ],
+ "bbox": [
+  [
+   -2.111905813217163,
+   -1.929201602935791,
+   -0.2647908926010132
+  ],
+  [
+   2.1392786502838135,
+   1.649768590927124,
+   2.937725067138672
+  ]
+ ],
+ "spec": {
+  "class": "building",
+  "ground_z": 0.0,
+  "ground_tol": 0.02,
+  "attach_tol": 0.04251,
+  "floating_tol": 0.10628,
+  "glue_tol": 0.01,
+  "corridor": 0.12,
+  "plinth_overhang": null,
+  "wall_band": [
+   0.2,
+   0.45
+  ],
+  "cells": {
+   "count": [
+    4,
+    3
+   ],
+   "size": 1.3043,
+   "margin": 0.12
+  },
+  "palette_tol": 26,
+  "palette_space": "raw",
+  "door_re": "(door|gate|win|окн|двер|ворот|ставн|калитк)",
+  "wall_re": "(wall|стен|сруб|log|frame|каркас|обмазк|daub|timber)",
+  "ignore_re": "^(light|camera|sun|key|fill|rim|ground_plane)",
+  "max_coplanar_pairs": 0,
+  "_": "СПЕК ЭТАЛОНА. Тот же гейт и те же пороги, что у дома (spec.json): эталон обязан проходить приёмку, иначе виноват гейт, а не эталон.",
+  "_model": "ратуша: art/buildings/townhall/out/townhall_c.glb — та же постройка, что лежит в атласе игры (mapgen2/assets/townhall). Заказчик назвал её идеальной; она же образец краски и школы для стартового дома.",
+  "_cells_note": "пятно ратуши 4 x 3 клетки, крупность mul = siteMul(4) = fitMul(4)*0.92 = 0.7667 (атлас: mapgen2/assets/townhall/atlas.json). В единицах модели пятно = клетки/mul: size = 1/0.7667 = 1.3043.",
+  "_expected": "GATE: PASS — провалов 0. Допустимые WARN эталона: выход цоколя без порога (числа), вывернутые замкнутые колокола, смещение основания от середины пятна (у ратуши двор с одной стороны; игра центрует спрайт по наземному контуру, buildings.js::anchorShift)."
+ },
+ "rows": [
+  {
+   "level": "INFO",
+   "check": "C1_INVENTORY",
+   "text": "деталей 575, трис 1124, материалов 10, габарит 4.251 x 3.579 x 3.203, земля z=-0.265"
+  },
+  {
+   "level": "INFO",
+   "check": "C1_INVENTORY",
+   "text": "порог примыкания 0.0425, порог «висит» 0.1063, земля 0.000, коридор проёма 0.120"
+  },
+  {
+   "level": "INFO",
+   "check": "C3_GROUND",
+   "text": "на земле 244 деталей из 575"
+  },
+  {
+   "level": "PASS",
+   "check": "C2_PRIMITIVES",
+   "text": "остатков примитивов и дефолтных материалов нет"
+  },
+  {
+   "level": "INFO",
+   "check": "C12_GROUPS",
+   "text": "тел в модели: 1; главное — 575 деталей; отдельно: нет"
+  },
+  {
+   "level": "PASS",
+   "check": "C4_HANGING",
+   "text": "все 575 деталей на земле или примкнуты к опоре (зазор <= 0.043)"
+  },
+  {
+   "level": "WARN",
+   "check": "C5_PLINTH",
+   "text": "наземные детали (178, по именам) выходят за стены (порог не задан): -X 0.078, +X 0.192, -Y 0.481, +Y 0.201\n      виновники: plinth#1 (+0.195), plinth#2 (+0.190), plinth#4 (+0.195), plinth#5 (+0.152), plinth#6 (+0.179), plinth#7 (+0.179), plinth#8 (+0.171), plinth#11 (+0.179), plinth#12 (+0.167), plinth#14 (+0.191) | порог не задан в spec: смотреть глазами",
+   "worst": 0.48088347911834717,
+   "over": {
+    "-X": 0.0782550573348999,
+    "+X": 0.19171035289764404,
+    "-Y": 0.48088347911834717,
+    "+Y": 0.200600266456604
+   }
+  },
+  {
+   "level": "INFO",
+   "check": "C7_OPENINGS",
+   "text": "проёмы канона на месте: door_arch#0, door_arch#1, door_arch#2, door_arch#3, door_arch#4, door_arch#5"
+  },
+  {
+   "level": "PASS",
+   "check": "C7_OPENINGS",
+   "text": "у каждого полотна (door_leaf#1, door_leaf#2, door_leaf#4, door_leaf#5, door_leaf#7, door_leaf#8) есть проём и примыкание к стене"
+  },
+  {
+   "level": "PASS",
+   "check": "C8_COPLANAR",
+   "text": "совпадающих плоскостей нет"
+  },
+  {
+   "level": "PASS",
+   "check": "C9_MESH",
+   "text": "нулевых граней и висячих вершин нет"
+  },
+  {
+   "level": "WARN",
+   "check": "C9_MESH",
+   "text": "вывернутые замкнутые детали (нормали внутрь): belfry_bell#2, belfry_bell#4, belfry_bell#9, belfry_bell#10, belfry_bell#11, belfry_bell#12, belfry_bell#14, belfry_bell#15"
+  },
+  {
+   "level": "PASS",
+   "check": "C10_PALETTE",
+   "text": "все 10 материалов в палитре канона (Δ <= 26, пространство raw)"
+  },
+  {
+   "level": "WARN",
+   "check": "C11_FOOTPRINT",
+   "text": "основание стоит не по середине пятна: смещение 0.107"
+  }
+ ]
+}

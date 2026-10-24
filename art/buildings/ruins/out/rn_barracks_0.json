@@ -1,0 +1,16 @@
+{
+ "raw": "rn_barracks_0_raw.png",
+ "anchor": [
+  465,
+  550
+ ],
+ "size": [
+  949,
+  892
+ ],
+ "ppu": 96.0,
+ "mul": 0.7667,
+ "outline": true,
+ "shadow": false,
+ "target_frame": "br_a_0"
+}

@@ -1,0 +1,137 @@
+{
+ "verdict": "PASS",
+ "parts": 56,
+ "tris": 800,
+ "materials": [
+  "rn_ash",
+  "rn_beam",
+  "rn_char",
+  "rn_dark",
+  "rn_iron",
+  "rn_plank",
+  "rn_stone",
+  "rn_thatch2",
+  "rn_timber"
+ ],
+ "bbox": [
+  [
+   -1.4441454410552979,
+   -1.4473165273666382,
+   0.0
+  ],
+  [
+   1.4215463399887085,
+   1.2672486305236816,
+   1.6267962455749512
+  ]
+ ],
+ "spec": {
+  "class": "yard",
+  "ground_z": 0.0,
+  "ground_tol": 0.02,
+  "attach_tol": 0.02866,
+  "floating_tol": 0.07164,
+  "glue_tol": 0.01,
+  "corridor": 0.12,
+  "plinth_overhang": null,
+  "wall_band": [
+   0.2,
+   0.45
+  ],
+  "cells": {
+   "count": [
+    3,
+    3
+   ],
+   "size": 1.0,
+   "margin": 0.0
+  },
+  "palette_tol": 26,
+  "palette_space": "raw",
+  "door_re": "(door|gate|win|окн|двер|ворот|ставн)",
+  "wall_re": "(wall|стен|gable|щипец|timber|каркас)",
+  "ignore_re": "^(rn_cam|rn_sun|light|camera|sun|key|fill|rim|ground_plane)",
+  "max_coplanar_pairs": 0,
+  "_": "СПЕК РУИНЫ «lumbercamp» для gate.py (3d-model-acceptance). Пороги из проекта: пятно типа, палитра руин, класс. Провал не перетолковывается — правится модель или пишется в отчёт.",
+  "_model": "лагерь лесоруба: навес упал, столбы и двор сломаны",
+  "_palette_note": "12 красок ратуши дословно + char/ash (ruin_palette.py): единственные новые цвета, оба тёмные.",
+  "_budget_tris": [
+   300,
+   1500
+  ]
+ },
+ "rows": [
+  {
+   "level": "INFO",
+   "check": "C1_INVENTORY",
+   "text": "деталей 56, трис 800, материалов 9, габарит 2.866 x 2.715 x 1.627, земля z=0.000"
+  },
+  {
+   "level": "INFO",
+   "check": "C1_INVENTORY",
+   "text": "порог примыкания 0.0287, порог «висит» 0.0716, земля 0.000, коридор проёма 0.120"
+  },
+  {
+   "level": "INFO",
+   "check": "C3_GROUND",
+   "text": "на земле 35 деталей из 56"
+  },
+  {
+   "level": "PASS",
+   "check": "C2_PRIMITIVES",
+   "text": "остатков примитивов и дефолтных материалов нет"
+  },
+  {
+   "level": "INFO",
+   "check": "C12_GROUPS",
+   "text": "тел в модели: 13; главное — 37 деталей; отдельно: 4 шт (z от 0.00): rn_barrel_0, rn_barrel_1, rn_barrel_2, rn_barrel_water; 4 шт (z от 0.00): rn_roof_board_fallen_2, rn_rubble_yard_0, rn_rubble_yard_1, rn_rubble_yard_2; 2 шт (z от 0.00): rn_fence_rail_0, rn_picket_0; 1 шт (z от 0.00): rn_stump_0; 1 шт (z от 0.00): rn_stump_1; 1 шт (z от 0.00): rn_picket_1; 1 шт (z от 0.00): rn_picket_2; 1 шт (z от 0.00): rn_picket_3"
+  },
+  {
+   "level": "WARN",
+   "check": "C4_HANGING",
+   "text": "детали примкнуты с зазором 0.029..0.072 (не висят, но и не касаются): 1\n      rn_fence_rail_1 (зазор 0.029, z 0.17..0.24)"
+  },
+  {
+   "level": "WARN",
+   "check": "C5_PLINTH",
+   "text": "наземные детали (7, имён нет, эвристика) выходят за стены (порог не задан): -X 0.062, +X -0.432, -Y -0.636, +Y 0.000 | порог не задан в spec: смотреть глазами",
+   "worst": 0.06171894073486328,
+   "over": {
+    "-X": 0.06171894073486328,
+    "+X": -0.4324309825897217,
+    "-Y": -0.6361903548240662,
+    "+Y": 0.0
+   }
+  },
+  {
+   "level": "WARN",
+   "check": "C7_OPENINGS",
+   "text": "полотна двери/окна не нашлись — проверка проёма не сделана"
+  },
+  {
+   "level": "PASS",
+   "check": "C8_COPLANAR",
+   "text": "совпадающих плоскостей нет"
+  },
+  {
+   "level": "PASS",
+   "check": "C9_MESH",
+   "text": "нулевых граней и висячих вершин нет"
+  },
+  {
+   "level": "WARN",
+   "check": "C9_MESH",
+   "text": "вывернутые замкнутые детали (нормали внутрь): rn_char_pile_1_2, rn_rubble_yard_0"
+  },
+  {
+   "level": "PASS",
+   "check": "C10_PALETTE",
+   "text": "все 9 материалов в палитре канона (Δ <= 26, пространство raw)"
+  },
+  {
+   "level": "WARN",
+   "check": "C11_FOOTPRINT",
+   "text": "основание стоит не по середине пятна: смещение 0.090"
+  }
+ ]
+}

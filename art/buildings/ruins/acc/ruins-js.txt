@@ -1,0 +1,20 @@
+  ok   атлас завалов объявлен
+  ok   пять типов: townhall, house, lumbercamp, barracks, warcamp
+  ok   townhall: набор собран
+  ok   townhall: 4 поворота с точкой опоры и ground
+  ok   townhall: ppu/mul совпали
+  ok   house: набор собран
+  ok   house: 4 поворота с точкой опоры и ground
+  ok   house: ppu/mul совпали
+  ok   lumbercamp: набор собран
+  ok   lumbercamp: 4 поворота с точкой опоры и ground
+  ok   lumbercamp: ppu/mul совпали
+  ok   barracks: набор собран
+  ok   barracks: 4 поворота с точкой опоры и ground
+  ok   barracks: ppu/mul совпали
+  ok   warcamp: набор собран
+  ok   warcamp: 4 поворота с точкой опоры и ground
+  ok   warcamp: ppu/mul совпали
+  ok   20 кадров собраны без потерь
+
+ЗАВАЛЫ ПРИНЯТЫ

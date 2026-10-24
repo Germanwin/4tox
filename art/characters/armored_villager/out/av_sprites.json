@@ -1,0 +1,166 @@
+{
+ "tag": "av",
+ "ppu": 96.0,
+ "ortho": 2.0,
+ "res": [
+  144,
+  192
+ ],
+ "az_deg": 45.0,
+ "el_deg": 35.264389682754654,
+ "cell": [
+  112,
+  132
+ ],
+ "anims": {
+  "idle": {
+   "frames": 6,
+   "fps": 8.0,
+   "loop": true
+  },
+  "walk": {
+   "frames": 8,
+   "fps": 12.0,
+   "loop": true
+  },
+  "work": {
+   "frames": 8,
+   "fps": 12.0,
+   "loop": false
+  },
+  "carry": {
+   "frames": 8,
+   "fps": 12.0,
+   "loop": true
+  },
+  "walk_axe": {
+   "frames": 8,
+   "fps": 12.0,
+   "loop": true
+  },
+  "carry_put": {
+   "frames": 4,
+   "fps": 12.0,
+   "loop": false
+  }
+ },
+ "shadow": {
+  "a": 20.0,
+  "b": 4.5,
+  "angle_deg": 0.0,
+  "alpha": 0.55,
+  "blur": 1.6,
+  "shift": [
+   2.0,
+   7.5
+  ]
+ },
+ "shadow_by_anim": {
+  "work": {
+   "a": 24.0,
+   "b": 4.5,
+   "angle_deg": 0.0,
+   "alpha": 0.55,
+   "blur": 1.6,
+   "shift": [
+    2.5,
+    7.5
+   ]
+  },
+  "carry": {
+   "a": 20.0,
+   "b": 5.0,
+   "angle_deg": 0.0,
+   "alpha": 0.55,
+   "blur": 1.6,
+   "shift": [
+    2.0,
+    7.5
+   ]
+  },
+  "carry_put": {
+   "a": 20.0,
+   "b": 5.0,
+   "angle_deg": 0.0,
+   "alpha": 0.55,
+   "blur": 1.6,
+   "shift": [
+    2.0,
+    7.5
+   ]
+  },
+  "walk_axe": {
+   "a": 26.0,
+   "b": 5.0,
+   "angle_deg": 0.0,
+   "alpha": 0.55,
+   "blur": 1.6,
+   "shift": [
+    2.5,
+    7.5
+   ]
+  },
+  "walk": {
+   "a": 20.0,
+   "b": 5.0,
+   "angle_deg": 0.0,
+   "alpha": 0.55,
+   "blur": 1.6,
+   "shift": [
+    2.0,
+    7.5
+   ]
+  }
+ },
+ "outline": {
+  "rgb": [
+   14,
+   18,
+   14
+  ],
+  "dilate": 1
+ },
+ "note": "житель (мужчина): 1 юнит = 1 клетка карты; клетка и якорь — как у героя (112x132, опора 56,106); anchorX/anchorY — пиксель клетки, куда проецируется (0,0,0), то есть земля между ступнями",
+ "frames": {
+  "av_idle_0_0": {
+   "file": "av_idle_0_0.png",
+   "w": 112,
+   "h": 132,
+   "anchorX": 56.0,
+   "anchorY": 106.0,
+   "anim": "idle",
+   "frame": 0,
+   "rotation": 0
+  },
+  "av_idle_0_90": {
+   "file": "av_idle_0_90.png",
+   "w": 112,
+   "h": 132,
+   "anchorX": 56.0,
+   "anchorY": 106.0,
+   "anim": "idle",
+   "frame": 0,
+   "rotation": 90
+  },
+  "av_idle_0_180": {
+   "file": "av_idle_0_180.png",
+   "w": 112,
+   "h": 132,
+   "anchorX": 56.0,
+   "anchorY": 106.0,
+   "anim": "idle",
+   "frame": 0,
+   "rotation": 180
+  },
+  "av_idle_0_270": {
+   "file": "av_idle_0_270.png",
+   "w": 112,
+   "h": 132,
+   "anchorX": 56.0,
+   "anchorY": 106.0,
+   "anim": "idle",
+   "frame": 0,
+   "rotation": 270
+  }
+ }
+}

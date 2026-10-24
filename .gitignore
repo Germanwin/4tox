@@ -17,3 +17,10 @@ __pycache__/
 # Кадры браузерных приёмок игры: 57 МБ, перерисовываются прогоном
 # node mapgen2/tools/place.js и соседних скриптов
 mapgen2/tools/out/
+
+# То же для приёмок игры: node game/tools/menu.js
+game/tools/out/
+
+# То же для приёмки стенда моделей: node art/tools/model-stand/tools/shot.js
+# (отобранные кадры для README лежат рядом — art/tools/model-stand/show/)
+art/tools/model-stand/tools/out/

@@ -1,0 +1,16 @@
+{
+ "raw": "rn_house_90_raw.png",
+ "anchor": [
+  364,
+  491
+ ],
+ "size": [
+  726,
+  789
+ ],
+ "ppu": 96.0,
+ "mul": 0.7156,
+ "outline": true,
+ "shadow": false,
+ "target_frame": "sh_a_90"
+}

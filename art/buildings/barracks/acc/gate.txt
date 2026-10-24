@@ -1,0 +1,15 @@
+[ info ] C1_INVENTORY   деталей 164, трис 1434, материалов 12, габарит 4.011 x 2.936 x 2.822, земля z=0.000
+[ info ] C1_INVENTORY   порог примыкания 0.0401, порог «висит» 0.1003, земля 0.000, коридор проёма 0.120
+[ info ] C3_GROUND      на земле 24 деталей из 164
+[  ok  ] C2_PRIMITIVES  остатков примитивов и дефолтных материалов нет
+[ info ] C12_GROUPS     тел в модели: 5; главное — 136 деталей; отдельно: 10 шт (z от 0.01): br_rack_post0, br_rack_post1, br_rack_rail_hi, br_rack_rail_lo, br_shield1; 8 шт (z от 0.00): br_arrow0, br_arrow1, br_arrow2, br_target_butt, br_target_leg0; 6 шт (z от 0.01): br_banner_base, br_banner_cloth0, br_banner_cloth1, br_banner_cross, br_banner_mark; 4 шт (z от 0.01): br_shield0, br_shield_boss0, br_spear_head0, br_spear_shaft0
+[  ok  ] C4_HANGING     все 164 деталей на земле или примкнуты к опоре (зазор <= 0.040)
+[ WARN ] C5_PLINTH      наземные детали (13, по именам) выходят за стены (порог не задан): -X 0.194, +X 0.209, -Y 0.186, +Y 0.181
+      виновники: br_plinth_f0 (+0.185), br_plinth_f1 (+0.181), br_plinth_f2 (+0.168), br_plinth_f3 (+0.182), br_plinth_b0 (+0.189), br_plinth_b1 (+0.158), br_plinth_b2 (+0.166), br_plinth_b3 (+0.187), br_plinth_l0 (+0.194), br_plinth_l1 (+0.190) | порог не задан в spec: смотреть глазами
+[  ok  ] C7_OPENINGS    у каждого полотна (br_win_f0_fr1, br_win_f0_fr-1, br_win_f1_fr1, br_win_f1_fr-1, br_win_f2_fr1, br_win_f2_fr-1) есть проём и примыкание к стене
+[  ok  ] C8_COPLANAR    совпадающих плоскостей нет
+[  ok  ] C9_MESH        нулевых граней и висячих вершин нет
+[  ok  ] C10_PALETTE    все 12 материалов в палитре канона (Δ <= 26, пространство raw)
+[  ok  ] C11_FOOTPRINT  основание 2.18 x 3.08, зазор до кромок 0.409 (>= 0.100), по середине
+
+GATE: PASS — проверок 12, провалов 0, предупреждений 1

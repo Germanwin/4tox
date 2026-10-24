@@ -1,0 +1,16 @@
+{
+ "raw": "rn_house_0@4x_raw.png",
+ "anchor": [
+  1464,
+  1944
+ ],
+ "size": [
+  2932,
+  3124
+ ],
+ "ppu": 384.0,
+ "mul": 0.7156,
+ "outline": true,
+ "shadow": false,
+ "target_frame": "sh_a_0"
+}

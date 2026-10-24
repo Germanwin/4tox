@@ -1,0 +1,49 @@
+{
+ "ppu": 96.0,
+ "res": [
+  512,
+  640
+ ],
+ "scene": "starter_house",
+ "prefix": "sh_",
+ "el_deg": 35.264389682754654,
+ "az_deg": 45.0,
+ "sun": [
+  -0.36108487844467163,
+  0.3009040653705597,
+  0.8826518654823303
+ ],
+ "palette": {
+  "wall": "#93714A",
+  "timber": "#5E3D1E",
+  "beam": "#8A6238",
+  "plank": "#A07C4C",
+  "thatch": "#A8823C",
+  "thatch2": "#8E6C2C",
+  "stone": "#8E9498",
+  "stone2": "#6E747A",
+  "moss": "#466B34",
+  "dark": "#1A140E",
+  "dirt": "#7A6244",
+  "iron": "#3A3A3E"
+ },
+ "frames": {
+  "shcu_x_0": {
+   "variant": null,
+   "rotation": 0,
+   "raw": "/Users/hermmoment/coding/4tox/art/buildings/starter_house/renders/shcu_x_0_raw.png",
+   "tris": 1432,
+   "verts": 1209,
+   "parts": 153,
+   "size": [
+    2.054,
+    3.035,
+    2.833
+   ],
+   "footprint": [
+    2.054,
+    3.035
+   ]
+  }
+ }
+}

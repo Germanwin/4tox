@@ -1,0 +1,24 @@
+{
+  "_": "СПЕК ЭТАЛОНА. Тот же гейт и те же пороги, что у дома (spec.json): эталон обязан проходить приёмку, иначе виноват гейт, а не эталон.",
+  "_model": "ратуша: art/buildings/townhall/out/townhall_c.glb — та же постройка, что лежит в атласе игры (mapgen2/assets/townhall). Заказчик назвал её идеальной; она же образец краски и школы для стартового дома.",
+
+  "class": "building",
+  "ground_z": 0.0,
+  "ground_tol": 0.02,
+
+  "_cells_note": "пятно ратуши 4 x 3 клетки, крупность mul = siteMul(4) = fitMul(4)*0.92 = 0.7667 (атлас: mapgen2/assets/townhall/atlas.json). В единицах модели пятно = клетки/mul: size = 1/0.7667 = 1.3043.",
+  "cells": {"count": [4, 3], "size": 1.3043, "margin": 0.12},
+
+  "palette": ["#93714A", "#5E3D1E", "#8A6238", "#A07C4C", "#A8823C", "#8E6C2C",
+              "#8E9498", "#6E747A", "#466B34", "#1A140E", "#7A6244", "#3A3A3E"],
+  "palette_space": "raw",
+  "palette_tol": 26,
+  "plinth_overhang": null,
+  "max_coplanar_pairs": 0,
+
+  "wall_re": "(wall|стен|сруб|log|frame|каркас|обмазк|daub|timber)",
+  "door_re": "(door|gate|win|окн|двер|ворот|ставн|калитк)",
+  "ignore_re": "^(light|camera|sun|key|fill|rim|ground_plane)",
+
+  "_expected": "GATE: PASS — провалов 0. Допустимые WARN эталона: выход цоколя без порога (числа), вывернутые замкнутые колокола, смещение основания от середины пятна (у ратуши двор с одной стороны; игра центрует спрайт по наземному контуру, buildings.js::anchorShift)."
+}

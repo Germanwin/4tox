@@ -98,6 +98,9 @@ def main():
     ap.add_argument('--variants', default='a,b,c')
     ap.add_argument('--rotations', default='0,90,180,270')
     ap.add_argument('--no-outline', action='store_true')
+    ap.add_argument('--no-shadow', action='store_true',
+                    help='без мягкого пятна под силуэтом: тени у зданий этой '
+                         'игры нет (правило заказчика 2026-10-17)')
     args = ap.parse_args()
 
     variants = args.variants.split(',')
@@ -117,7 +120,7 @@ def main():
                 print('НЕТ РЕНДЕРА: %s' % raw)
                 continue
             dst = os.path.join(OUT, 'th_%s_%d.png' % (v, rot))
-            img, ax, ay = compose(raw, geom.shadows_for(v),
+            img, ax, ay = compose(raw, [] if args.no_shadow else geom.shadows_for(v),
                                   outline=not args.no_outline, save_path=dst)
             key = 'townhall_%s_%d' % (v, rot)
             sprites[key] = dict(file=os.path.basename(dst), w=img.width, h=img.height,

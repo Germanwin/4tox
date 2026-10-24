@@ -40,8 +40,10 @@ const V = globalThis.Villagers;
 const DT = 1 / 60;
 
 /* Параметры панели по умолчанию (index.html) и ратуша игрока (js/app.js:
-   HOME). Мир обязан быть тем же, что в игре, иначе числа отсюда не про игру. */
-const HOME = { variant: 'c', rot: 90 };
+   HOME). Мир обязан быть тем же, что в игре, иначе числа отсюда не про игру.
+   Поворот берём у движка построек: лицом вправо-вниз — то же правило, по
+   которому стоит вся деревня (js/buildings.js, FACE_ROT). */
+const HOME = { variant: 'c', rot: B.FACE_ROT };
 const PARAMS = { size: 64, land: 0.72, coast: 0.5, forest: 0.5, rock: 0.5, trees: 0.45, rocks: 0.6 };
 
 let fails = 0;
@@ -178,12 +180,29 @@ console.log('сид %s: мир %d×%d, деревьев %d, камней %d, р�
   seed, world.width, world.height, trees, stones,
   home ? home.x + ',' + home.y : 'нет');
 
-/* Дерево по умолчанию идётся КОДОМ ИГРЫ (V.create планирует сам), камень —
-   рецептом выше: это и показывает, что способ переносится на новый вид. */
+/* Дерево по умолчанию идётся КОДОМ ИГРЫ, камень — рецептом выше: это и
+   показывает, что способ переносится на новый вид.
+   
+   Дерево ищет ПЛАНИРОВЩИК (V.plan), а не рождение жителя: житель без работы
+   дерево не ищет вовсе — он гуляет вокруг дома (js/villager.js), а за дерево
+   берётся наёмный работник (задача 3). Планировщик ровно тот же, что звал
+   create до 2026-10-16, и он же ставит состояние toward. */
 let target, spot, points, source;
+/* Клетка, ОТ КОТОРОЙ считается кратчайший клеточный путь.
+
+   Это не та клетка, которую тест назвал жителю, а та, где он оказался: если
+   названная занята деревом или камнем, `create` сам выводит человека на
+   свободную (`spawnSpot`). Путь от занятой клетки поиск не находит вовсе —
+   `findPath` возвращает null, — и раньше из этого выходил кратчайший 0.00, а
+   проверка «путь не длиннее кратчайшего» валилась на ровном месте (сид
+   `другой-сид-777`: маршрут 5.41 против «кратчайшего» 0.00). От нуля сравнивать
+   не с чем: нет клеточного пути — нет и оценки, и сказать надо именно это. */
+let startCell = { cx: Math.floor(from.x), cy: Math.floor(from.y) };
 if (kind === 'tree') {
   const v = V.create(world, { index: 0, x: from.x, y: from.y, buildings, avoid: [] });
-  target = v.tree; spot = v.goal; points = v.path; source = 'код игры (Villagers.create)';
+  V.plan(v, world, solid);
+  target = v.tree; spot = v.goal; points = v.path; source = 'код игры (Villagers.plan)';
+  startCell = { cx: Math.floor(v.x), cy: Math.floor(v.y) };
 } else {
   const r = routeToNearest(world, solid, from, kind, V.TREE_TRIES);
   if (r) {
@@ -202,12 +221,10 @@ if (!target || !points) {
 }
 
 const air = Math.hypot(target.x - from.x, target.y - from.y);
-const cells = kind === 'tree'
-  ? V.findPath(world, solid, Math.floor(from.x), Math.floor(from.y),
-      Math.floor(spot.x), Math.floor(spot.y))
-  : null;
-const shortest = octile(world, V.findPath(world, solid, Math.floor(from.x), Math.floor(from.y),
-  Math.floor(spot.x), Math.floor(spot.y)) || []);
+// Путь от занятой клетки не находится — тогда кратчайшего нет, а не ноль.
+const cellPath = V.findPath(world, solid, startCell.cx, startCell.cy,
+  Math.floor(spot.x), Math.floor(spot.y));
+const shortest = cellPath ? octile(world, cellPath) : null;
 const len = pathLength(points);
 const direct = V.lineClear(world, solid, from.x, from.y, spot.x, spot.y);
 const route = auditRoute(world, solid, points);
@@ -216,18 +233,23 @@ console.log('цель (%s): %s %s, клетка %d,%d; по воздуху от 
   source, kind, target.x.toFixed(2) + ',' + target.y.toFixed(2),
   Math.floor(target.x), Math.floor(target.y),
   from.x.toFixed(1) + ',' + from.y.toFixed(1), air.toFixed(2));
+if (kind === 'tree' && (startCell.cx !== Math.floor(from.x) || startCell.cy !== Math.floor(from.y))) {
+  console.log('  житель встал не туда, куда его позвали: %d,%d вместо %d,%d (клетка занята)',
+    startCell.cx, startCell.cy, Math.floor(from.x), Math.floor(from.y));
+}
 console.log('клетка подхода: %d,%d%s', Math.floor(spot.x), Math.floor(spot.y),
   V.walkable(world, solid, Math.floor(spot.x), Math.floor(spot.y)) ? '' : ' — ЗАНЯТА');
 console.log('маршрут: %d прямых, %s клетки; кратчайший клеточный %s',
-  points.length - 1, len.toFixed(2), shortest.toFixed(2));
+  points.length - 1, len.toFixed(2), shortest === null ? 'нет пути' : shortest.toFixed(2));
 console.log('  точки: %s', points.map(p => '(' + p.x.toFixed(1) + ',' + p.y.toFixed(1) + ')').join(' -> '));
 console.log('  прямая от старта к цели: %s', direct ? 'свободна' : 'занята (шёл в обход)');
 
 check('маршрут состоит из чистых прямых', route.bad === 0, route.bad + ' прямых задевают занятое');
 check('ни одного шага в воду', route.water === 0, route.water + ' проб в воде');
 check('ни одного шага в дерево, камень или дом', route.blocked === 0, route.blocked + ' проб в занятом');
-check('путь не длиннее кратчайшего клеточного', len <= shortest + 0.05,
-  `${len.toFixed(2)} при кратчайшем ${shortest.toFixed(2)}`);
+check('путь не длиннее кратчайшего клеточного', shortest !== null && len <= shortest + 0.05,
+  shortest === null ? 'клеточного пути нет — сравнивать не с чем'
+    : `${len.toFixed(2)} при кратчайшем ${shortest.toFixed(2)}`);
 check('при свободной прямой маршрут и есть прямая', !direct || points.length === 2,
   direct ? `${points.length - 1} прямых при свободной прямой` : 'прямая занята — обход законен');
 
@@ -246,6 +268,7 @@ const SET = { anims: { idle: { frames: 6, fps: 8, loop: true },
 
 if (kind === 'tree') {
   const v = V.create(world, { index: 0, x: from.x, y: from.y, buildings, avoid: [] });
+  V.plan(v, world, solid);            // работа: цель и маршрут (см. выше)
   let steps = 0, water = 0, blocked = 0;
   while (steps < 60 * 600 && v.state === 'toward') {
     V.update(v, world, SET, DT, { buildings });

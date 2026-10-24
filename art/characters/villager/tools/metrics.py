@@ -254,7 +254,16 @@ def projected_px(parts, ppu=96.0):
     return out
 
 
-def gate(rep, box, small):
+def gate(rep, box, small, posed=False):
+    """Строки приёмки фигуры. `posed=True` — кадр анимации, а не поза покоя.
+
+    В позе часть мерок измеряет ПОЗУ, а не фигуру: «кисть на 40% роста» — это
+    про руки, опущенные вдоль тела, а в кадре носки предплечья подняты
+    горизонтально, и та же мерка даёт 59%. Поэтому в позе она печатается как
+    ИЗВЕСТНОЕ ЧИСЛО и не валит приёмку, а пропорции фигуры проверяются покоем
+    (`tools/metrics.py --variant m` без --anim) — это отдельный, обязательный
+    прогон, а не отменённая проверка.
+    """
     g = []
     g.append((CANON['height'][0] <= rep['height'] <= CANON['height'][1],
               'рост %.3f (канон %.2f..%.2f: человек в мире 1.0, как герой)'
@@ -267,10 +276,13 @@ def gate(rep, box, small):
               'плечи %.0f%% роста (канон %.0f..%.0f%%)'
               % (rep['shoulder_share'] * 100, CANON['shoulder'][0] * 100,
                  CANON['shoulder'][1] * 100)))
-    g.append((CANON['fingertip'][0] <= rep['fingertip_share'] <= CANON['fingertip'][1],
-              'кисть на %.0f%% роста (канон %.0f..%.0f%%)'
+    fingertip_ok = CANON['fingertip'][0] <= rep['fingertip_share'] <= CANON['fingertip'][1]
+    g.append((fingertip_ok or posed,
+              'кисть на %.0f%% роста (канон %.0f..%.0f%%)%s'
               % (rep['fingertip_share'] * 100, CANON['fingertip'][0] * 100,
-                 CANON['fingertip'][1] * 100)))
+                 CANON['fingertip'][1] * 100,
+                 ' — В ПОЗЕ руки подняты, мерка показывает позу; фигуру '
+                 'проверяет покой (--variant m без --anim)' if posed else '')))
     g.append((abs(box['z'][0]) < 1e-6, 'низ фигуры на z = %.6f (опора в (0,0,0))'
               % box['z'][0]))
     cov = rep.get('cloth_cover')
@@ -278,9 +290,16 @@ def gate(rep, box, small):
         g.append((cov[0] > 0.004,
                   'штаны внутри рубахи: запас %+.4f на z=%.3f (r=%.3f); >0.004 = '
                   'не вылезают по бокам' % cov))
-    g.append((abs(rep['foot_offset']) <= CANON['foot_offset'],
-              'ступни под корпусом: смещение пятна %.3f (допуск %.2f)'
-              % (rep['foot_offset'], CANON['foot_offset'])))
+    # Смещение пятна — тоже мерка ПОКОЯ: в шаге ступни уходят вперёд-назад по
+    # фазе, и у уже принятой ходьбы (walk) та же мерка даёт -0.082 на нулевом
+    # кадре, у рубки -0.073. В позе печатается как известное число, валит —
+    # только в покое.
+    foot_ok = abs(rep['foot_offset']) <= CANON['foot_offset']
+    g.append((foot_ok or posed,
+              'ступни под корпусом: смещение пятна %.3f (допуск %.2f)%s'
+              % (rep['foot_offset'], CANON['foot_offset'],
+                 ' — В ПОЗЕ пятно уходит по фазе шага (у walk те же -0.082); '
+                 'баланс фигуры проверяет покой' if posed and not foot_ok else '')))
     g.append((CANON['tris'][0] <= rep['tris'] <= CANON['tris'][1],
               'полигонаж %d трис (бюджет hero %d..%d)'
               % (rep['tris'], *CANON['tris'])))
@@ -291,7 +310,7 @@ def gate(rep, box, small):
     return g
 
 
-def axe_grip(variant='m', frames=(0, 1, 2, 3, 4, 5, 6, 7)):
+def axe_grip(variant='m', frames=(0, 1, 2, 3, 4, 5, 6, 7), anim='work'):
     """Приёмка ТОПОРА В КУЛАКЕ: угол, кулак, хват. Считается по геометрии.
 
     Заказчик (2026-10-14): «на время рубки дерева у жителя должен появиться
@@ -309,15 +328,19 @@ def axe_grip(variant='m', frames=(0, 1, 2, 3, 4, 5, 6, 7)):
       * КЛЕТКА — верх кадра в ХУДШЕМ из восьми поворотов атласа: клетка 112x132
         даёт 106 px над опорой, и топор обязан в них уложиться.
 
+    `anim` добавлен, когда топор понесли в ходьбе (poses.walk_axe): та же рука,
+    тот же хват, но другой шаг, и приёмка обязана считать по ТОЙ ЖЕ анимации,
+    из которой собран кадр.
     Возвращает dict с худшими значениями по перечисленным кадрам.
     """
     import poses as PO
     worst = dict(angle=0.0, fist=0.0, grip=(9.9, -9.9), box=None)
     for fr in frames:
-        pose = PO.pose('work', fr, variant)
+        pose = PO.pose(anim, fr, variant)
         p = H.pose_of(variant=variant, **pose)
         Mk = H.skeleton(p)
-        parts = H.ground_lock(H.build(variant=variant, pose=pose, axe=True))
+        parts = H.ground_lock(H.build(variant=variant, pose=pose,
+                                      **PO.props(anim)))
         hand = Mk['hand_r']
         # кулак — середина кисти в системе кисти; правая сторона зеркалится
         fist = G.mat_apply(hand, (0.0, 0.0, H.AXE_FIST_Z))
@@ -384,10 +407,20 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--pose', default=None, help='JSON позы')
     ap.add_argument('--variant', default='m', help='m — мужчина, f — женщина')
+    ap.add_argument('--anim', default=None,
+                    help='приёмка фигуры в позе анимации (carry/walk_axe/work/...)')
+    ap.add_argument('--frame', type=int, default=0)
     ap.add_argument('--json')
     args = ap.parse_args()
     pose = json.loads(args.pose) if args.pose else None
-    parts = H.build(variant=args.variant, pose=pose)
+    props = {}
+    if args.anim:
+        import poses as PO
+        pose = PO.pose(args.anim, args.frame, args.variant)
+        props = PO.props(args.anim)
+        print('анимация %s, кадр %d, в руках: %s'
+              % (args.anim, args.frame, props or 'ничего'))
+    parts = H.ground_lock(H.build(variant=args.variant, pose=pose, **props))
     rep, box = report(parts)
     prof = H.pose_of(variant=args.variant)['PROF']
     hem = H.pose_of(variant=args.variant)['HEM']
@@ -397,8 +430,11 @@ def main():
     rep['normal_issue_count'] = len(bad)
     small = [d for d in projected_px(parts) if min(d['w'], d['h']) < 1.9]
     rep['too_small'] = small
-    # Топор: только у мужской фигуры и только в рубке (person.build(axe=True))
-    axe = axe_grip(args.variant) if args.variant == 'm' else None
+    # Топор: только у мужской фигуры и только в анимациях с топором
+    # (poses.PROPS: work и walk_axe)
+    axe = None
+    if args.variant == 'm' and (props.get('axe') or args.anim is None):
+        axe = axe_grip(args.variant, anim=args.anim or 'work')
     if axe:
         rep['axe'] = dict(angle_off=round(axe['angle'], 6),
                           fist_dist=round(axe['fist'], 6),
@@ -407,12 +443,24 @@ def main():
         with_axe = H.ground_lock(H.build(variant='m', pose=poses_work(4), axe=True))
         rep['axe']['tris'] = sum(sum(len(f) - 2 for f in p['faces']) for p in with_axe)
         rep['axe']['verts'] = sum(len(p['verts']) for p in with_axe)
+    logs = None
+    if props.get('logs'):
+        rows, worst = _logs_rows(args.anim, args.variant)
+        logs = worst
+        rep['logs'] = dict(logs=rows[0]['n_log'], ends=rows[0]['n_end'],
+                           body_gap=round(worst['body'], 4),
+                           arm_gap=round(worst['arm'][0], 4),
+                           leg_gap=round(worst['leg'], 4),
+                           box=[round(v, 1) for v in worst['box']],
+                           tris=rows[0]['tris'], verts=rows[0]['verts'])
     print(json.dumps(rep, ensure_ascii=False, indent=1))
     print('--- приёмка фигуры ---')
     ok_all = True
-    lines = list(gate(rep, box, small))
+    lines = list(gate(rep, box, small, posed=bool(args.anim)))
     if axe:
         lines += axe_gate(axe)
+    if logs:
+        lines += logs_gate(args.anim, args.variant)
     for ok, text in lines:
         ok_all = ok_all and ok
         print('%s %s' % ('OK  ' if ok else 'FAIL', text))
@@ -427,9 +475,49 @@ def main():
     return 0 if (ok_all and not bad) else 1
 
 
+def _logs_rows(anim, variant):
+    import logs_probe as LP
+    import poses as PO
+    return LP.probe(list(range(PO.ANIMS[anim][1])), anim, variant)
+
+
 def poses_work(frame):
     import poses as PO
     return PO.pose('work', frame)
+
+
+def logs_gate(anim='carry', variant='m', frames=None):
+    """Строки приёмки ОХАПКИ: сколько брёвен, влезает ли кадр, не в корпусе ли.
+
+    Числа считает tools/logs_probe.py — ОДИН прибор на замер и на приёмку:
+    второй такой же счётчик рядом разошёлся бы с первым при первой правке
+    геометрии. Здесь только вердикт и формулировка.
+    """
+    import poses as PO
+    import logs_probe as LP
+    n = PO.ANIMS[anim][1]
+    fr = list(frames) if frames else list(range(n))
+    rows, worst = LP.probe(fr, anim, variant)
+    b = worst['box']
+    top_px = -b[3]
+    lo, hi = H.LOG_LEN[0], max(H.LOG_LEN)
+    out = []
+    out.append((rows[0]['n_log'] == 4 and rows[0]['n_end'] == 8,
+                'охапка: брёвен %d (ровно столько игра и начисляет за ходку — '
+                'js/villager.js: LOGS_PER_TRIP), торцов %d; длины %.3f..%.3f юнита '
+                '(%.0f..%.0f px) — разные, охапка, а не штабель'
+                % (rows[0]['n_log'], rows[0]['n_end'], lo, hi, lo * 78.4, hi * 78.4)))
+    out.append((worst['body'] > 0.0 and worst['arm'][0] <= 0.004,
+                'охапка: лежит на предплечьях (зазор %.4f юнита, кадр %s) и снаружи '
+                'рубахи (зазор %.4f = %.1f px)'
+                % (worst['arm'][0], worst['arm'][1], worst['body'],
+                   worst['body'] * 96)))
+    out.append((worst['leg'] > 0.0 and top_px <= 104.0 and b[0] <= 55.0
+                and b[1] >= -55.0,
+                'охапка: кадр влезает в клетку 112x132 — верх %.1f px из 106, '
+                'вбок %+.1f..%+.1f, до подола %.1f px'
+                % (top_px, b[1], b[0], worst['leg'] * 96)))
+    return out
 
 
 def axe_gate(axe):
