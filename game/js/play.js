@@ -98,6 +98,19 @@
      движка (Buildings.YARD): тем же числом меряет и правка, и отрисовка. */
   var BUILD_SITE = { clearable: false, requireClear: true, yard: global.Buildings.YARD };
 
+  /* Копия правил места плюс ЖИВЫЕ ЖИТЕЛИ партии. Пятно, в котором стоит
+     человек, — не место для дома (правило 2026-10-26): проверка спрашивает
+     и локально, и у хоста, а список жителей у каждого свой и свежий. Общая
+     константа BUILD_SITE не мутируется: её читают и другие проверки. */
+  function buildSiteOpts() {
+    var o = {}, k;
+    for (k in BUILD_SITE) {
+      if (Object.prototype.hasOwnProperty.call(BUILD_SITE, k)) o[k] = BUILD_SITE[k];
+    }
+    o.villagers = state.villagers || [];
+    return o;
+  }
+
   var view = $('view');
   var renderer = null;
 
@@ -618,6 +631,7 @@
     state.seconds = 0;
     state.birth = global.Session.birthClock();
     w.time = 0;
+    resetEvents(w);
     state.netOff = [];
     state.netSeq = payload.lastSeq || 0;
     state.netAcc = 0;
@@ -755,6 +769,88 @@
     emit({ type: 'net-host-back' });
   }
 
+  /* ------------------------- события для игрока -------------------------- *
+   *
+   * Хост и одиночная игра получают события из движка (js/events.js): бой сам
+   * зовёт Events.attack по первому попаданию. Клиент мир не считает, поэтому
+   * выводит СВОИ события из дельт снимка: hp своего объекта уменьшился — это
+   * удар, постройка стала завалом — разрушение. Чужие события клиент не
+   * создаёт: журнал адресован владельцу, и «кто на кого напал» в него не
+   * попадает.
+   *
+   * Первый снимок после входа/возврата только запоминает hp: иначе игрок
+   * получил бы «на вас напали» из-за того, что раньше вообще не видел мира. */
+  function eventSeen() {
+    if (!state.evSeen) state.evSeen = { b: {}, v: {} };
+    return state.evSeen;
+  }
+
+  function resetEvents(world) {
+    state.evSeen = { b: {}, v: {} };
+    if (global.Events && world) global.Events.init(world);
+  }
+
+  function ownOf(o) { return o && o.owner !== undefined ? o.owner : 0; }
+
+  function detectOwnEvents() {
+    if (!global.Events || !state.world || state.netRole !== 'client') return 0;
+    var who = state.playerOwner, made = 0, i, o, key, prev;
+    var seen = eventSeen();
+    var nb = {}, nv = {};
+    for (i = 0; i < state.buildings.length; i++) {
+      o = state.buildings[i];
+      if (!o || ownOf(o) !== who) continue;
+      key = o.id;
+      nb[key] = { hp: o.hp, rubble: !!o.rubble };
+      prev = seen.b[key];
+      if (prev) {
+        if (typeof o.hp === 'number' && typeof prev.hp === 'number' && o.hp < prev.hp) {
+          var c = global.Buildings.center(o);
+          global.Events.attack(state.world, who, c.x, c.y, 'на вашу деревню напали');
+          made++;
+        }
+        if (o.rubble && !prev.rubble) {
+          global.Events.push(state.world, {
+            kind: 'destroy', owner: who, x: o.x, y: o.y,
+            text: 'постройка разрушена', count: 1
+          });
+          made++;
+        }
+      }
+    }
+    for (i = 0; i < state.villagers.length; i++) {
+      o = state.villagers[i];
+      if (!o || ownOf(o) !== who) continue;
+      key = o.id;
+      nv[key] = { hp: o.hp };
+      prev = seen.v[key];
+      if (prev && typeof o.hp === 'number' && typeof prev.hp === 'number' &&
+          o.hp < prev.hp && !o.dead) {
+        global.Events.attack(state.world, who, o.x, o.y, 'на жителя напали');
+        made++;
+      }
+    }
+    seen.b = nb; seen.v = nv;
+    return made;
+  }
+
+  /* Журнал игрока — для HUD. События чужих деревень сюда не попадают. */
+  function playerEvents(n) {
+    if (!global.Events || !state.world) return [];
+    return global.Events.recent(state.world, n || 20, state.playerOwner);
+  }
+
+  /* «К месту атаки»: камера на точку последнего события с координатами. */
+  function goToEvent(x, y) {
+    if (!renderer || typeof x !== 'number' || typeof y !== 'number') return false;
+    arrival = null;
+    renderer.cam.x = x;
+    renderer.cam.y = y;
+    if (renderer.cam.zoom < 32) renderer.cam.zoom = 42;
+    renderer.clampCamera();
+    return true;
+  }
+
   function applySnapshot(snap) {
     if (!snap || state.netRole !== 'client' || !state.world) return;
     /* Чужой остров (например, после возврата в лобби) не применяем: карта по
@@ -826,6 +922,8 @@
     /* Первый снапшот: клиент до сих пор висел на общем плане в центре, а
        его деревня — у края. Ставим камеру на свою ратушу один раз, без
        анимации: тик клиента мир не считает и полёт бы не доехал. */
+    detectOwnEvents();
+
     if (!state.netCentered && town && town.townhall) {
       var th = town.townhall;
       renderer.cam.zoom = Math.min(renderer.maxZoom, Math.max(renderer.minZoom * 2.5, 42));
@@ -936,7 +1034,7 @@
         x: cmd.x, y: cmd.y, owner: who, town: who,
         id: 'p' + cmd.from + ':b' + (state.nextBuildId++)
       });
-      var chk = B.canPlace(state.world, state.buildings, made, BUILD_SITE);
+      var chk = B.canPlace(state.world, state.buildings, made, buildSiteOpts());
       if (!chk.ok) { netReject(cmd, chk.reason); return; }
       town.logs -= price;
       B.settle(state.world, made, { clear: false });
@@ -958,6 +1056,12 @@
       if (cmd.action === 'rotate') {
         var can = B.canEdit(b, 'rotate');
         if (!can.ok) { netReject(cmd, can.reason); return; }
+        /* Поворот ОБЯЗАН пройти ту же проверку места, что и перенос:
+           прямоугольное пятно при повороте может налезть на соседний дом или
+           на жителя. Раньше здесь стоял setSpot без проверки — у клиента
+           поворот проходил, а у хоста создавал перекрытие. */
+        var cand = B.checkAt(state.world, state.buildings, b, { rot: b.rot + 90 });
+        if (!cand.ok) { netReject(cmd, cand.reason); return; }
         B.setSpot(state.world, b, { rot: b.rot + 90 });
         renderer.setBuildings(state.buildings);
         state.netForce = true;
@@ -1021,6 +1125,7 @@
       global.Combat.init(st.world, st.buildings, state.villagers);
     }
     state.birth = global.Session.birthClock();
+    resetEvents(st.world);
     state.felled = 0;
     state.logs = villageLogs();
     state.deliveries = villageDeliveries();
@@ -2112,7 +2217,7 @@
     var cand = global.Buildings.make({
       type: e.type, variant: e.variant, rot: e.rot, x: e.x, y: e.y
     });
-    var chk = global.Buildings.canPlace(state.world, state.buildings, cand, BUILD_SITE);
+    var chk = global.Buildings.canPlace(state.world, state.buildings, cand, buildSiteOpts());
     e.ok = !!chk.ok;
     e.reason = chk.ok ? '' : chk.reason;
     renderer.ghost = {
@@ -2230,7 +2335,7 @@
       owner: state.playerOwner, town: state.playerOwner,
       id: 'p' + state.playerOwner + ':b' + (state.nextBuildId++)
     });
-    var chk = B.canPlace(state.world, state.buildings, made, BUILD_SITE);
+    var chk = B.canPlace(state.world, state.buildings, made, buildSiteOpts());
     if (!chk.ok) {
       e.ok = false;
       e.reason = chk.reason;
@@ -2905,6 +3010,8 @@
     startNet: startNet,
     stopNet: stopNet,
     netWake: netWake,
+    playerEvents: playerEvents,
+    goToEvent: goToEvent,
     applyNetCommand: applyNetCommand,
     applySnapshot: applySnapshot,
     tick: tick,
