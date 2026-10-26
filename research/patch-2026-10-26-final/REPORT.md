@@ -111,6 +111,11 @@ pending, aborted=false).
 Caddy при выкладке **не перезапускался**: он обслуживает naive VPN; конфиг
 только проверен. Откат — распаковка бэкапа и рестарт `4tox.service`.
 
+Сырой вывод smoke — [prod-smoke-2026-10-26.json](prod-smoke-2026-10-26.json);
+кадр из браузера на публичном домене —
+[prod-after-deploy.png](prod-after-deploy.png) (1280×657, остров, HUD, 3 жителя
+в состоянии; снят после старта партии `prod-deploy-check-2`).
+
 ## 4. Схема диагностики следующего инцидента
 
 1. **Сервер** (`GET /api/build`, `/api/diag?code&token`, `/api/stream-stats`):

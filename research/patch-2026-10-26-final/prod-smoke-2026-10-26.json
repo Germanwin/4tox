@@ -1,0 +1,265 @@
+{
+  "base": "https://374412.fornex.cloud",
+  "checks": [
+    {
+      "ok": true,
+      "name": "build id настоящий",
+      "extra": {
+        "ok": true,
+        "build": "1d842c45423d",
+        "protocol": 3,
+        "cmdProto": 2,
+        "node": "v24.22.1",
+        "pid": 225455,
+        "uptimeMs": 72528,
+        "startedAt": "2026-10-26T19:41:25.806Z"
+      }
+    },
+    {
+      "ok": true,
+      "name": "protocol=3",
+      "extra": 3
+    },
+    {
+      "ok": true,
+      "name": "лобби создано",
+      "extra": "7USVJ"
+    },
+    {
+      "ok": true,
+      "name": "гость вошёл",
+      "extra": {
+        "host": 0,
+        "guest": 1
+      }
+    },
+    {
+      "ok": true,
+      "name": "SSE отдаётся gzip",
+      "extra": "gzip"
+    },
+    {
+      "ok": true,
+      "name": "оба готовы, можно стартовать",
+      "extra": {
+        "ok": true,
+        "ready": true,
+        "canStart": true
+      }
+    },
+    {
+      "ok": true,
+      "name": "старт: protocol/build",
+      "extra": {
+        "protocol": 3,
+        "build": "1d842c45423d",
+        "players": 2
+      }
+    },
+    {
+      "ok": true,
+      "name": "снимок принят",
+      "extra": {
+        "queue": 0,
+        "serverNow": true,
+        "build": "1d842c45423d"
+      }
+    },
+    {
+      "ok": true,
+      "name": "команда гостя принята с ageMs",
+      "extra": {
+        "ok": true,
+        "n": 1793043759670,
+        "commandId": 1793043759670,
+        "sn": 1,
+        "state": "pending",
+        "ageMs": 0,
+        "serverNow": 1793043759897,
+        "build": "1d842c45423d",
+        "protocol": 3,
+        "pending": 1
+      }
+    },
+    {
+      "ok": true,
+      "name": "хост получил команду с серверным ageMs",
+      "extra": {
+        "from": 1,
+        "n": 1793043759670,
+        "sn": 1,
+        "ageMs": 298
+      }
+    },
+    {
+      "ok": true,
+      "name": "второй снимок с cmdDone принят",
+      "extra": 1
+    },
+    {
+      "ok": true,
+      "name": "результат команды applied",
+      "extra": {
+        "n": 1793043759670,
+        "commandId": 1793043759670,
+        "sn": 1,
+        "state": "applied",
+        "reason": "",
+        "at": 1793043759897,
+        "decidedAt": 1793043760296,
+        "ids": [
+          "smoke:b1"
+        ],
+        "appliedSeq": 2,
+        "ageMs": 499,
+        "compact": false,
+        "ok": true,
+        "serverNow": 1793043760396
+      }
+    },
+    {
+      "ok": true,
+      "name": "ids/appliedSeq сохранены",
+      "extra": {
+        "ids": [
+          "smoke:b1"
+        ],
+        "appliedSeq": 2
+      }
+    },
+    {
+      "ok": true,
+      "name": "SSE hello",
+      "extra": [
+        "hello",
+        "lobby",
+        "start",
+        "snapshot",
+        "command-result"
+      ]
+    },
+    {
+      "ok": true,
+      "name": "SSE start",
+      "extra": [
+        "hello",
+        "lobby",
+        "start",
+        "snapshot",
+        "command-result"
+      ]
+    },
+    {
+      "ok": true,
+      "name": "SSE snapshot",
+      "extra": [
+        "hello",
+        "lobby",
+        "start",
+        "snapshot",
+        "command-result"
+      ]
+    },
+    {
+      "ok": true,
+      "name": "SSE command-result",
+      "extra": [
+        "hello",
+        "lobby",
+        "start",
+        "snapshot",
+        "command-result"
+      ]
+    },
+    {
+      "ok": true,
+      "name": "/api/diag хосту",
+      "extra": {
+        "build": "1d842c45423d",
+        "protocol": 3,
+        "heap": {
+          "heapUsed": 17840296,
+          "heapTotal": 31002624,
+          "rss": 98566144,
+          "external": 7588253
+        },
+        "lobby": true
+      }
+    },
+    {
+      "ok": true,
+      "name": "diag: ограниченный журнал",
+      "extra": 8
+    },
+    {
+      "ok": true,
+      "name": "diag без токенов",
+      "extra": null
+    },
+    {
+      "ok": true,
+      "name": "diag гостю закрыт",
+      "extra": 403
+    },
+    {
+      "ok": true,
+      "name": "/api/stream-stats: очередь/сжатие",
+      "extra": {
+        "queue": 0,
+        "gzipQueued": 0,
+        "pending": 0,
+        "dropped": 0,
+        "coalesced": 0
+      }
+    },
+    {
+      "ok": true,
+      "name": "старый протокол: warning, не отказ",
+      "extra": "другая версия клиента: deploy-old (протокол 2); сервер 3 (1d842c45423d)"
+    }
+  ],
+  "events": [
+    "hello",
+    "lobby",
+    "lobby",
+    "start",
+    "snapshot",
+    "snapshot",
+    "command-result",
+    "snapshot"
+  ],
+  "build": {
+    "ok": true,
+    "build": "1d842c45423d",
+    "protocol": 3,
+    "cmdProto": 2,
+    "node": "v24.22.1",
+    "pid": 225455,
+    "uptimeMs": 72528,
+    "startedAt": "2026-10-26T19:41:25.806Z"
+  },
+  "sseStatus": 200,
+  "sseEncoding": "gzip",
+  "start": {
+    "protocol": 3,
+    "build": "1d842c45423d",
+    "cmdProto": 2,
+    "snapGzip": true
+  },
+  "snapshot": {
+    "ok": true,
+    "commands": [],
+    "cmdSeq": 0,
+    "gzip": false,
+    "serverNow": 1793043759795,
+    "build": "1d842c45423d",
+    "protocol": 3,
+    "queue": 0,
+    "queueWire": 0,
+    "queueAge": 0,
+    "streams": 1,
+    "snapshotBytes": 112
+  },
+  "ms": 3529,
+  "ok": true
+}
