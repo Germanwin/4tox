@@ -640,11 +640,21 @@
       '&token=' + encodeURIComponent(token), 4000).then(function (j) {
       var t1 = (global.performance && global.performance.now) ? global.performance.now() : Date.now();
       var wall = Math.max(0, Math.round(t1 - t0));
+      function finish(net) {
+        j.msWall = wall;
+        j.ms = net > 0 ? net : wall;
+        j.measuredBy = net > 0 ? 'network' : 'wall';
+        return j;
+      }
       var net = resourceRtt(t0);
-      j.msWall = wall;
-      j.ms = net > 0 ? net : wall;
-      j.measuredBy = net > 0 ? 'network' : 'wall';
-      return j;
+      if (net > 0) return finish(net);
+      /* Запись Resource Timing иногда появляется на такт позже промиса
+         (главный поток занят кадром). Один короткий повтор честнее, чем
+         показать стенные 3 мс как «сеть»: приёмочный тест и игрок должны
+         видеть источник числа. */
+      return new Promise(function (resolve) {
+        global.setTimeout(function () { resolve(finish(resourceRtt(t0))); }, 30);
+      });
     });
   }
 
