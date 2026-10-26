@@ -146,6 +146,11 @@
   var TREE_EVAL = 8;
   var ESCAPE = 12;         // на сколько клеток искать выход, если житель оказался в занятой
   var CORNER = 1e-9;       // щель между «идём прямо» и «уже пришли» в арифметике
+  /* Сколько секунд ученик может ждать ПУТЬ к казарме, прежде чем обучение
+     отменяется. Слот тренировки не должен запираться молча: житель, которому
+     дорога недостижима или которую планировщик бесконечно откладывает,
+     освобождает место и объясняет отказ событием (PATH-01). */
+  var TRAIN_WAIT_MAX = 20;
 
   /* Сколько житель рубит дерево, прежде чем оно упадёт.
 
@@ -266,16 +271,108 @@
 
   /* Начало кадра: свежий бюджет на всех. Зовётся из Session.stepVillagers —
      один раз на кадр, а не из каждого update: иначе бюджет обнулялся бы у
-     каждого жителя по отдельности и предела не было бы вовсе. */
+     каждого жителя по отдельности и предела не было бы вовсе.
+
+     Здесь же — очередь справедливости (PATH-01). Кадр идёт в ПОСТОЯННОМ
+     порядке массива, поэтому поздние жители систематически проигрывали
+     ранним: те разбирали бюджет, а этим оставалось 'deferred'. Оказавшийся в
+     такой отсрочке получает ОДИН гарантированный поиск, когда подходит его
+     очередь — очередь ведётся по кадрам, а не по массиву. Право выдаётся не
+     больше одного на кадр: бюджет кадра от этого не растёт. */
+  var PATH_FAIR_MAX = 4096;     // потолок очереди: не копим мертвецов
+  var PATH_FAIR_GRANTS = 2;     // гарантированных поисков на кадр
   function beginFrame(world) {
     if (!world) return null;
     world._pathBudgetHit = false;
     world._pathStop = '';
     /* Право на одну длинную попытку поиска в этом кадре: см. pathPairOpts. */
     world._pathBig = false;
+    requeueUnusedGrants(world);
     var N = (world.width || 0) * (world.height || 0);
-    world._pathFrame = { left: Math.max(PATH_MIN_LIMIT, Math.round(N / FRAME_DIV)) };
+    var seq = (world._pathSeq || 0) + 1;
+    world._pathSeq = seq;
+    world._pathFrame = {
+      left: Math.max(PATH_MIN_LIMIT, Math.round(N / FRAME_DIV)),
+      seq: seq
+    };
+    world._pathGranted = [];
+    for (var g = 0; g < PATH_FAIR_GRANTS; g++) grantFair(world, seq);
     return world._pathFrame;
+  }
+
+  /* Право, которое в прошлом кадре не истратили (житель не звал поиск), не
+     теряется: он встаёт в конец очереди и получит своё позже. Иначе одна
+     пауза между попытками выбрасывала бы его из очереди навсегда. */
+  function requeueUnusedGrants(world) {
+    var prev = world._pathGranted;
+    if (!prev || !prev.length) return;
+    var oldSeq = world._pathSeq || 0;
+    var q = world._pathFair || (world._pathFair = []);
+    for (var i = 0; i < prev.length; i++) {
+      var v = prev[i];
+      if (!v || v.dead || v.pathGrant !== oldSeq) continue;
+      v.pathGrant = 0;
+      v.pathQueuedAt = oldSeq;
+      q.push({ v: v, at: oldSeq });
+    }
+    world._pathGranted = [];
+  }
+
+  /* Гарантированный поиск самому долгому ожидающему. Записи, чей житель уже
+     получил путь обычным порядком или умер, пропускаются: их отметка
+     `pathQueuedAt` не совпадает. */
+  function grantFair(world, seq) {
+    var q = world._pathFair;
+    if (!q || !q.length) return null;
+    var guard = 0;
+    while (q.length && guard++ < PATH_FAIR_MAX) {
+      var rec = q.shift();
+      var v = rec && rec.v;
+      if (!v || v.dead) continue;
+      if (!v.pathQueuedAt || v.pathQueuedAt !== rec.at) continue;
+      v.pathQueuedAt = 0;
+      v.pathGrant = seq;
+      (world._pathGranted || (world._pathGranted = [])).push(v);
+      if (v.pathWaiting) {
+        v.pathWaitFrames = seq - (v.pathWaitStartSeq || seq);
+        if (v.pathWaitFrames > (v.pathWaitMax || 0)) v.pathWaitMax = v.pathWaitFrames;
+        v.pathWaiting = false;
+      }
+      if (global.Metrics && global.Metrics.on) global.Metrics.counters.pathFairServed++;
+      return v;
+    }
+    return null;
+  }
+
+  /* Поиск отложен до следующего кадра. Это НЕ «пути нет»: приказ, работа,
+     обучение и груз остаются, кеш недостижимости не пишется, счётчик
+     недостижимости не растёт. Житель встаёт в очередь справедливости. */
+  function deferPath(world, v) {
+    if (!world) return;
+    var seq = world._pathSeq || 0;
+    if (v && !v.pathQueuedAt) {
+      v.pathQueuedAt = seq;
+      if (!v.pathWaiting) { v.pathWaiting = true; v.pathWaitStartSeq = seq; }
+      v.pathDeferCount = (v.pathDeferCount || 0) + 1;
+      var q = world._pathFair || (world._pathFair = []);
+      if (q.length >= PATH_FAIR_MAX) q.shift();
+      q.push({ v: v, at: seq });
+    }
+    if (global.Metrics && global.Metrics.on) global.Metrics.counters.pathDeferred++;
+  }
+
+  /* Поиск действительно прошёл (нашёл или доказал недостижимость) — отсрочки
+     больше нет. */
+  function markServed(world, v) {
+    if (!v) return;
+    v.pathQueuedAt = 0;
+    if (v.pathWaiting) {
+      var seq = world._pathSeq || 0;
+      v.pathWaitFrames = seq - (v.pathWaitStartSeq || seq);
+      if (v.pathWaitFrames > (v.pathWaitMax || 0)) v.pathWaitMax = v.pathWaitFrames;
+      v.pathWaiting = false;
+    }
+    v.pathGrant = 0;
   }
 
   /* Предел ЭТОГО поиска с наращиванием при повторе той же пары клеток.
@@ -311,11 +408,11 @@
     var frameLeft = world._pathFrame ? world._pathFrame.left : Infinity;
     var wantsBig = n >= 2 || (n >= 1 && lim > frameLeft);
     if (wantsBig) {
-      if (world._pathBig) return { limit: base };
+      if (world._pathBig) return { limit: base, who: v };
       world._pathBig = true;
-      return { limit: lim, ignoreBudget: true };
+      return { limit: lim, ignoreBudget: true, who: v };
     }
-    return { limit: lim };
+    return { limit: lim, who: v };
   }
   function pathPairResult(v, sx, sy, tx, ty, stop) {
     if (!v) return;
@@ -323,7 +420,7 @@
     if (stop === 'limit') {
       if (v.pathTryKey === key) v.pathTryN = (v.pathTryN || 0) + 1;
       else { v.pathTryKey = key; v.pathTryN = 1; }
-    } else if (stop !== 'frame' && v.pathTryKey === key) {
+    } else if (stop !== 'deferred' && v.pathTryKey === key) {
       v.pathTryKey = null; v.pathTryN = 0;
     }
   }
@@ -552,29 +649,44 @@
   function findPath(world, solid, sx, sy, tx, ty, opts) {
     opts = opts || {};
     var W = world.width, H = world.height, N = W * H;
-    /* world._pathStop — почему последний поиск вернул null. Три разных вещи,
-       которые раньше сливались в один флаг:
-         'frame'       — кончился бюджет КАДРА: житель повторит в следующем,
-                         кэш недостижимого писать нельзя;
+    var who = opts.who || null;
+    /* world._pathStop — ЯВНЫЙ результат последнего поиска (PATH-01):
+         ''            — путь найден;
+         'deferred'    — кончился бюджет КАДРА: это отсрочка, а не отказ.
+                         Житель повторит в следующем; приказ/работа/обучение/
+                         груз НЕ снимаются, кеш недостижимости не пишется;
          'limit'       — упёрлись в предел ОДНОГО поиска: A* не доказал, что
                          пути нет, повтор с большим пределом имеет смысл;
-         'unreachable' — перебрали всю достижимую область: пути правда нет. */
-    if (sx === tx && sy === ty) { world._pathStop = ''; return null; }
+         'unreachable' — перебрали всю достижимую область: пути правда нет;
+         'invalid'     — старт или цель не проходимы (или это одна клетка).
+       Раньше 'frame' и 'limit' сворачивались в false, и вызывающий не мог
+       отличить «повтори» от «пути нет». */
+    if (sx === tx && sy === ty) {
+      world._pathStop = 'invalid';
+      markServed(world, who);
+      return null;
+    }
     if (!walkable(world, solid, sx, sy) || !walkable(world, solid, tx, ty)) {
-      world._pathStop = 'unreachable';
+      world._pathStop = 'invalid';
+      markServed(world, who);
       return null;
     }
 
     var frame = opts.ignoreBudget ? null : world._pathFrame;
-    if (frame && !(frame.left > 0)) {
+    /* Право справедливости: ожидавшему разрешён поиск даже при пустом
+       бюджете кадра. Право одноразовое и не переживает кадр. */
+    var granted = !!(who && frame && who.pathGrant === frame.seq);
+    if (granted) who.pathGrant = 0;
+    if (frame && !(frame.left > 0) && !granted) {
       world._pathBudgetHit = true;
-      world._pathStop = 'frame';
+      world._pathStop = 'deferred';
+      deferPath(world, who);
       if (global.Metrics && global.Metrics.on) global.Metrics.counters.budgetHits++;
       return null;
     }
     var limit = opts.limit > 0 ? opts.limit : pathLimit(world);
     var clipped = false;
-    if (frame && frame.left < limit) { limit = frame.left; clipped = true; }
+    if (frame && !granted && frame.left < limit) { limit = frame.left; clipped = true; }
 
     var s = scratch(world, N);
     var gen = s.gen, g = s.g, gGen = s.gGen, came = s.came, closedGen = s.closedGen;
@@ -660,12 +772,15 @@
     if (frame) frame.left = Math.max(0, frame.left - nodes);
     if (spent) {
       world._pathBudgetHit = true;
-      /* Упор в УРЕЗАННЫЙ бюджет кадра — это 'frame', а не 'limit': предел
+      /* Упор в УРЕЗАННЫЙ бюджет кадра — это 'deferred', а не 'limit': предел
          одного поиска тут ни при чём, и наращивать его бессмысленно. */
-      world._pathStop = (clipped && frame && frame.left <= 0) ? 'frame' : 'limit';
+      world._pathStop = (clipped && frame && frame.left <= 0) ? 'deferred' : 'limit';
+      if (world._pathStop === 'deferred') deferPath(world, who);
+      else markServed(world, who);
       if (global.Metrics && global.Metrics.on) global.Metrics.counters.budgetHits++;
     } else {
       world._pathStop = found ? '' : 'unreachable';
+      markServed(world, who);
     }
     if (global.Metrics && global.Metrics.on) {
       var m = global.Metrics.counters;
@@ -1178,6 +1293,7 @@
       var cells = findPath(world, solid, sx, sy, sp.cx, sp.cy,
         pathPairOpts(v, world, sx, sy, sp.cx, sp.cy));
       pathPairResult(v, sx, sy, sp.cx, sp.cy, world._pathStop);
+      if (world._pathStop === 'deferred') { v.routeStatus = 'deferred'; return false; }
       if (!cells || cells.length < 2) continue;
       var cost = pathCost(world, cells);
       if (cost < bestCost) {
@@ -1185,7 +1301,10 @@
         best = { spot: sp, cells: cells };
       }
     }
-    if (!best) return false;
+    if (!best) {
+      v.routeStatus = world._pathStop || 'unreachable';
+      return false;
+    }
     v.goal = { x: best.spot.x, y: best.spot.y };
     v.path = smoothPath(world, solid, best.cells);
     v.step = firstStep(v, world, solid);
@@ -1334,7 +1453,7 @@
         var stop = world._pathStop;
         pathPairResult(v, sx, sy, spots[j].cx, spots[j].cy, stop);
         if (!cells || cells.length < 2) {
-          if (stop === 'frame') treeFrame = true;
+          if (stop === 'deferred') treeFrame = true;
           else if (stop === 'limit') treeLimit = true;
           continue;
         }
@@ -1882,12 +2001,24 @@
   function routeTo(v, world, solid, x, y, opts) {
     opts = opts || {};
     var tx = Math.floor(x), ty = Math.floor(y);
-    if (!walkable(world, solid, tx, ty)) return false;
+    if (!walkable(world, solid, tx, ty)) {
+      world._pathStop = 'invalid';
+      v.routeStatus = 'invalid';
+      return false;
+    }
     var sx = Math.floor(v.x), sy = Math.floor(v.y);
-    if (sx === tx && sy === ty) return false;
+    if (sx === tx && sy === ty) {
+      world._pathStop = 'invalid';
+      v.routeStatus = 'invalid';
+      return false;
+    }
     var cells = findPath(world, solid, sx, sy, tx, ty,
       pathPairOpts(v, world, sx, sy, tx, ty));
     pathPairResult(v, sx, sy, tx, ty, world._pathStop);
+    /* Явный результат поиска — на жителе: вызывающий отличает «повтори»
+       ('deferred') от «пути нет» ('unreachable'). См. PATH-01. */
+    v.routeStatus = world._pathStop;
+    v.routeDeferred = world._pathStop === 'deferred';
     if (!cells || cells.length < 2) return false;
     v.tree = null;
     v.goal = { x: tx + 0.5, y: ty + 0.5 };
@@ -2744,6 +2875,7 @@
     v.y = ent.in.y;
     v.path = null;
     v.step = 0;
+    v.trainWait = 0;
     v.entering = false;
     v.escape = false;
     v.exitYard = false;
@@ -2823,8 +2955,26 @@
     v.phase = 0;
   }
 
-  function traineeUpdate(v, world, solid, set, dt) {
-    if (v.vanishT > 0) v.vanishT = Math.max(0, v.vanishT - dt);
+  /* Ученик ждёт дорогу к казарме. Отсрочка планировщика — не повод бросать
+     обучение, но и слот не должен запираться навсегда: после TRAIN_WAIT_MAX
+     секунд ожидания без пути обучение отменяется и место освобождается
+     СОБЫТИЕМ, а не молча. Возвращает true, если ученика уже отпустили. */
+  function trainWait(v, camp, world, dt) {
+    v.trainWait = (v.trainWait || 0) + dt;
+    if (v.trainWait < TRAIN_WAIT_MAX) return false;
+    v.trainWait = 0;
+    if (global.Session && global.Session.cancelTraining) {
+      global.Session.cancelTraining(camp, v, { outside: false });
+    }
+    if (global.Events && global.Events.refuse) {
+      global.Events.refuse(world, v.owner, 'training-failed',
+        'ученик не смог дойти до казармы — обучение отменено',
+        camp && camp.x, camp && camp.y);
+    }
+    return true;
+  }
+
+  function traineeUpdate(v, world, solid, set, dt) {    if (v.vanishT > 0) v.vanishT = Math.max(0, v.vanishT - dt);
     if (v.emergeT > 0) v.emergeT = Math.max(0, v.emergeT - dt);
     var camp = v.trainingAt;
     var list = (world && world._buildings) || [];
@@ -2900,6 +3050,9 @@
     if (!v.path) {
       var ap = approachCellFor(world, solid, ent);
       if (!ap) {
+        /* Подхода нет вовсе — это уже не отсрочка бюджета. Ждём столько же,
+           сколько при отсрочке, и отпускаем слот словами. */
+        if (trainWait(v, camp, world, dt)) return;
         v.state = 'stand';
         idleStep(v, set, dt);
         v.stuck = (v.stuck || 0) + dt;
@@ -2910,11 +3063,23 @@
       if (sx === ap.x && sy === ap.y) { beginEnter(v, ent); return; }
       if (!routeTo(v, world, solid, ap.x + 0.5, ap.y + 0.5,
                    { state: 'toBarracks', anim: 'walk' })) {
+        /* Бюджет кадра/предел поиска — временный отказ: цель (обучение) и
+           слот остаются, повторяем кадром позже. Долгое ожидание всё-таки
+           освобождает слот, чтобы он не висел вечно. */
+        if (v.routeStatus === 'deferred' || v.routeStatus === 'limit') {
+          if (trainWait(v, camp, world, dt)) return;
+          v.state = 'toBarracks';
+          v.stuck = 0;
+          idleStep(v, set, dt);
+          return;
+        }
+        if (trainWait(v, camp, world, dt)) return;
         v.state = 'stand';
         idleStep(v, set, dt);
         v.stuck = (v.stuck || 0) + dt;
         return;
       }
+      v.trainWait = 0;
       v.state = 'toBarracks';
     }
 
@@ -2952,6 +3117,10 @@
         v.state = 'toWarcamp';
         return true;
       }
+      /* Бюджет кадра кончился — не перебираем остальные клетки: каждая
+         следующая всё равно вернёт 'deferred', а житель повторит кадром
+         позже (PATH-01). */
+      if (v.routeStatus === 'deferred') return false;
     }
     return false;
   }
@@ -2982,6 +3151,7 @@
         v.state = 'toBarracksYard';
         return true;
       }
+      if (v.routeStatus === 'deferred') { v.garrisonSpot = null; return false; }
       v.garrisonSpot = null;
     }
     return false;
@@ -3044,6 +3214,13 @@
     }
     if (!v.garrisonSpot) {
       if (!routeToBarracksYard(v, world, solid, b)) {
+        /* Отсрочка поиска: двор не «пропал», повторим следующим кадром. */
+        if (v.routeStatus === 'deferred' || v.routeStatus === 'limit') {
+          v.state = 'toBarracksYard';
+          v.stuck = 0;
+          idleStep(v, set, dt);
+          return;
+        }
         v.state = 'stand';
         v.stuck = (v.stuck || 0) + dt;
         idleStep(v, set, dt);
@@ -3113,10 +3290,11 @@
     }
     v.chaseT = (v.chaseT || 0) - dt;
     var tried = false;
+    if (v.pathGrant) v.chaseT = 0;      // право справедливости не ждёт паузы
     if (!v.path || v.chaseT <= 0) {
       tried = true;
       v.chaseT = 0.6;
-      var ok = false, i, dup;
+      var ok = false, i, dup, deferStop = false;
       var cand = [];
       /* Своё уже забронированное место — первым: если мы сошли с него в бою,
          возвращаемся туда, а не ищем новое. */
@@ -3142,7 +3320,7 @@
           if (!dup) cand.push({ x: raw[i][0], y: raw[i][1] });
         }
       }
-      for (i = 0; i < cand.length && !ok; i++) {
+      for (i = 0; i < cand.length && !ok && !deferStop; i++) {
         var cl = cand[i];
         /* Чужую клетку подхода не занимаем: иначе пятеро сходятся в одну, и
            бой читается как «воины слиплись». */
@@ -3151,6 +3329,10 @@
         if (routeTo(v, world, loose, cl.x + 0.5, cl.y + 0.5,
                     { state: 'toBattle', anim: 'walk' })) {
           if (reserveCell(world, cl, v)) { v.combatCellFor = t; ok = true; }
+        } else if (v.routeStatus === 'deferred' || v.routeStatus === 'limit') {
+          /* Бюджет кадра кончился: остальные клетки вернут то же самое.
+             Цель не бросаем, в кеш недостижимости не пишем. */
+          deferStop = true;
         }
       }
       if (ok) { v.noPathKey = null; v.noPathTarget = null; }
@@ -3160,6 +3342,16 @@
       v.combatFail = 0;
       walk(v, world, set, dt, 'walk');
       if (!v.path) v.state = 'attack';
+      return;
+    }
+    /* Отсрочка планировщика: это не «до цели не дойти». Держим цель и
+       сбрасываем счётчик неудач; Combat.tick не должен считать это
+       chaseGiveUp (см. noPathT). */
+    if (v.routeStatus === 'deferred' || v.routeStatus === 'limit') {
+      v.noPathT = 0;
+      v.combatFail = 0;
+      v.chaseT = 0;
+      idleStep(v, set, dt);
       return;
     }
     /* Дойти нечем. Считаем ПОПЫТКИ, а не кадры: одна неудачная попытка —
@@ -3226,15 +3418,21 @@
     v.escape = false;
     if (!v.path) {
       v.routeT = (v.routeT || 0) - dt;
+      /* Право справедливости ждёт именно поиска: не тратим его на паузу
+         между попытками. */
+      if (v.pathGrant) v.routeT = 0;
       if (v.routeT > 0) { idleStep(v, set, dt); return; }
       v.routeT = 0.6;
       var ok = routeTo(v, world, loose, o.x, o.y, { state: 'march', anim: 'walk' });
       /* Точка приказа могла прийтись на пятно дома или воду: ищем ближайшую
          свободную вокруг. Только одно кольцо и раз в 0.6 с: перебор A* по
-         сорока клеткам каждый кадр вешает игру. */
-      if (!ok) {
+         сорока клеткам каждый кадр вешает игру. При отсрочке по бюджету
+         соседей НЕ перебираем — каждая попытка вернула бы 'deferred', а
+         приказ обязан дождаться следующего кадра (PATH-01). */
+      if (!ok && v.routeStatus !== 'deferred' && v.routeStatus !== 'limit') {
         var others = (world && world._villagers) || [];
-        for (var oy = -1; oy <= 1 && !ok; oy++) {
+        var deferStop = false;
+        for (var oy = -1; oy <= 1 && !ok && !deferStop; oy++) {
           for (var ox = -1; ox <= 1 && !ok; ox++) {
             if (!ox && !oy) continue;
             var nx = o.x + ox, ny = o.y + oy;
@@ -3251,11 +3449,26 @@
               o.x = nx;
               o.y = ny;
               ok = true;
+            } else if (v.routeStatus === 'deferred' || v.routeStatus === 'limit') {
+              deferStop = true;
+              break;
             }
           }
         }
       }
       if (!ok) {
+        /* Отсрочка планировщика — НЕ «туда не дойти»: приказ, работу и груз
+           не снимаем, счётчик неудач не двигаем, повторим следующим кадром.
+           Раньше false от routeTo сворачивал и 'deferred', и 'unreachable' в
+           одно, и три кадра дефицита бюджета отменяли достижимый приказ. */
+        if (v.routeStatus === 'deferred' || v.routeStatus === 'limit') {
+          v.routeFail = 0;
+          v.stuck = 0;
+          v.noPathT = 0;
+          v.routeT = 0;
+          idleStep(v, set, dt);
+          return;
+        }
         /* Считаем НЕ кадры, а неудачные попытки: между ними проходит 0.6 с
            игрового времени, и `stuck += dt` давал порог 5 с только через
            ~180 с — приказ «на тот берег» жил вечно и каждый раз заново
@@ -3430,6 +3643,13 @@
     if (!v.path) {
       if (inside) { v.state = 'patrol'; return; }
       if (!routeToWarcamp(v, world, solid, camp)) {
+        /* Отсрочка планировщика — не «в лагерь не попасть»: остаёмся в
+           toWarcamp и повторим, иначе воин навсегда остаётся «в пути». */
+        if (v.routeStatus === 'deferred' || v.routeStatus === 'limit') {
+          v.stuck = 0;
+          idleStep(v, set, dt);
+          return;
+        }
         v.state = 'stand';
         return;
       }
@@ -3717,6 +3937,14 @@
              постройка). Топор не бросаем: пересчитываем маршрут к ТОМУ ЖЕ
              дереву. Если оно стало недостижимо — только тогда идём в лагерь. */
           if (!routeToTree(v, world, solid, { anim: 'toTree', state: 'toTree' })) {
+            /* Отсрочка по бюджету/пределу — НЕ «дерево стало недостижимо»:
+               топор не бросаем, дерево и метку оставляем, повторим кадром
+               позже. Раньше это стирало цель и груз терялся (PATH-01). */
+            if (v.routeStatus === 'deferred' || v.routeStatus === 'limit') {
+              v.path = null;
+              idleStep(v, set, dt);
+              return;
+            }
             unmark(v, v.tree);
             v.tree = null;
             v.goal = null;

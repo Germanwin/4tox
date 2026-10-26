@@ -53,7 +53,14 @@
     barTime: 5,                   // с: сколько видна полоса после удара
     flinch: 0.16,                 // с: вздрагивание
     think: 0.2,                   // с: как часто искать цель
-    leash: { camp: 16, order: 10, home: 8 },
+    /* Поводки. `fight` — радиус вокруг МЕСТА СТЫЧКИ: погоня не уходит за
+       остров, но и не привязана к конечной точке приказа (BATTLE-01).
+       `selfDefense` — «близкий удар»: ответ на него не зависит ни от какого
+       поводка. `order` оставлен только как имя для старых ссылок и тестов,
+       цель приказа больше не отсекает стычку по пути. */
+    leash: { camp: 16, order: 10, home: 8, fight: 12 },
+    selfDefense: 3,               // клеток: допустимый ближний удар
+    reaction: 0.2,                // с: think + явный допуск реакции на удар
     chaseGiveUp: 3.0              // с: цель жива, но воин не идёт — в кеш
   };
 
@@ -73,6 +80,8 @@
   var CAMP_LEASH = CONFIG.leash.camp;
   var ORDER_LEASH = CONFIG.leash.order;
   var HOME_LEASH = CONFIG.leash.home;
+  var FIGHT_LEASH = CONFIG.leash.fight;
+  var SELF_DEFENSE = CONFIG.selfDefense;
 
   function ownerOf(o) {
     if (!o) return -1;
@@ -267,12 +276,21 @@
     return mapVer(world) + '@' + Math.floor(v.x) + ',' + Math.floor(v.y) + '>' + id + own;
   }
 
-  /* Якорь, от которого считается погоня: точка приказа, лагерь, двор
-     казармы или место появления. */
+  /* Якорь, вокруг которого воин ищет угрозу, когда боя ещё нет.
+   
+     BATTLE-01: раньше при живом приказе якорем была КОНЕЧНАЯ точка `v.order`
+     с радиусом ORDER_LEASH. У встречных армий конечные точки разные, поэтому
+     одна армия видела врага, а другая с той же дистанции — нет, и бой шёл
+     всухую. Теперь приказ задаёт только КУДА идти; стычка ищется вокруг
+     САМОГО воина («локальная угроза»), а конечная точка на обнаружение не
+     влияет. Охрана лагеря/двора и дом остаются со своими поводками: им
+     действительно нельзя уводить гарнизон через остров. */
   function baseAnchor(v) {
     var B = global.Buildings;
     if (!v) return null;
-    if (v.order) return { x: v.order.x, y: v.order.y, r: ORDER_LEASH };
+    /* Марш: замечаем врага рядом с собой. Радиус — aggro: «кто задел или
+       подошёл вплотную по дороге», а не «весь остров». */
+    if (v.order) return { x: v.x, y: v.y, r: AGGRO };
     if (v.warcamp && !v.warcamp.rubble && B) {
       var c = B.center(v.warcamp);
       return { x: c.x, y: c.y, r: CAMP_LEASH };
@@ -285,9 +303,10 @@
     return null;
   }
 
-  /* Якорь стычки: пока цель жива, погоня считается по тому месту, где бой
-     начался. Иначе потеря лагеря (Session.rebalanceGarrison назначает
-     дальний) уводила воина из боя, где он стоял в двух шагах от врага. */
+  /* Якорь стычки: пока цель жива, погоня считается по МЕСТУ, ГДЕ БОЙ НАЧАЛСЯ
+     (`_fightAnchor` ставит tick в момент первого удара/подхода), а не по
+     конечной точке приказа. Иначе дальний waypoint запрещал догонять врага,
+     который стоит в двух шагах. */
   function leashAnchor(v) {
     if (v && v.target && v._fightAnchor) return v._fightAnchor;
     return baseAnchor(v);
@@ -300,6 +319,17 @@
       ? distToBuilding(o, a.x, a.y)
       : Math.sqrt(dist2(o.x, o.y, a.x, a.y));
     return d <= a.r;
+  }
+
+  /* Допустимый БЛИЖНИЙ удар: ответ на него не фильтруется ни приказом, ни
+     лагерем, ни якорем стычки. Близко — это клетки рядом с самим воином;
+     убежавшего через полкарты не преследуем (погоня — уже отдельный поводок
+     боя). */
+  function withinSelfDefense(v, o) {
+    if (!v || !o) return false;
+    var d = isBuilding(o) ? distToBuilding(o, v.x, v.y)
+      : Math.sqrt(dist2(o.x, o.y, v.x, v.y));
+    return d <= SELF_DEFENSE;
   }
 
   function aliveBuilding(b) {
@@ -507,11 +537,13 @@
     var t = v.target;
 
     /* «Стоп» — это не «подожди удара»: воин не берёт цель сам. Ответ на удар
-       разрешён: иначе стоп означал бы «убей меня, я не буду защищаться». */
+       разрешён и НЕ зависит от поводка приказа: иначе стоп означал бы «убей
+       меня, я не буду защищаться». Контракт явный: holdFire разрешает ровно
+       ответ тому, кто ударил, пока тот рядом; новых целей нет. */
     if (v.holdFire) {
       var att = v.attacker;
       if (att && v.attackerT > 0 && canTarget(v, att, world, solid) &&
-          withinLeash(v, att) &&
+          withinSelfDefense(v, att) &&
           clearShot(world, solid, v, att)) {
         return att;
       }
@@ -521,10 +553,12 @@
     if (t && (!canTarget(v, t, world, solid) || !withinLeash(v, t))) {
       t = null;
       v.target = null;
+      /* Цель потеряна — стычка кончилась. Следующая заведёт свой якорь. */
+      v._fightAnchor = null;
     }
 
     if (v.attacker && v.attackerT > 0 && canTarget(v, v.attacker, world, solid) &&
-        withinLeash(v, v.attacker) && v.attacker.warrior &&
+        withinSelfDefense(v, v.attacker) && v.attacker.warrior &&
         clearShot(world, solid, v, v.attacker)) {
       if (t && isBuilding(t) && v.prevTarget !== t) v.prevTarget = t;
       return v.attacker;
@@ -628,6 +662,10 @@
     if (!isBuilding(target) && target.warrior) {
       target.attacker = v;
       target.attackerT = 2.5;
+      /* Удар БУДИТ: ответ не ждёт следующей фазы think. Без этого воин с
+         thinkT до 0.2 с и «фазой по id» замечал удар с задержкой, и
+         требование «реакция в пределах think + допуск» зависело от id. */
+      target.thinkT = 0;
     }
     if (target.hp <= 0) {
       if (isBuilding(target)) {
@@ -656,6 +694,15 @@
     world.time = (world.time || 0) + dt;
     init(world, buildings, villagers);
     var solid = opts.solid || solidMap(world, buildings);
+
+    /* Одновременные удары разрешаются ПАКЕТОМ (BATTLE-01): сначала все, кто
+       бьёт в этом кадре, выбирают цель и попадают в список, затем урон
+       применяется. Раньше удар наносился прямо в цикле, и первый в массиве
+       убивал второго до его хода: порядок массива/владельца давал
+       систематическое преимущество, а встречные армии бились несимметрично.
+       Теперь обе стороны бьют по состоянию НА НАЧАЛО кадра, включая
+       добивающий удар погибшего в этом же кадре. */
+    var pending = [];
 
     var i, v, t, d;
     /* Вздрагивание построек гаснет здесь же: иначе руина/дом тряслись бы
@@ -695,7 +742,11 @@
       if (v.thinkT <= 0) {
         /* Разные фазы у воинов: иначе все двадцать ищут цель в один кадр. */
         v.thinkT = THINK_EVERY + (v.id % 7) * 0.01;
+        var before = v.target;
         v.target = chooseTarget(v, buildings, villagers, world, solid);
+        /* Новая цель — новая стычка. Якорь старого боя не должен держать
+           погоню за новой целью: он про то место, где дрались раньше. */
+        if (v.target !== before && v.target !== v.attackTarget) v._fightAnchor = null;
       }
 
       t = v.target;
@@ -710,14 +761,14 @@
 
       /* Новая цель — замах. Удар по ней будет не раньше windup: урон не
          приходит в тот же кадр, что цель вошла в дальность. Якорь стычки
-         запоминается здесь же — см. leashAnchor. */
+         ставится на МЕСТО ВСТРЕЧИ (текущую позицию), а не на конечную точку
+         приказа: см. leashAnchor и BATTLE-01. */
       if (t !== v.attackTarget) {
         v.attackTarget = t;
         v.attackT = Math.max(v.attackT || 0, WINDUP);
         v.noPathT = 0;
         if (!v._fightAnchor) {
-          var a = baseAnchor(v);
-          if (a) v._fightAnchor = { x: a.x, y: a.y, r: a.r };
+          v._fightAnchor = { x: v.x, y: v.y, r: FIGHT_LEASH };
         }
       }
 
@@ -741,7 +792,7 @@
         v.state = 'attack';
         if (v.attackT <= 0) {
           v.attackT = isBuilding(t) ? BUILDING_EVERY : ATTACK_EVERY;
-          hit(world, v, t, opts);
+          pending.push({ v: v, t: t });
         }
       } else {
         v.combatMode = 'chase';
@@ -763,6 +814,15 @@
           }
         }
       }
+    }
+
+    /* Пакетное применение урона. Порядок здесь больше не решает исход:
+       каждая пара «кто бьёт → кого» выбрана до первого удара, и добивающий
+       удар погибшего в этом кадре тоже считается. */
+    for (i = 0; i < pending.length; i++) {
+      var ph = pending[i];
+      if (!ph || !ph.v || !ph.t) continue;
+      hit(world, ph.v, ph.t, opts);
     }
   }
 
@@ -802,6 +862,11 @@
     CAMP_LEASH: CAMP_LEASH,
     ORDER_LEASH: ORDER_LEASH,
     HOME_LEASH: HOME_LEASH,
+    FIGHT_LEASH: FIGHT_LEASH,
+    SELF_DEFENSE: SELF_DEFENSE,
+    baseAnchor: baseAnchor,
+    leashAnchor: leashAnchor,
+    withinSelfDefense: withinSelfDefense,
     init: init,
     tick: tick,
     ownerOf: ownerOf,
