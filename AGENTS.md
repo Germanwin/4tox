@@ -1072,3 +1072,30 @@ mapgen2/tools/lumbercamp-move.js`, `node game/tools/menu.js`.
   цели касания ≥44 px, safe-area через `env()`.
 - Линия: шаг по повёрнутому пятну + 1 клетка, ≤20 зданий, предпросмотр всей
   серии (`renderer.lineGhost`), атомарная покупка.
+
+### Приёмки патча 2026-10-26
+
+- `node mapgen2/tools/regress.js` — сквозные регрессии: F5-гидратация
+  (гражданин/лесоруб/ученик/воин с приказом), рождения по деревням, груз и
+  `lost`, постановка на жителя/выход, серия `planLine`. Каждая строка —
+  ok/FAIL/NOT RUN; NOT RUN не считается PASS.
+- `node mapgen2/tools/combat.js` — числа только из `Combat.CONFIG`, `windup`,
+  LOS, закрытая клетка, недостижимая цель (≤40 A* за 60 с), «Стоп» с
+  `holdFire`, TTK 15–25 с для пяти воинов, события.
+- `node mapgen2/tools/path.js` — лесоруб НАНЯТ и проходит полный цикл; смысл
+  прежних проверок сохранён, добавлена сдача +4.
+- `node game/tools/mp.js` — команды: один путь выполнения, порядок `sn`,
+  повтор не задваивает, `cmdDone`/`command-state`, `expired`, `buildLine`,
+  F5, сжатие; ping обязан быть `measuredBy: 'network'` (буфер Resource Timing
+  увеличен, иначе снимки заполняли его за полминуты).
+- `mapgen2/tools/chrome.js` — `CHROME_PATH` → известные пути macOS/Linux/
+  Windows → PATH; неверный env — ошибка с подсказкой, без молчаливого
+  fallback. Все браузерные приёмки берут путь оттуда.
+- `node mapgen2/tools/profile.js` — `--entities N` (ровно 20/100/200),
+  `--ramp`, ряд по минутам, gzip/apply снимка, гистограмма шага; печатает
+  поля счётчиков без писателя как NOT RUN.
+- Обязательные при любом изменении движка: `mapgen2/tools/game.js` и
+  `game/tools/menu.js`; для построек — `place.js`, для ввода — `controls.js`,
+  для лагеря — `lumberjack.js` и `lumbercamp-move.js`.
+- NOT RUN без устройств: реальный FPS на Android/iOS, настоящий RTT 200 мс,
+  15-минутный сетевой soak. Это нельзя помечать PASS.
