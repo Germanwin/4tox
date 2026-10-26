@@ -203,6 +203,15 @@
 
   /* ------------------------------ события ------------------------------ */
 
+  /* Телефон по умолчанию считает 30 кадров в секунду: мир от этого не
+     замедляется (часы стенные), а отрисовка дешевеет вдвое. На ПК остаётся
+     без предела; кнопка «экономия» может поменять через Play.setFpsCap. */
+  try {
+    if (global.matchMedia && global.matchMedia('(pointer: coarse)').matches) {
+      state.fpsCap = 30;
+    }
+  } catch (e) { /* старый браузер без matchMedia */ }
+
   function on(fn) { if (typeof fn === 'function') listeners.push(fn); }
   function emit(ev) {
     for (var i = 0; i < listeners.length; i++) {
