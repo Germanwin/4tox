@@ -85,8 +85,30 @@ const PROTOCOL = 3;
 const CMD_PROTO = 2;
 const STARTED_AT_MS = Date.now();
 let buildCache = null;
+/* Сборка — не только git. На проде (/opt/4tox) репозитория нет: файлы
+   копируются, и `git rev-parse` вернул бы 'dev', то есть «неизвестно, что
+   запущено». Поэтому порядок такой:
+     1) BUILD_ID / GIT_COMMIT из окружения (systemd может передать);
+     2) файл COMMIT в корне — его пишет выкладка ровно тем хешем, который
+        собран и проверен;
+     3) git (рабочая копия разработчика);
+     4) 'dev'.
+   Число нужно одно и правдивое: по нему `/api/build` и старт говорят, что
+   реально работает на VPS. */
 function buildId() {
   if (buildCache) return buildCache;
+  const env = process.env.BUILD_ID || process.env.GIT_COMMIT;
+  if (env && String(env).trim()) {
+    buildCache = String(env).trim().slice(0, 16);
+    return buildCache;
+  }
+  try {
+    const fromFile = fs.readFileSync(path.join(ROOT, 'COMMIT'), 'utf8').trim();
+    if (fromFile) {
+      buildCache = fromFile.slice(0, 16);
+      return buildCache;
+    }
+  } catch (e) { /* файла нет — обычная рабочая копия */ }
   try {
     const out = execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
       cwd: ROOT, encoding: 'utf8', timeout: 1500,
