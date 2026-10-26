@@ -918,6 +918,9 @@
     v.escape = true;
     v.spot = null;
     v.spotTrip = false;
+    v.planSkip = 0;
+    v.planSkipVer = null;
+    v.jobWhy = '';
     if (v.tree) { unmark(v, v.tree); v.tree = null; v.goal = null; v.close = false; }
     /* Из-под стены к прежнему дереву всё равно не дойти: топор «теряется»
        только у того, кого накрыло пятном, и он идёт за новым. Остальные
@@ -978,12 +981,22 @@
     return true;
   }
 
+  /* Почему работы нет. Одно место правды для HUD и событий: '' — работа есть
+     или ещё не решали, 'no-forest' — рядом нет леса, 'no-path' — лес есть, но
+     ни до одного дерева не дойти. Считается в plan, сбрасывается на успехе и
+     при смене карты. */
+  function planReason(v, why) {
+    v.jobWhy = why;
+    if (global.Metrics && global.Metrics.on) global.Metrics.counters.planFails++;
+  }
+
   /* Выбор цели и пути к ней: среди ближайших к лагерю деревьев — та, до
      которой короче ДОРОГА (см. ниже). Возвращает false, если деревьев нет или
      ни до одного не дойти, — тогда житель стоит и ждёт (деревья в этой игре не
      растут, а только исчезают). */
   function plan(v, world, solid, opts) {
     opts = opts || {};
+    if (global.Metrics && global.Metrics.on) global.Metrics.counters.plans++;
     var anim = opts.anim || 'walk';
     var want = opts.state || 'toward';
     var ref = opts.ref || null;
@@ -1004,11 +1017,11 @@
          сделан (рабочий уже на кромке) — возвращается false, и это не отказ:
          ниже plan честно ищет дерево и путь от кромки. Отличить одно от другого
          просто: на кромке он стоит на ПРОХОДИМОЙ клетке. */
-      if (planFromYard(v, world, solid, opts)) return true;
+      if (planFromYard(v, world, solid, opts)) { v.jobWhy = ''; return true; }
       /* Не вышел и стоит в пятне — значит шаг наружу закрыт: отвечаем «пока
          некуда» и НЕ идём дальше. Ниже живёт страховка spawnSpot, а она для
          рабочего в пятне означала бы скачок через полкарты. */
-      if (!walkable(world, solid, sx, sy)) return false;
+      if (!walkable(world, solid, sx, sy)) { planReason(v, 'no-path'); return false; }
     }
 
     // Страховка: если житель оказался в занятой клетке (на его место поставили
@@ -1018,10 +1031,11 @@
          координаты: телепорт из лагеря — это то, что видно глазом. */
       if (v.employer) {
         if (stepOut(v, world, solid, v.employer)) return true;
+        planReason(v, 'no-path');
         return false;
       }
       var out = spawnSpot(world, solid, v.x, v.y);
-      if (!out) return false;
+      if (!out) { planReason(v, 'no-path'); return false; }
       v.x = out.x; v.y = out.y;
       sx = Math.floor(v.x); sy = Math.floor(v.y);
     }
@@ -1064,6 +1078,9 @@
        быть, и «недостижимо» — свойство пары, а не дерева. */
     var ver = mapVer(world);
     var hereKey = ver + '@' + sx + ',' + sy;
+    /* Карта сменилась — продолжать перебор с середины нельзя: ближние деревья
+       могли стать достижимыми. Указатель живёт на версии, на которой посчитан. */
+    if (v.planSkipVer !== ver) v.planSkip = 0;
     /* С чего продолжать перебор, если прошлая попытка упёрлась в бюджет
        кадра. Без этого житель у дальнего леса мог вечно перебирать первые
        два недостижимых дерева, каждый раз обрываясь на бюджете, и никогда
@@ -1072,7 +1089,10 @@
     var startI = (v.planSkip > 0 && v.planSkip < trees.length) ? v.planSkip : 0;
     for (var i = startI; i < trees.length; i++) {
       var tree = trees[i];
-      if (tree._noPath === hereKey) continue;
+      if (tree._noPath === hereKey) {
+        if (global.Metrics && global.Metrics.on) global.Metrics.counters.unreachableHits++;
+        continue;
+      }
       var spots = standCells(world, solid, tree, v.x, v.y);
       var treeBest = null, treeCost = Infinity;
       var budgetSpent = false;
@@ -1084,6 +1104,7 @@
           v.goal = { x: spots[j].x, y: spots[j].y };
           v.close = false;
           arrive(v, opts);
+          v.jobWhy = '';
           return true;
         }
         var cells = findPath(world, solid, sx, sy, spots[j].cx, spots[j].cy);
@@ -1099,7 +1120,11 @@
       }
       if (!treeBest && budgetSpent && !best) {
         v.planSkip = i + 1;
+        v.planSkipVer = ver;
         if (v.planSkip >= trees.length) v.planSkip = 0;
+        /* Это отсрочка, а не «пути нет»: причину не выдумываем. */
+        v.jobWhy = '';
+        if (global.Metrics && global.Metrics.on) global.Metrics.counters.planFails++;
         return false;
       }
       if (!treeBest && !budgetSpent) tree._noPath = hereKey;
@@ -1111,8 +1136,13 @@
          (если пока ни одного дерева с дорогой не нашлось). */
       if (best && i + 1 >= TREE_EVAL) break;
     }
-    if (!best) return false;
+    if (!best) {
+      planReason(v, trees.length ? 'no-path' : 'no-forest');
+      return false;
+    }
     v.planSkip = 0;
+    v.planSkipVer = null;
+    v.jobWhy = '';
 
     mark(v, best.tree);
     v.tree = best.tree;
@@ -1784,6 +1814,22 @@
       /* То же для боя: цель за водой/в закрытом кармане не должна заставлять
          воина искать путь по всему острову каждый кадр. */
       combatFail: 0,
+      /* Почему работы нет: '' — работа есть или ещё не решали, 'no-forest' —
+         рядом нет леса, 'no-path' — лес есть, но ни до одного дерева не дойти.
+         Одно место правды для HUD и событий вместо догадок по v.treesSeen. */
+      jobWhy: '',
+      /* С какого дерева продолжать перебор после отсрочки бюджетом кадра.
+         planSkipVer — на какой версии карты этот указатель посчитан: карта
+         сменилась — начинаем с ближних деревьев, а не с середины списка. */
+      planSkip: 0,
+      planSkipVer: null,
+      /* Клетка подхода боя, забронированная за воином (мира _combatCells), и
+         на какую цель бронь: пятеро не сходятся в одну клетку. */
+      combatCell: null,
+      combatCellFor: null,
+      /* Ключ «к этой цели отсюда не дойти»: версия карты @ клетка > цель.
+         Пишется после двух неудачных попыток боя, читается Combat/HUD. */
+      noPathKey: null,
       dead: false,
       hidden: false,       // растворён в казарме: не рисуется
       vanishT: 0,          // с: сколько ещё растворяться
@@ -2115,6 +2161,12 @@
       return false;
     }
     if (v.spot !== at) v.spot = at;       // свежие place/cell и сторона
+    /* Ровно одна сдача за ходку. Счёт уже вырос в кадр прихода, а состояние
+       drop живёт до конца жеста; второй вызов deposit (двойной кадр, повтор
+       после переезда, ручной вызов из приёмки) начислил бы ещё четыре бревна
+       из ниоткуда. Груз — единственный признак «ходка ещё не сдана»: снимает
+       его только deposit, ставит только fell. */
+    if (!v.carrying) return false;
     var vill = (global.Session && global.Session.townById)
       ? global.Session.townById(world, v.town) : world.village;
     if (vill) {
@@ -3041,6 +3093,9 @@
     // Мир сменился (нажали «Сгенерировать»): путь считан по старому острову.
     if (v.world !== world) {
       v.world = world; v.path = null; v.close = false; v.chopT = 0;
+      /* Мир другой: вчерашние причины простоя и указатели перебора к нему не
+         относятся. */
+      v.jobWhy = ''; v.planSkip = 0; v.planSkipVer = null; v.noPathKey = null;
       /* Брёвна старого мира в новый не переезжают: казна у нового мира своя. */
       v.carrying = false;
       if (v.trainee) v.state = 'toBarracks';
@@ -3064,6 +3119,8 @@
     var ver = world._villagerBlocked ? world._villagerBlocked.version : null;
     if (v.seen !== ver) {
       v.seen = ver;
+      /* Сменилась карта — причину простоя пересчитает ближайший plan. */
+      v.jobWhy = '';
       /* Заступ внутрь, ВЫХОД из двора и стоянка на своём месте — это законные
          шаги по занятой клетке пятна. Раньше здесь были только вход и стоянка;
          из-за этого чужая срубленная ёлка в момент выхода сбрасывала путь
@@ -3316,7 +3373,11 @@
           var here = atOwnYard(v);
           if (here && !v.escape) {
             v.spot = here;
-            deposit(v, world, set);
+            /* deposit отказал — значит груза уже нет (сдали раньше). В carry
+               с пустыми руками оставаться нельзя: иначе он будет приходить
+               на двор и «сдавать» пустоту каждый кадр. Возвращаем цикл к
+               топору. */
+            if (!deposit(v, world, set)) { v.state = 'toCamp'; v.path = null; }
             return;
           }
           if (!goToCamp(v, world, solid, set)) {
@@ -3341,7 +3402,7 @@
           var finish = atOwnYard(v);
           if (finish || arrivedAtSpot(v)) {
             if (finish) v.spot = finish;
-            deposit(v, world, set);
+            if (!deposit(v, world, set)) { v.state = 'toCamp'; v.path = null; }
           }
         }
         return;
@@ -3432,7 +3493,7 @@
     stepOut: stepOut,
     finalStepClear: finalStepClear,
     planWander: planWander, wanderCell: wanderCell, insideCircle: insideCircle,
-    closeSpot: closeSpot, crossed: crossed, strike: strike, fell: fell,
+    closeSpot: closeSpot, crossed: crossed, strike: strike, fell: fell, deposit: deposit,
     walkable: walkable, blockedMap: blockedMap,
     areas: areas, areaAt: areaAt,
     spawnSpot: spawnSpot, landCells: landCells, solidObject: solidObject,
