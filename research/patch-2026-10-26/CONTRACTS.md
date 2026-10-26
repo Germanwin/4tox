@@ -125,7 +125,7 @@
 - Движок: `mapgen2/js/events.js`, кольцо 40 событий на мир.
   `{t, kind, owner, x, y, text}`.
 - Виды: `attack`, `destroy`, `growth-stop`, `no-forest`, `no-path`,
-  `build-refused`, `command-rejected`, `net-back`.
+  `build-refused`, `command-rejected`, `lost-cargo`, `net-back`, `net-lost`.
 - Агрегация: `attack` — не чаще одного на владельца раз в 8 с, повторы
   складываются в счётчик; удар не создаёт событие.
 - Событие адресуется ВЛАДЕЛЬЦУ. Хост кладёт в снимок до 8 новых событий на
