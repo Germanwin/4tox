@@ -717,12 +717,14 @@ process.on('SIGINT', () => { killAll(); process.exit(130); });
       if (last) gaps.push(t - last);
       last = t;
     });
+    window.__netDebug = true;
     const p = await N.ping();
+    window.__netDebug = false;
     await new Promise(r => setTimeout(r, 2200));
     off();
     const avg = gaps.length ? gaps.reduce((a, b) => a + b, 0) / gaps.length : 0;
     return { n: n, gap: +avg.toFixed(1), ping: p.ms, by: p.measuredBy,
-      wall: p.msWall, seq: P.state.netSeq, hidden: document.hidden };
+      wall: p.msWall, diag: p.diag, seq: P.state.netSeq, hidden: document.hidden };
   })()`);
   const hostPace = await A.js(`(() => {
     const P = window.__game.Play;
@@ -744,7 +746,8 @@ process.on('SIGINT', () => { killAll(); process.exit(130); });
     'снимки идут ровно, а не пачками: ' + (pace && pace.gap) + ' мс между кадрами');
   check(pace && pace.ping < 200 && pace.by === 'network',
     'круг меряется по сетевому стеку: ' + (pace && pace.ping) + ' мс (' +
-    (pace && pace.by) + '), на главном потоке было бы ' + (pace && pace.wall));
+    (pace && pace.by) + '), на главном потоке было бы ' + (pace && pace.wall) +
+    (pace && pace.diag ? ' · ' + JSON.stringify(pace.diag) : ''));
   /* Хост остаётся на переднем плане: дальше проверяются движение жителей,
      бой, команды и F5, а в скрытой вкладке браузер редеет кадры до раза в
      секунду — тест ловил бы ограничение браузера, а не игру. */
@@ -904,14 +907,37 @@ process.on('SIGINT', () => { killAll(); process.exit(130); });
   /* Правка клиента: «Применить» после переноса обязано уехать хосту
      командой move. Раньше клиент закрывал режим молча, и следующий снимок
      возвращал дом на старое место. */
+  /* Жители гостя уводятся от дома на хосте (и попадут на клиент снимком):
+     с 2026-10-26 правка места проверяет и живых жителей, иначе переезд
+     «дом в клетку человека» отклонялся бы точечно и тест был бы лотереей.
+     Сценарий проверяет доставку команды, а не правила расстановки. */
+  await A.js(`(() => {
+    const P=window.__game.Play, st=P.state;
+    const b=st.buildings.find(x=>window.Buildings.typeOf(x)==='house' && (x.owner||0)===1);
+    if (!b) return 0;
+    for (const v of st.villagers) {
+      if ((v.owner||0)!==1) continue;
+      v.x=Math.max(1.5, Math.min(st.world.width-2.5, b.x+20.5));
+      v.y=Math.max(1.5, Math.min(st.world.height-2.5, b.y+20.5));
+      v.path=null;
+    }
+    return 1;
+  })()`);
+  await sleep(500);
   const moveCmd = await B.js(`(() => {
     const P=window.__game.Play, B=window.Buildings, w=P.state.world;
     const b=P.state.buildings.find(x=>B.typeOf(x)==='house' && (x.owner||0)===1);
     if (!b) return null;
+    for (const v of P.state.villagers) {
+      if ((v.owner||0)!==1) continue;
+      v.x=Math.max(1.5, Math.min(w.width-2.5, b.x+20.5));
+      v.y=Math.max(1.5, Math.min(w.height-2.5, b.y+20.5));
+      v.path=null;
+    }
     const orig=B.snapshot(b);
     let spot=null;
-    const offs=[[2,0],[0,2],[2,2],[-2,0],[0,-2],[2,-2],[3,0],[0,3],[3,3],[-3,0]];
-    for (const [dx,dy] of offs) {
+    for (let r=2;r<=14&&!spot;r++) for (let dy=-r;dy<=r&&!spot;dy++) for (let dx=-r;dx<=r;dx++) {
+      if (Math.max(Math.abs(dx),Math.abs(dy))!==r) continue;
       const c=B.checkAt(w,P.state.buildings,b,{x:b.x+dx,y:b.y+dy});
       if (c.ok) { spot={x:b.x+dx,y:b.y+dy}; break; }
     }

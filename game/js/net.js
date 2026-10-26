@@ -677,6 +677,18 @@
         j.msWall = wall;
         j.ms = net > 0 ? net : wall;
         j.measuredBy = net > 0 ? 'network' : 'wall';
+        /* Диагностика для приёмки: почему число взято из сети или со стенных
+           часов. Без флага не собирается. */
+        if (global.__netDebug) {
+          var dbg = { t0: Math.round(t0), obs: pingEntries.length, entries: 0, support: !!global.PerformanceObserver };
+          try {
+            var dl = global.performance.getEntriesByType('resource');
+            for (var di = 0; di < dl.length; di++) {
+              if ((dl[di].name || '').indexOf('/api/ping') >= 0) dbg.entries++;
+            }
+          } catch (e) { dbg.err = String(e && e.message || e); }
+          j.diag = dbg;
+        }
         return j;
       }
       var net = resourceRtt(t0);
@@ -685,12 +697,16 @@
          (главный поток занят кадром). Один короткий повтор честнее, чем
          показать стенные 3 мс как «сеть»: приёмочный тест и игрок должны
          видеть источник числа. */
+      /* Запись PerformanceObserver приходит задачей, и на загруженном главном
+         потоке это бывает позже промиса. Ждём её до ~0.8 с мелкими шагами:
+         это дешевле, чем соврать «wall» на честном сетевом круге. */
       return new Promise(function (resolve) {
-        global.setTimeout(function () {
+        var left = 12;
+        (function tick() {
           var again = resourceRtt(t0);
-          if (again > 0) { resolve(finish(again)); return; }
-          global.setTimeout(function () { resolve(finish(resourceRtt(t0))); }, 90);
-        }, 30);
+          if (again > 0 || --left <= 0) { resolve(finish(again)); return; }
+          global.setTimeout(tick, 60);
+        })();
       });
     });
   }
