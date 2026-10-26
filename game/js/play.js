@@ -172,6 +172,9 @@
     /* Сжимает ли браузер тело снимка (ответ сервера `gzip`). Видно приёмке:
        иначе «умеем сжимать» и «сжимаем» — разные вещи. */
     netGzip: false,
+    /* Серия одинаковых построек: тип, поворот, начало и конец линии. Пока
+       она открыта, касание карты двигает ЕЁ, а не ставит дом. */
+    line: null,
     netSilence: 0, netStale: false, netHostGone: false, netLastTick: 0,
     netCmdLast: {}, netRejects: [], netSeqSeen: {},
     /* Умеет ли сервер отдавать команды в ответе снимка. false — старый
@@ -1031,7 +1034,7 @@
      (`cmdAck`) и памятью после F5; решение «это повтор» принимает карта
      выполненных (from,n). */
   function applyNetCommand(cmd) {
-    if (!cmd || state.netRole !== 'host' || state.over) {
+    if (!cmd || (state.netRole && state.netRole !== 'host') || state.over) {
       return cmdNo('сейчас не партия');
     }
     var B = global.Buildings, S = global.Session;
@@ -1089,7 +1092,7 @@
       var made = B.make({
         type: cmd.buildingType, variant: cmd.variant || 'a', rot: cmd.rot || 0,
         x: cmd.x, y: cmd.y, owner: who, town: who,
-        id: 'p' + cmd.from + ':b' + (state.nextBuildId++)
+        id: 'p' + (cmd.from === undefined ? who : cmd.from) + ':b' + (state.nextBuildId++)
       });
       var chk = B.canPlace(state.world, state.buildings, made, buildSiteOpts());
       if (!chk.ok) { netReject(cmd, chk.reason); return cmdNo(chk.reason); }
@@ -1125,7 +1128,7 @@
         var lb = B.make({
           type: cmd.buildingType, variant: cmd.variant || 'a', rot: cmd.rot || 0,
           x: it.x, y: it.y, owner: who, town: who,
-          id: 'p' + cmd.from + ':b' + (state.nextBuildId++)
+          id: 'p' + (cmd.from === undefined ? who : cmd.from) + ':b' + (state.nextBuildId++)
         });
         B.settle(state.world, lb, { clear: false });
         state.buildings.push(lb);
@@ -1231,6 +1234,13 @@
 
   function recordCommandResult(cmd, res) {
     if (!cmd || cmd.from === undefined || cmd.n === undefined) return;
+    /* Подтверждение серверу двигается ЗДЕСЬ, а не при первом взгляде на
+       команду: применённая и отклонённая обе решены, повторять их незачем.
+       Раньше присваивания не было вовсе — `cmdAck` уезжал пустым, сервер не
+       чистил очередь, и каждая команда ехала в ответе на КАЖДЫЙ снимок все
+       15 секунд (найдено агентом 4: 15 КБ повторов в ответе на снимок). */
+    var last = state.netCmdLast[cmd.from] || 0;
+    if (cmd.n > last) state.netCmdLast[cmd.from] = cmd.n;
     state.netCmdDone = state.netCmdDone || [];
     state.netCmdDone.push({
       from: cmd.from, n: cmd.n,
@@ -1297,6 +1307,7 @@
     // к прошлой. Правка и начатая постановка — тоже: построек прошлого мира на
     // новой карте нет.
     cancelBuild();
+    lineCancel();
     cancelOrder();
     state.squadIds = [];
     state.lastOrder = null;
@@ -2387,6 +2398,7 @@
   }
 
   function buildInfo() {
+    if (state.line) return lineInfo();
     var e = state.build;
     if (!e) return null;
     var B = global.Buildings;
@@ -2468,6 +2480,170 @@
     view.classList.remove('placing');
     emitBuild();
     return true;
+  }
+
+  /* --------------------------- строительство линией --------------------- *
+   *
+   * Заказчик (2026-10-26): несколько одинаковых зданий одной линией, с
+   * предпросмотром ВСЕЙ серии и одной атомарной покупкой. Правило простое:
+   * либо встают все дома, либо ни одного и ни одного бревна.
+   *
+   * План серии считает движок (Buildings.planLine): он один знает повёрнутое
+   * пятно, зазоры, выходы и живых жителей. Здесь только состояние экрана и
+   * транзакция: preview → «Построить N» → одна команда хосту (или прямое
+   * выполнение в одиночной игре).
+   *
+   * Предпросмотр — это renderer.lineGhost (клетки всех кандидатов); один
+   * призрак renderer.ghost показывает, куда именно упёрлась серия, если она
+   * негодна. */
+  function lineSpec() {
+    var e = state.line;
+    if (!e) return null;
+    return {
+      type: e.type, variant: e.variant, rot: e.rot,
+      from: { x: e.from.x, y: e.from.y },
+      to: { x: e.to.x, y: e.to.y }
+    };
+  }
+
+  function lineInfo() {
+    var e = state.line;
+    if (!e) return null;
+    var B = global.Buildings;
+    var info = B.TYPES[e.type] || {};
+    var fp = B.footprint(e.rot, e.type);
+    return {
+      mode: 'line', type: e.type, variant: e.variant,
+      name: info.name || e.type, price: e.price,
+      cost: e.cost || 0, count: e.count || 0,
+      ok: !!e.ok, afford: !!e.afford,
+      reason: e.reason || (e.afford === false ? 'не хватает брёвен' : ''),
+      rot: e.rot, x: e.from.x, y: e.from.y, x2: e.to.x, y2: e.to.y,
+      w: fp.w, h: fp.h, logs: villageLogs()
+    };
+  }
+
+  /* Пересчитать серию. cell — новый конец линии. Ответ о годности — движковый;
+     экран только повторяет его словами и числом. */
+  function refreshLine(cell) {
+    var e = state.line;
+    if (!e || !renderer) return null;
+    if (cell) e.to = { x: cell.x, y: cell.y };
+    var B = global.Buildings;
+    var plan = B.planLine
+      ? B.planLine(state.world, state.buildings, lineSpec(), buildSiteOpts())
+      : { ok: false, reason: 'серия не поддерживается', items: [] };
+    var items = plan.items || [];
+    e.items = items;
+    e.count = items.length;
+    e.cost = items.length * e.price;
+    e.afford = villageLogs() >= e.cost;
+    e.ok = plan.ok !== false && items.length > 0;
+    e.reason = e.ok ? (e.afford ? '' : 'не хватает брёвен: нужно ' +
+      e.cost + ', у деревни ' + villageLogs()) : (plan.reason || 'нет места');
+    /* Негодная серия показывает ОДИН призрак в конце — чтобы было видно, во
+       что она упирается; годная — все клетки через lineGhost. */
+    if (!e.ok) {
+      renderer.ghost = {
+        b: B.make({ type: e.type, variant: e.variant, rot: e.rot,
+          x: e.to.x, y: e.to.y }),
+        ok: false, reason: e.reason, blocked: [], yard: []
+      };
+    } else {
+      renderer.ghost = null;
+    }
+    renderer.lineGhost = e.ok
+      ? { items: items, rot: e.rot, type: e.type, variant: e.variant, ok: e.afford }
+      : null;
+    var sig = e.from.x + ',' + e.from.y + ',' + e.to.x + ',' + e.to.y + ',' + e.rot + ',' +
+      e.count + ',' + (e.ok ? 1 : 0) + ',' + (e.afford ? 1 : 0) + ',' + e.reason;
+    if (sig !== e.sig) { e.sig = sig; emitBuild(); }
+    return lineInfo();
+  }
+
+  /* Взять линию: тип выбран, начало — под курсором, конец пока там же. */
+  function beginLine(type) {
+    if (!isPlaying()) return { ok: false, reason: 'сейчас не партия' };
+    if (!canCommand()) return { ok: false, reason: commandRefusal() };
+    var opt = buildOption(type);
+    if (!opt) return { ok: false, reason: 'такой постройки нет в меню' };
+    if (state.edit) return { ok: false, reason: 'сначала примените или отмените правку' };
+    var B = global.Buildings;
+    if (!renderer || !renderer.spritesFor(type)) {
+      return { ok: false, reason: 'атлас постройки не загрузился' };
+    }
+    var have = villageLogs();
+    if (have < opt.price) {
+      return { ok: false, reason: 'не хватает брёвен: нужно ' + opt.price +
+        ', у деревни ' + have };
+    }
+    if (state.build) cancelBuild();
+    if (state.line) lineCancel();
+    var c = buildStartCell();
+    state.line = {
+      type: opt.type, variant: opt.variant, price: opt.price, rot: B.FACE_ROT,
+      from: { x: c.x, y: c.y }, to: { x: c.x, y: c.y },
+      dragging: false, items: [], count: 0, cost: 0, ok: false, afford: false,
+      reason: '', sig: ''
+    };
+    selectBuilding(null);
+    view.classList.add('placing');
+    refreshLine(c);
+    return { ok: true, reason: '' };
+  }
+
+  function lineAt(cell) {
+    if (!state.line) return null;
+    return refreshLine(cell);
+  }
+
+  function lineRotate() {
+    if (!state.line) return { ok: false, reason: 'линия не начата' };
+    state.line.rot = (state.line.rot + 90) % 360;
+    refreshLine();
+    return { ok: true, reason: '' };
+  }
+
+  function lineCancel() {
+    if (!state.line) return false;
+    state.line = null;
+    if (renderer) { renderer.lineGhost = null; renderer.ghost = null; }
+    view.classList.remove('placing');
+    emitBuild();
+    return true;
+  }
+
+  /* «Построить N»: одна транзакция. У гостя — одна команда хосту; у хоста и в
+     одиночной игре — тот же код, что и у команды, поэтому правила не
+     расходятся. Перед покупкой серия пересчитывается: мир мог измениться,
+     пока игрок смотрел. */
+  function lineConfirm() {
+    if (!canCommand()) return { ok: false, reason: commandRefusal() };
+    var e = state.line;
+    if (!e) return { ok: false, reason: 'линия не начата' };
+    var info = refreshLine();
+    if (!info.ok) { buildNote(info.reason); return { ok: false, reason: info.reason }; }
+    if (!info.afford) {
+      buildNote(info.reason);
+      return { ok: false, reason: info.reason };
+    }
+    var spec = {
+      type: 'buildLine', buildingType: e.type, variant: e.variant, rot: e.rot,
+      x: e.from.x, y: e.from.y, x2: e.to.x, y2: e.to.y
+    };
+    if (state.netRole === 'client' && global.Net) {
+      global.Net.command(spec);
+      lineCancel();
+      return { ok: true, reason: '', pending: true };
+    }
+    spec.owner = state.playerOwner;
+    var res = applyNetCommand(spec);
+    if (res.status !== 'applied') { buildNote(res.reason); return { ok: false, reason: res.reason }; }
+    if (state.netRole === 'host') state.netForce = true;
+    var n = e.count;
+    lineCancel();
+    buildNote(n > 1 ? 'поставлено ' + n : 'поставлено 1');
+    return { ok: true, reason: '' };
   }
 
   function buildAction(action) {
@@ -2818,6 +2994,14 @@
       updateHover(p.x, p.y);
       /* Идёт постановка купленной постройки: нажатие только двигает камеру
          (панораму), правку оно не открывает. */
+      if (state.line) {
+        var lc = cellAt(p.x, p.y);
+        state.line.from = { x: lc.x, y: lc.y };
+        state.line.to = { x: lc.x, y: lc.y };
+        state.line.dragging = true;
+        refreshLine(lc);
+        return;
+      }
       if (state.build) return;
       /* Ждём клик приказа: нажатие не должно открывать правку под ним. */
       if (state.order) return;
@@ -2861,6 +3045,16 @@
         }
         suppressTap = true;
         lastPointer = p;
+        return;
+      }
+
+      /* Линия тянется пальцем/мышью: от точки нажатия до текущей клетки. */
+      if (state.line && state.line.dragging) {
+        lastPointer = p;
+        var lcell = cellAt(p.x, p.y);
+        if (!state.line.to || state.line.to.x !== lcell.x || state.line.to.y !== lcell.y) {
+          lineAt(lcell);
+        }
         return;
       }
 
@@ -2919,7 +3113,11 @@
       // панорама тоже начинается с нажатия, и без порога выбор срабатывал бы в
       // конце каждого сдвига камеры.
       var wasDrag = !!(drag && drag.moved > CLICK_SLOP);
-      if (wasMulti) { drag = null; return; }
+      if (wasMulti) {
+        drag = null;
+        if (state.line) state.line.dragging = false;
+        return;
+      }
       // У постановки свой, более щедрый порог: 10–15 px дрожания — это
       // прицеливание, а не панорама (см. PLACE_SLOP).
       var wasPlaceDrag = !!(drag && drag.moved > PLACE_SLOP);
@@ -2944,6 +3142,12 @@
       /* Постановка купленного: ЛКМ ставит, ПКМ отменяет. Перетаскивание
          (панорама) не ставит ничего — иначе карта ехала бы под зданием, а оно
          вставало бы в случайном месте. */
+      if (state.line) {
+        state.line.dragging = false;
+        if (e.button === 2) { lineCancel(); return; }
+        return;
+      }
+
       if (state.build) {
         if (e.button === 2) { cancelBuild(); return; }
         if (e.button !== 0 || wasPlaceDrag || !isPlaying()) return;
@@ -3092,6 +3296,7 @@
       // и Esc обязан вернуть постройку на место, а не открыть меню поверх неё.
       if (k === 'escape') {
         if (state.order) { cancelOrder(); return; }
+        if (state.line) { lineCancel(); return; }
         if (state.build) { cancelBuild(); return; }
         if (state.edit) { editAction('cancel'); return; }
         if (state.focus) { setFocus(null); return; }
@@ -3105,7 +3310,13 @@
          постановки клавиша свободна и ничего не делает. O — отряд: T занята
          панелью сведений о деревне (js/hud.js), и раньше одно нажатие
          открывало обе панели сразу. */
+      if (k === 'r' && state.line) { lineRotate(); return; }
       if (k === 'r' && state.build) { buildAction('rotate'); return; }
+      if ((k === 'enter' || k === 'numpadenter') && state.line) {
+        state.line.dragging = false;
+        lineConfirm();
+        return;
+      }
       if (k === 'o') { actions.squad && actions.squad(); return; }
       if (k === 'h') { focusVillager(); }
       else if (k === 'c') { toggleFollow(); actions.followChanged && actions.followChanged(state.follow); }
@@ -3301,6 +3512,12 @@
     buildInfo: buildInfo,
     beginBuild: beginBuild,
     cancelBuild: cancelBuild,
+    beginLine: beginLine,
+    lineAt: lineAt,
+    lineRotate: lineRotate,
+    lineConfirm: lineConfirm,
+    lineCancel: lineCancel,
+    lineInfo: lineInfo,
     buildAction: buildAction,
     setSquad: setSquad,
     beginOrder: beginOrder,
