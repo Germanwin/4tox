@@ -131,7 +131,7 @@ NOT RUN, а не PASS.
 | `node mapgen2/tools/regress.js` | PASS (56) | F5-гидратация, рождения, груз/lost, постановка/выход, серия |
 | `mapgen2/tools/chrome.js` | PASS | CHROME_PATH → известные пути → понятная ошибка |
 | `node mapgen2/tools/game.js` | PASS (81) | обе оболочки движка (Chrome) |
-| `node game/tools/menu.js` | PASS (275) | игра, HUD, ввод, фон/заморозка (Chrome) |
+| `node game/tools/menu.js` | PASS (276) | игра, HUD, ввод, фон/заморозка (Chrome) |
 | `node game/tools/mp.js` | PASS (125) | сеть, F5, команды, сжатие, ping по сетевому стеку (Chrome + сервер) |
 | `mapgen2/tools/place.js` | NOT RUN в финале | запускался агентом 9: 65 ok / 0 FAIL |
 | `mapgen2/tools/controls.js` | NOT RUN в финале | ввод генератора; render.js менялся, нужен прогон |
