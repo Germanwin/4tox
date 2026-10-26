@@ -103,6 +103,44 @@ NOT RUN, а не PASS.
 счётчики, а не max. Реальный FPS на телефоне и настоящий RTT 200 мс в этой
 среде не измерены (NOT RUN).
 
+## Выполненные проверки (факт)
+
+| Проверка | Статус | Факт |
+|---|---|---|
+| `node mapgen2/tools/smoke.js` | PASS | карта, сид, производительность |
+| `node mapgen2/tools/shape.js` | PASS | форма, леса, площадки |
+| `node mapgen2/tools/combat.js` | PASS (72) | CONFIG, windup, LOS, stop, TTK 17.07/20.32 с, события |
+| `node mapgen2/tools/army.js` | PASS (26) | отряд, приказ, поводок |
+| `node mapgen2/tools/garrison.js` | PASS (25) | лагерь 20, двор 10, тренировка |
+| `node mapgen2/tools/lumbercamp-move.js` | PASS (23) | переезд лагеря, груз |
+| `node mapgen2/tools/lumberjack.js` | PASS | полный цикл лесоруба (Chrome) |
+| `node mapgen2/tools/ruins.js` | PASS (18) | завалы |
+| `node mapgen2/tools/path.js` | PASS (15) | наём, рубка 5 с, сдача +4, маршрут |
+| `node mapgen2/tools/regress.js` | PASS (56) | F5-гидратация, рождения, груз/lost, постановка/выход, серия |
+| `mapgen2/tools/chrome.js` | PASS | CHROME_PATH → известные пути → понятная ошибка |
+| `node mapgen2/tools/game.js` | PASS (81) | обе оболочки движка (Chrome) |
+| `node game/tools/menu.js` | PASS (275) | игра, HUD, ввод, фон/заморозка (Chrome) |
+| `node game/tools/mp.js` | PASS | сеть, F5, команды, сжатие (Chrome + сервер) |
+| `mapgen2/tools/place.js` | NOT RUN в финале | запускался агентом 9: 65 ok / 0 FAIL |
+| `mapgen2/tools/controls.js` | NOT RUN в финале | ввод генератора; render.js менялся, нужен прогон |
+| 15 браузерных приёмок целиком | частично | game/menu/mp/place прогонялись; остальные — NOT RUN |
+| Реальная сеть RTT 200 мс, Android/iOS | NOT RUN | устройства/канал недоступны |
+
+## Ограничения и что не проверено
+
+- Реальный FPS на телефоне и настоящий мобильный GPU не измерены: headless
+  Chrome без GPU, FPS в нём скачет 30/60 Гц. Проверены размеры кадра, DPR,
+  цели касания, отсутствие пересечений панелей.
+- Реальный RTT 200 мс, обрыв SSE на 5–10 с с командой в полёте: проверены
+  без сети (сервер + node) и на loopback; p95 применения 219 мс.
+- Гарантированное продолжение при ЗАКРЫТОМ браузере хоста требует серверной
+  симуляции — см. ниже.
+- 15-минутный сетевой прогон и soak на 200 существах в браузере не
+  выполнялись; headless-прогоны 60 минут и стресс 212 существ выполнены.
+- Хром-приёмки `look/views/house/hut/townhall/ground/villager/modes/army`
+  в финале не перезапускались: они не касаются изменённых правил (кроме
+  render.js/HUD), но это NOT RUN, а не PASS.
+
 ## Что требует серверной симуляции
 
 Сервер — релей: мир считает вкладка хоста. При закрытой/замороженной вкладке
