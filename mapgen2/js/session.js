@@ -95,7 +95,7 @@
       name: name || (owner ? 'Деревня ' + (owner + 1) : 'Деревня'),
       color: TEAM_COLORS[(owner || 0) % TEAM_COLORS.length],
       alive: true, isBot: false,
-      logs: 0, deliveries: 0, felled: 0, inTransit: 0,
+      logs: 0, deliveries: 0, felled: 0, inTransit: 0, lost: 0,
       buildings: [], villagers: [], townhall: null
     };
     world.towns.push(t);
@@ -817,6 +817,10 @@
        отвечают на вопрос «работал ли лагерь»: 12 брёвен за 3 ходки. */
     var town = (world.towns && world.towns[0]) || newTown(world, 0, 'Деревня');
     town.logs = 0;
+    town.deliveries = 0;
+    town.felled = 0;
+    town.inTransit = 0;
+    town.lost = 0;
     world.village = town;
     // village() сама расчищает площадку ДО постановки: лес на новом сиде
     // растёт заново и без этого прорастает сквозь стены.
@@ -1155,6 +1159,9 @@
   function hire(camp, v, villagers) {
     var chk = canHire(camp, v, villagers);
     if (!chk.ok) return chk;
+    /* В норме безработный брёвен не несёт. Если нёс (старый снимок, ручная
+       правка мира) — груз не исчезает молча, а уходит в lost. */
+    if (v.carrying) loseCargo(v, v.world || null, 'нанят с грузом');
     v.employer = camp;
     v.job = camp;
     v.state = 'toCamp';
@@ -1182,17 +1189,19 @@
      он больше не работник, дерево не ищет и не рубит. Дом, имя и id не
      меняются, цель и путь сбрасываются тем же кодом.
 
-     Брёвна, которые он нёс, НЕ ЗАСЧИТЫВАЮТСЯ: счёт деревни растёт только в
-     кадр прихода на место сдачи (js/villager.js: deposit — зовётся из того же
-     кадра, где кончился путь), а не в момент удара топором. Уволенный с
-     полными руками ничего не приносит — так и задумано: брёвна появляются у
-     деревни тогда, когда их приняли, а не тогда, когда их несут. */
-  function fire(camp, v) {
+     Брёвна, которые он нёс, в казну НЕ попадают: счёт деревни растёт только в
+     кадр прихода на место сдачи (js/villager.js: deposit), а не в момент удара
+     топором. Но и молча они не исчезают: увольнение с грузом увеличивает
+     town.lost (ходка = 4 бревна) и оставляет событие, чтобы инвариант
+     logs + 4·(inTransit + lost) = 4·felled оставался проверяемым. */
+  function fire(camp, v, opts) {
     if (!v) return { ok: false, reason: 'нет жителя' };
     if (!v.employer) return { ok: false, reason: 'он и так не работает' };
     if (camp && v.employer !== camp) {
       return { ok: false, reason: 'он ' + employerPhrase(v.employer) };
     }
+    var world = (opts && opts.world) || v.world || null;
+    if (v.carrying) loseCargo(v, world, 'уволен с грузом');
     if (global.Villagers.unmark) global.Villagers.unmark(v, v.tree);
     v.employer = null;
     v.job = null;
@@ -1221,6 +1230,78 @@
     v.frozen = false;
     v.phase = 0;
     return { ok: true, reason: '' };
+  }
+
+  /* ============================ груз и казна ============================= *
+   *
+   * Инвариант деревни:
+   *
+   *     logs + 4 x (inTransit + lost) = 4 x felled
+   *
+   * felled — срубленные деревья (ходки), inTransit — ходки в пути, lost —
+   * ходки, которые уже не придут: носильщика уволили с грузом, он погиб или
+   * его лагерь снесли. Единица lost — ХОДКА (4 бревна), как и inTransit: так
+   * равенство проверяется одним числом, а не курсом брёвен.
+   *
+   * Почему без lost нельзя: deposit снимает ходку с inTransit только в кадр
+   * сдачи. Погибший носильщик оставлял её в inTransit НАВСЕГДА, и отличить
+   * «ещё несёт» от «уже потеряно» было нечем — учёт терял смысл.
+   *
+   * Груз НЕ дублируется: сдача и потеря — разные ветки, а сами счётчики
+   * двигает только движок (deposit в js/villager.js, loseCargo здесь).
+   * ---------------------------------------------------------------------- */
+  function loseCargo(v, world, why) {
+    if (!v || !v.carrying) return 0;
+    v.carrying = false;
+    var w = world || v.world || null;
+    var town = w ? townById(w, v.town === undefined ? null : v.town) : null;
+    if (!town && w) town = townOf(w, ownerId(v));
+    if (!town && w) town = w.village || null;
+    if (town) {
+      /* Ходка переезжает из «в пути» в «потеряно», а не появляется второй раз:
+         иначе инвариант сломался бы на 4 бревна прямо здесь. */
+      town.inTransit = Math.max(0, (town.inTransit || 0) - 1);
+      town.lost = (town.lost || 0) + 1;
+    }
+    if (w && global.Events && global.Events.push) {
+      global.Events.push(w, {
+        kind: 'lost-cargo', owner: ownerId(v), x: v.x, y: v.y,
+        text: 'брёвна потеряны: ' + (why || 'носильщик выбыл'), count: 1
+      });
+    }
+    return 1;
+  }
+
+  /* Мёртвые носильщики: Combat ставит dead ДО шага жителей, а оболочка
+     вынимает их из списка ПОСЛЕ. Здесь и учитываем груз — ровно один раз:
+     loseCargo снимает carrying, второй проход его уже не найдёт. */
+  function noteDeadCargo(world, villagers) {
+    var list = villagers || [], n = 0, i, v;
+    for (i = 0; i < list.length; i++) {
+      v = list[i];
+      if (v && v.dead && v.carrying) n += loseCargo(v, world, 'носильщик погиб');
+    }
+    return n;
+  }
+
+  /* Сверка инварианта для приёмок и отладки: ok=false с diff показывает,
+     сколько брёвен учёт потерял (diff > 0) или выдумал (diff < 0). */
+  function economyCheck(world, town) {
+    var t = town;
+    if (typeof t === 'number') t = townById(world, t);
+    if (!t && world && world.towns) t = townOf(world, 0) || world.towns[0];
+    var logs = t ? (t.logs || 0) : 0;
+    var inTransit = t ? (t.inTransit || 0) : 0;
+    var lost = t ? (t.lost || 0) : 0;
+    var felled = t ? (t.felled || 0) : 0;
+    var have = logs + 4 * (inTransit + lost);
+    var need = 4 * felled;
+    return {
+      ok: have === need,
+      logs: logs, inTransit: inTransit, lost: lost, felled: felled,
+      deliveries: t ? (t.deliveries || 0) : 0,
+      have: have, need: need, diff: have - need
+    };
   }
 
   /* ========================== тренировка в казарме ======================== *
@@ -1800,8 +1881,51 @@
 
      У гуляющего жителя рубки нет вовсе (см. villager.js), поэтому в партии
      без найма сумма всегда 0 — и это правильный ответ, а не «счётчик сломан». */
+  /* Простой работы: когда ВСЕ работники лагеря стоят, это либо «лес
+     кончился», либо «к лесу не пройти». Различаем по последнему поиску
+     (v.treesSeen; точное слово может дать агент 6 через v.jobWhy). Событие —
+     после WORK_STAND_TIME простоя, дальше не чаще WORK_EVENT_GAP секунд.
+     HUD читает то же состояние через Session.hireStatus — без событий. */
+  var WORK_STAND_TIME = 10;   // с простоя всех работников до первого события
+  var WORK_EVENT_GAP = 30;    // с между повторами события «нет леса/пути»
+
+  function watchWork(world, buildings, villagers, dt) {
+    var list = buildings || [];
+    for (var i = 0; i < list.length; i++) {
+      var camp = list[i];
+      if (!camp || !isWorkplace(camp)) continue;
+      var workers = workersOf(camp, villagers);
+      if (!workers.length) { camp._standT = 0; camp._workAt = undefined; continue; }
+      var allStand = true, noForest = true, sx = 0, sy = 0, k;
+      for (k = 0; k < workers.length; k++) {
+        var v = workers[k];
+        sx += v.x; sy += v.y;
+        if (v.state !== 'stand') { allStand = false; break; }
+        var why = v.jobWhy === 'no-forest' || v.jobWhy === 'no-path'
+          ? v.jobWhy
+          : (typeof v.treesSeen === 'number' && v.treesSeen === 0 ? 'no-forest' : 'no-path');
+        if (why !== 'no-forest') noForest = false;
+      }
+      if (!allStand) { camp._standT = 0; camp._workAt = undefined; continue; }
+      camp._standT = (camp._standT || 0) + dt;
+      if (camp._standT < WORK_STAND_TIME) continue;
+      if (camp._workAt !== undefined && camp._standT - camp._workAt < WORK_EVENT_GAP) continue;
+      camp._workAt = camp._standT;
+      if (global.Events && global.Events.throttled) {
+        global.Events.throttled(world, noForest ? 'no-forest' : 'no-path',
+          ownerId(camp),
+          noForest ? 'лесорубам не осталось леса' : 'лесорубам не пройти к лесу',
+          WORK_EVENT_GAP,
+          { x: Math.round(sx / workers.length), y: Math.round(sy / workers.length) });
+      }
+    }
+  }
+
   function stepVillagers(villagers, world, renderer, dt, buildings) {
     if (!world || !villagers || !villagers.length) return 0;
+    /* Груз погибших учитывается ДО шага: дальше их уже нет в списке, и без
+       этого ходка навсегда осталась бы «в пути». */
+    noteDeadCargo(world, villagers);
     /* Список жителей партии кладётся на мир: по нему движок считает, занято ли
        место двора у лагеря другим рабочим (js/villager.js: partnersOf). Второго
        реестра работников при этом не заводится — правда о найме живёт в
@@ -1824,6 +1948,8 @@
       global.Villagers.update(villagers[i], world, renderer.villagerSprites, dt, opts);
       felled += villagers[i].felled;
     }
+    /* Нет леса/пути — состояние мира, а не панели: событие пишется здесь. */
+    watchWork(world, buildings, villagers, dt);
     return felled;
   }
 
@@ -1980,6 +2106,12 @@
     canHire: canHire,
     hire: hire,
     fire: fire,
+    loseCargo: loseCargo,
+    noteDeadCargo: noteDeadCargo,
+    economyCheck: economyCheck,
+    watchWork: watchWork,
+    WORK_STAND_TIME: WORK_STAND_TIME,
+    WORK_EVENT_GAP: WORK_EVENT_GAP,
     hireStatus: hireStatus,
     hireRank: hireRank,
     batchInfo: batchInfo,
