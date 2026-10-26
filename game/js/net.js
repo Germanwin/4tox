@@ -609,7 +609,37 @@
      показывался как «420 мс», и игрок шёл чинить интернет вместо того, чтобы
      уменьшить окно. Resource Timing живёт в сетевом стеке и от кадров не
      зависит; запасное число (msWall) остаётся для браузеров без него. */
+  /* Записи нашего ping собирает PerformanceObserver, а не только буфер.
+     Буфер Resource Timing вмещает 250 записей, а хост шлёт снимок 12 раз в
+     секунду: через полминуты буфер полон, и новые записи ping в него уже не
+     попадают — ping честно измерялся, но показать это было нечем. Наблюдатель
+     получает запись в момент появления, независимо от заполнения буфера. */
+  var pingEntries = [];
+  try {
+    if (global.PerformanceObserver) {
+      var po = new global.PerformanceObserver(function (list) {
+        var es = list.getEntries();
+        for (var i = 0; i < es.length; i++) {
+          var e = es[i];
+          if ((e.name || '').indexOf('/api/ping') < 0) continue;
+          pingEntries.push({ s: e.startTime, rq: e.requestStart, re: e.responseEnd });
+          if (pingEntries.length > 32) pingEntries.shift();
+        }
+      });
+      po.observe({ type: 'resource', buffered: true });
+    }
+  } catch (e) { /* нет PerformanceObserver — ниже обычный буфер */ }
+
   function resourceRtt(t0) {
+    /* Сначала — наблюдатель: он не зависит от заполнения буфера. */
+    for (var k = pingEntries.length - 1; k >= 0; k--) {
+      var pe = pingEntries[k];
+      if (!(pe.re > 0)) continue;
+      if (pe.s + 1 < t0) continue;
+      var fromE = pe.rq > 0 ? pe.rq : pe.s;
+      var msE = pe.re - fromE;
+      if (msE >= 0) return Math.round(msE);
+    }
     try {
       var p = global.performance;
       if (!p || !p.getEntriesByType) return 0;
