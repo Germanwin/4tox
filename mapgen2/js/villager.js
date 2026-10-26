@@ -1007,6 +1007,7 @@
     v.planSkip = 0;
     v.planSkipVer = null;
     v.jobWhy = '';
+    freeCombatCell(world, v);
     if (v.tree) { unmark(v, v.tree); v.tree = null; v.goal = null; v.close = false; }
     /* Из-под стены к прежнему дереву всё равно не дойти: топор «теряется»
        только у того, кого накрыло пятном, и он идёт за новым. Остальные
@@ -1069,6 +1070,7 @@
     v.spot = null; v.spotTrip = false; v.goal = null;
     v.planSkip = 0; v.planSkipVer = null; v.pathTryKey = null; v.pathTryN = 0;
     v.jobWhy = ''; v.blockedT = 0;
+    freeCombatCell(world, v);
     v.seen = world._villagerBlocked ? world._villagerBlocked.version : null;
     if (v.trainee) v.state = 'toBarracks';
     else if (v.warrior) {
@@ -1082,6 +1084,70 @@
         from.x, from.y);
     }
     return true;
+  }
+
+  /* --------------------------- бронь клетки боя --------------------------- *
+   *
+   * Пятеро воинов идут к одной цели. approachCells даёт соседние клетки, но
+   * без брони все могут выбрать одну и сойтись в ней (замер агента 7: до трёх
+   * в клетке, min 0.01). Бронь живёт на мире: ключ клетки -> житель.
+   *
+   * Чистит её Play.tick перед Combat.tick. Без оболочки (приёмки) записи
+   * считаются протухшими через RESERVE_TTL секунд МИРА: тот же кадр — та же
+   * бронь, а без часов бронь не копится вечно. */
+  var RESERVE_TTL = 0.1;
+  function combatCellMap(world) {
+    var now = world.time || 0;
+    var t = world._combatCellsT;
+    if (!world._combatCells || (typeof t === 'number' && now - t > RESERVE_TTL)) {
+      world._combatCells = {};
+      world._combatCellsT = now;
+    }
+    return world._combatCells;
+  }
+  function reserveCell(world, cell, v) {
+    if (!world || !cell || !v) return false;
+    var m = combatCellMap(world);
+    var key = cell.x + ',' + cell.y;
+    if (m[key] && m[key] !== v) return false;
+    if (v.combatCell && (v.combatCell.x !== cell.x || v.combatCell.y !== cell.y)) {
+      freeCell(world, v.combatCell, v);
+    }
+    m[key] = v;
+    v.combatCell = { x: cell.x, y: cell.y };
+    return true;
+  }
+  function freeCell(world, cell, v) {
+    var m = world && world._combatCells;
+    if (!m || !cell) return;
+    var key = cell.x + ',' + cell.y;
+    if (m[key] === v) delete m[key];
+  }
+  function freeCombatCell(world, v) {
+    if (!v || !v.combatCell) return;
+    freeCell(world, v.combatCell, v);
+    v.combatCell = null;
+    v.combatCellFor = null;
+  }
+  /* Ключ цели боя: id, если он есть, иначе вид и клетка. */
+  function targetKey(t) {
+    if (!t) return '?';
+    if (t.id !== undefined && t.id !== null) return 'id' + t.id;
+    return (t.kind || '?') + Math.round((t.x || 0) * 10) / 10 + ',' +
+      Math.round((t.y || 0) * 10) / 10;
+  }
+  function cellTakenByOther(world, cell, v) {
+    var m = combatCellMap(world);
+    var owner = m[cell.x + ',' + cell.y];
+    return !!(owner && owner !== v);
+  }
+
+  /* Свободна ли прямая для удара. Combat берёт ту же карту занятых клеток, что
+     и ходьба (blockedMap кэширован по версии карты — второй карты не
+     строится), а для своего кольца лагеря может передать campSolid. */
+  function attackLineClear(world, buildings, x0, y0, x1, y1, map) {
+    var solid = map || blockedMap(world, buildings);
+    return lineClear(world, solid, x0, y0, x1, y1);
   }
 
   /* Путь к УЖЕ ВЫБРАННОМУ дереву после того, как старый путь перерезали
@@ -2003,6 +2069,7 @@
       /* Ключ «к этой цели отсюда не дойти»: версия карты @ клетка > цель.
          Пишется после двух неудачных попыток боя, читается Combat/HUD. */
       noPathKey: null,
+      noPathTarget: null,
       dead: false,
       hidden: false,       // растворён в казарме: не рисуется
       vanishT: 0,          // с: сколько ещё растворяться
@@ -2998,13 +3065,39 @@
       v.combatMode = null;
       v.path = null;
       v.combatFail = 0;
+      v.noPathKey = null;
+      v.noPathTarget = null;
+      freeCombatCell(world, v);
       v.state = 'stand';
       return;
     }
+    if (v.noPathTarget && v.noPathTarget !== t) {
+      v.noPathKey = null;
+      v.noPathTarget = null;
+    }
+    if (v.combatCellFor && v.combatCellFor !== t) freeCombatCell(world, v);
+    /* Своё место перезанимаем КАЖДЫЙ кадр: оболочка чистит карту брони перед
+       боем (Play.tick), и без перезанятия двое могли заново выбрать одну
+       клетку. Если клетку уже занял другой, своя бронь снимается. */
+    if (v.combatCell && !reserveCell(world, v.combatCell, v)) freeCombatCell(world, v);
     var d = C.distTo(t, v.x, v.y);
-    if (d <= C.ATTACK_RANGE) {
+    var sx0 = Math.floor(v.x), sy0 = Math.floor(v.y);
+    var mine = v.combatCell;
+    var onMine = !!(mine && mine.x === sx0 && mine.y === sy0);
+    if (d <= C.ATTACK_RANGE && !onMine) {
+      /* Стоим уже в пределах удара, но не на своём месте: займём клетку, где
+         стоим, если она свободна; иначе пойдём на своё/свободное, чтобы не
+         встать в одну клетку с товарищем. */
+      if (reserveCell(world, { x: sx0, y: sy0 }, v)) {
+        v.combatCellFor = t;
+        onMine = true;
+      }
+    }
+    if (d <= C.ATTACK_RANGE && onMine) {
       v.path = null;
       v.combatFail = 0;
+      v.noPathKey = null;
+      v.noPathTarget = null;
       v.state = 'attack';
       v.anim = 'idle';
       v.animWant = 'idle';
@@ -3023,22 +3116,44 @@
     if (!v.path || v.chaseT <= 0) {
       tried = true;
       v.chaseT = 0.6;
-      var ok = false, i;
+      var ok = false, i, dup;
+      var cand = [];
+      /* Своё уже забронированное место — первым: если мы сошли с него в бою,
+         возвращаемся туда, а не ищем новое. */
+      if (v.combatCell) cand.push(v.combatCell);
       if (t.kind === 'building') {
-        var cells = C.approachCells(world, t, v.x, v.y);
-        for (i = 0; i < cells.length && !ok; i++) {
-          ok = routeTo(v, world, loose, cells[i].x + 0.5, cells[i].y + 0.5,
-                       { state: 'toBattle', anim: 'walk' });
+        var cellsB = C.approachCells(world, t, v.x, v.y);
+        for (i = 0; i < cellsB.length; i++) {
+          dup = false;
+          for (var q = 0; q < cand.length; q++) {
+            if (cand[q].x === cellsB[i].x && cand[q].y === cellsB[i].y) { dup = true; break; }
+          }
+          if (!dup) cand.push(cellsB[i]);
         }
       } else {
         var tx = Math.floor(t.x), ty = Math.floor(t.y);
-        var cand = [[tx, ty], [tx + 1, ty], [tx - 1, ty], [tx, ty + 1], [tx, ty - 1],
-                    [tx + 1, ty + 1], [tx - 1, ty - 1], [tx + 1, ty - 1], [tx - 1, ty + 1]];
-        for (i = 0; i < cand.length && !ok; i++) {
-          ok = routeTo(v, world, loose, cand[i][0] + 0.5, cand[i][1] + 0.5,
-                       { state: 'toBattle', anim: 'walk' });
+        var raw = [[tx, ty], [tx + 1, ty], [tx - 1, ty], [tx, ty + 1], [tx, ty - 1],
+                   [tx + 1, ty + 1], [tx - 1, ty - 1], [tx + 1, ty - 1], [tx - 1, ty + 1]];
+        for (i = 0; i < raw.length; i++) {
+          dup = false;
+          for (var q2 = 0; q2 < cand.length; q2++) {
+            if (cand[q2].x === raw[i][0] && cand[q2].y === raw[i][1]) { dup = true; break; }
+          }
+          if (!dup) cand.push({ x: raw[i][0], y: raw[i][1] });
         }
       }
+      for (i = 0; i < cand.length && !ok; i++) {
+        var cl = cand[i];
+        /* Чужую клетку подхода не занимаем: иначе пятеро сходятся в одну, и
+           бой читается как «воины слиплись». */
+        if (cellTakenByOther(world, cl, v)) continue;
+        if (!walkable(world, loose, cl.x, cl.y)) continue;
+        if (routeTo(v, world, loose, cl.x + 0.5, cl.y + 0.5,
+                    { state: 'toBattle', anim: 'walk' })) {
+          if (reserveCell(world, cl, v)) { v.combatCellFor = t; ok = true; }
+        }
+      }
+      if (ok) { v.noPathKey = null; v.noPathTarget = null; }
       if (!ok) v.path = null;
     }
     if (v.path) {
@@ -3055,6 +3170,12 @@
     if (v.combatFail >= 2) {
       v.combatFail = 0;
       v.stuck = 0;
+      /* Ключ «отсюда к этой цели не дойти» — для Combat и HUD. Версия карты в
+         ключе: срубленное дерево/снесённый дом меняют ответ. */
+      v.noPathKey = mapVer(world) + '@' + Math.floor(v.x) + ',' + Math.floor(v.y) +
+        '>' + targetKey(t);
+      v.noPathTarget = t;
+      freeCombatCell(world, v);
       v.target = null;
       v.combatMode = null;
     }
@@ -3167,6 +3288,10 @@
     var S = global.Session, B = global.Buildings;
     var list = (world && world._buildings) || [];
     var villagers = (world && world._villagers) || [];
+
+    /* Нет цели — бронь клетки подхода больше не нужна (стоп, приказ, смерть
+       цели): иначе клетка осталась бы занятой до конца кадра/часа. */
+    if (!v.target) freeCombatCell(world, v);
 
     /* Заперт в занятой клетке (в том числе на МОДЕЛИ своего лагеря) — выйти
        шагом, а если шага нет, аварийным переносом. Проверка стоит ДО боя и
@@ -3758,7 +3883,9 @@
     traineeUpdate: traineeUpdate, warriorUpdate: warriorUpdate,
     campSolid: campSolid, planWarcampWander: planWarcampWander,
     atOwnYard: atOwnYard, approachCellOf: approachCellOf, stepOutOfYard: stepOutOfYard,
-    stepOut: stepOut,
+    stepOut: stepOut, rescueMove: rescueMove, legitStanding: legitStanding,
+    reserveCell: reserveCell, freeCell: freeCell, freeCombatCell: freeCombatCell,
+    attackLineClear: attackLineClear,
     finalStepClear: finalStepClear,
     planWander: planWander, wanderCell: wanderCell, insideCircle: insideCircle,
     closeSpot: closeSpot, crossed: crossed, strike: strike, fell: fell, deposit: deposit,
