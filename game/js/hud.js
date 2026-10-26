@@ -1069,7 +1069,6 @@
       paintSimBadge(st);
       paintGrowth(st);
       paintVillagers(st);
-      paintGrowth(st);
       fillHire();
       if (squad.open) refreshSquad();
       if (buildOpen) refreshBuildMenu();

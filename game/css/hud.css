@@ -366,7 +366,6 @@
 }
 .drawer-stat.sim-row { background: rgba(120, 60, 24, .42); }
 .drawer-stat.sim-row b { color: #ffd9a8; }
-.hidden { display: none !important; }
 
 .drawer-actions {
   display: flex;
