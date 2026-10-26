@@ -293,12 +293,19 @@
       if (!s) { skipped++; continue; }
       v.target = null;
       v.combatMode = null;
+      v.attackTarget = null;
       v.prevTarget = null;
       v.path = null;
       v.goal = null;
       v.stuck = 0;
       v.routeFail = 0;
       v.combatFail = 0;
+      /* Новый приказ — новый бой: «Стоп» больше не держит, а кеш недостижимых
+         целей и якорь прошлой стычки к новому месту не относятся. */
+      v.holdFire = false;
+      v.noPathKey = null;
+      v.noPathT = 0;
+      v._fightAnchor = null;
       /* Первые шаги путей разносятся по кадрам: иначе 128 A* стартуют в
          одном кадре и дают заметный столб на 0.3–1 с. */
       v.routeT = (i % 16) * 0.04;
@@ -316,13 +323,29 @@
     };
   }
 
+  /* «Стоп» — одна реализация на всю игру (её зовут и кнопка, и сетевая
+     команда). Снимает приказ, цель и режим боя, чтобы воин не продолжал
+     добивать дом после нажатия, и ставит `holdFire`: сам он новую цель не
+     берёт. Ответ на удар при этом разрешён (combat.js: chooseTarget) — иначе
+     «Стоп» означал бы «убей меня». Флаг снимает новый приказ (см. order)
+     или ответный удар. */
   function stop(ids, villagers) {
     var list = wardens(ids, villagers), i;
     for (i = 0; i < list.length; i++) {
       list[i].order = null;
       list[i].path = null;
+      list[i].goal = null;
+      list[i].target = null;
+      list[i].combatMode = null;
+      list[i].attackTarget = null;
+      list[i].prevTarget = null;
+      list[i]._fightAnchor = null;
+      list[i].noPathT = 0;
+      list[i].holdFire = true;
+      list[i].escape = false;
       list[i].routeFail = 0;
       list[i].combatFail = 0;
+      list[i].stuck = 0;
       list[i].state = 'stand';
     }
     return list.length;
