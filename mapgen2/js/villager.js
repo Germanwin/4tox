@@ -1020,6 +1020,70 @@
     return true;
   }
 
+  /* Законная стоянка на клетке, которая для всех остальных закрыта. Это НЕ
+     «застрял», и трогать её нельзя: место двора в пятне лагеря, обучение
+     ВНУТРИ казармы, вход в дверь и кольцо своего военного лагеря. */
+  function legitStanding(v, world, solid) {
+    var B = global.Buildings;
+    if (!v) return true;
+    /* Идёт аварийным выходом из пятна (stepOut уже проложил путь) — это
+       законное движение, а не стоянка: иначе верхняя проверка звала бы
+       stepOut каждый кадр, перезаписывала путь, и человек не сдвигался бы
+       ни на шаг (замер: 40 с «внутри дома» с state toBarracks). */
+    if (v.escape) return true;
+    if (v.trainee) {
+      return v.state === 'training' || v.state === 'enterBarracks' || !!v.entering;
+    }
+    if (v.warrior) {
+      if (v.state === 'enterBarracks' || v.entering) return true;
+      if (v.warcamp && B.insideWarcamp(v.warcamp, v.x, v.y)) {
+        /* Территория лагеря проходима по «рыхлой» карте; модель — нет. */
+        return walkable(world, campSolid(world, solid, v.warcamp, false),
+          Math.floor(v.x), Math.floor(v.y));
+      }
+      return false;
+    }
+    return !!(v.escape || v.intoYard || v.exitYard || atOwnYard(v));
+  }
+
+  /* Аварийное восстановление СТАРОГО некорректного состояния: житель стоит в
+     занятой клетке, а шага наружу нет (stepOut вернул false — выход заперт
+     лесом, водой или второй постройкой). Это НЕ обычный способ движения:
+     срабатывает один раз на застревание, переносит на ближайшую безопасную
+     клетку по всей карте и пишет событие. Груз (carrying) НЕ трогается: с
+     брёвнами человек и выходит, иначе они бы просто исчезли.
+
+     Ученик и воин — тоже сюда: их ветки уходят раньше общей проверки, и до
+     сих пор они в такой клетке стояли вечно (замер: 40 с внутри дома). */
+  function rescueMove(v, world, solid, why) {
+    if (!v || !world) return false;
+    var from = { x: v.x, y: v.y };
+    var out = spawnSpot(world, solid, v.x, v.y, null,
+      Math.max(world.width, world.height));
+    if (!out) return false;
+    if (v.tree) { unmark(v, v.tree); v.tree = null; }
+    v.x = out.x; v.y = out.y;
+    v.path = null; v.step = 0; v.close = false;
+    v.escape = false; v.intoYard = false; v.exitYard = false;
+    v.entering = false; v.exiting = false;
+    v.spot = null; v.spotTrip = false; v.goal = null;
+    v.planSkip = 0; v.planSkipVer = null; v.pathTryKey = null; v.pathTryN = 0;
+    v.jobWhy = ''; v.blockedT = 0;
+    v.seen = world._villagerBlocked ? world._villagerBlocked.version : null;
+    if (v.trainee) v.state = 'toBarracks';
+    else if (v.warrior) {
+      v.state = v.warcamp ? 'toWarcamp' : (v.station ? 'toBarracksYard' : 'stand');
+      v.garrisonSpot = null;
+    } else if (v.employer) v.state = v.carrying ? 'carry' : jobState(v);
+    else v.state = 'wander';
+    if (global.Events && global.Events.refuse) {
+      global.Events.refuse(world, v.owner === undefined ? 0 : v.owner, 'no-path',
+        'запертого жителя вывели на свободную клетку (' + (why || 'затор') + ')',
+        from.x, from.y);
+    }
+    return true;
+  }
+
   /* Путь к УЖЕ ВЫБРАННОМУ дереву после того, как старый путь перерезали
      (переехал лагерь, поставили дом). Дерево и метка остаются за рабочим —
      топор он не бросает; пересчитывается только маршрут до его стоянки.
@@ -1929,6 +1993,9 @@
          предел наращивается, но только для той же пары. */
       pathTryKey: null,
       pathTryN: 0,
+      /* Сколько секунд подряд стоит в занятой клетке: по нему раз в секунду
+         пробуем шаг наружу, а не каждый кадр (stepOut — это поиски пути). */
+      blockedT: 0,
       /* Клетка подхода боя, забронированная за воином (мира _combatCells), и
          на какую цель бронь: пятеро не сходятся в одну клетку. */
       combatCell: null,
@@ -2716,6 +2783,33 @@
       }
     }
 
+    /* Стоит в занятой клетке и это не законная стоянка (обучение внутри
+       казармы, вход в дверь)? Сначала шаг наружу, затем аварийный перенос.
+       Раньше эта ветка не проверялась вовсе: ученика, накрытого домом, можно
+       было найти внутри стены через минуту и через час (замер: 40 с stand). */
+    if (!walkable(world, solid, Math.floor(v.x), Math.floor(v.y)) &&
+        !legitStanding(v, world, solid)) {
+      if (stepOut(v, world, solid, camp)) { v.state = 'toBarracks'; return; }
+      if (rescueMove(v, world, solid, 'trainee')) { v.state = 'toBarracks'; return; }
+    }
+
+    /* Путь ученика тоже может перерезать новая постройка: общий блок v.seen
+       для trainee не исполняется, поэтому проверяем здесь. Вход в дверь
+       (enterBarracks) идёт по пятну — его не трогаем. */
+    var ver = world._villagerBlocked ? world._villagerBlocked.version : null;
+    if (v.seen !== ver) {
+      v.seen = ver;
+      if (v.path && !v.entering && v.state !== 'enterBarracks') {
+        var nx = v.path[v.step];
+        if (nx && (!walkable(world, solid, Math.floor(nx.x), Math.floor(nx.y)) ||
+                   !lineClear(world, solid, v.x, v.y, nx.x, nx.y))) {
+          v.path = null;
+          v.approach = null;
+          v.state = 'toBarracks';
+        }
+      }
+    }
+
     if (v.state === 'training') {
       if (v.vanishT <= 0 && !v.hidden) v.hidden = true;
       v.trainT = Math.max(0, (v.trainT || 0) - dt);
@@ -2837,6 +2931,36 @@
       v.state = 'stand';
       idleStep(v, set, dt);
       return;
+    }
+    /* Воин во дворе казармы тоже может оказаться под новым домом. state
+       garrison раньше сразу уходил в idleStep — человек стоял в стене, пока
+       его не снесут (замер: 40 с внутри дома). */
+    if (!walkable(world, solid, Math.floor(v.x), Math.floor(v.y)) &&
+        !legitStanding(v, world, solid)) {
+      if (stepOut(v, world, solid, b)) {
+        v.garrisonSpot = null;
+        v.state = 'toBarracksYard';
+        walk(v, world, set, dt, 'walk');
+        return;
+      }
+      if (rescueMove(v, world, solid, 'garrison')) {
+        v.garrisonSpot = null;
+        v.state = 'toBarracksYard';
+        return;
+      }
+    }
+    var gv = world._villagerBlocked ? world._villagerBlocked.version : null;
+    if (v.seen !== gv) {
+      v.seen = gv;
+      if (v.path) {
+        var gn = v.path[v.step];
+        if (gn && (!walkable(world, solid, Math.floor(gn.x), Math.floor(gn.y)) ||
+                   !lineClear(world, solid, v.x, v.y, gn.x, gn.y))) {
+          v.path = null;
+          v.garrisonSpot = null;
+          v.state = 'toBarracksYard';
+        }
+      }
     }
     if (v.state === 'garrison') {
       idleStep(v, set, dt);
@@ -3044,6 +3168,27 @@
     var list = (world && world._buildings) || [];
     var villagers = (world && world._villagers) || [];
 
+    /* Заперт в занятой клетке (в том числе на МОДЕЛИ своего лагеря) — выйти
+       шагом, а если шага нет, аварийным переносом. Проверка стоит ДО боя и
+       приказа: combatMove из закрытой клетки путь не начнёт, а armyMove
+       повторяет отказ и снимает приказ — то есть без неё воин оставался в
+       стене навсегда, даже с живым лагерем. */
+    if (!walkable(world, solid, Math.floor(v.x), Math.floor(v.y)) &&
+        !legitStanding(v, world, solid)) {
+      var home = v.warcamp || v.station || null;
+      if (stepOut(v, world, solid, home)) {
+        v.garrisonSpot = null;
+        v.state = v.warcamp ? 'toWarcamp' : (v.station ? 'toBarracksYard' : 'stand');
+        walk(v, world, set, dt, 'walk');
+        return;
+      }
+      if (rescueMove(v, world, solid, 'warrior')) {
+        v.garrisonSpot = null;
+        v.state = v.warcamp ? 'toWarcamp' : (v.station ? 'toBarracksYard' : 'stand');
+        return;
+      }
+    }
+
     /* Бой идёт раньше дружины: если цель есть, воин идёт к ней, а не в лагерь. */
     if (v.combatMode && v.target) {
       combatMove(v, world, solid, set, dt);
@@ -3214,6 +3359,23 @@
        законные шаги по клеткам, которые для остальных закрыты. */
     if (v.trainee) { traineeUpdate(v, world, solid, set, dt); return; }
     if (v.warrior) { warriorUpdate(v, world, solid, set, dt); return; }
+
+    /* Гражданский или лесоруб стоит в занятой клетке и не на законной
+       стоянке. Общий блок ниже срабатывает только на СМЕНЕ версии карты: если
+       шаг наружу тогда не нашёлся (выход был заперт лесом или второй
+       постройкой), человек стоял с брёвнами вечно, потому что больше stepOut
+       никто не звал. Пробуем раз в секунду; нет шага — аварийный перенос с
+       сохранением груза. */
+    if (!walkable(world, solid, Math.floor(v.x), Math.floor(v.y)) &&
+        !atOwnYard(v) && !v.intoYard && !v.exitYard && !v.escape) {
+      v.blockedT = (v.blockedT || 0) + dt;
+      if (v.blockedT >= 1.0) {
+        v.blockedT = 0;
+        stepOut(v, world, solid, v.employer) || rescueMove(v, world, solid, 'blocked');
+      }
+    } else {
+      v.blockedT = 0;
+    }
 
     /* Мир мог смениться и под ногами: срубили дерево, поставили ратушу — в том
        числе поперёк уже проложенного пути. Проверяется не каждый кадр, а когда
