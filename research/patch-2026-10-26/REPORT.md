@@ -134,7 +134,8 @@ NOT RUN, а не PASS.
 | `node game/tools/menu.js` | PASS (276) | игра, HUD, ввод, фон/заморозка (Chrome) |
 | `node game/tools/mp.js` | PASS (125) | сеть, F5, команды, сжатие, ping по сетевому стеку (Chrome + сервер) |
 | `mapgen2/tools/place.js` | PASS (65) | посадка, зазор, деревня, правка (Chrome) |
-| `mapgen2/tools/controls.js` | PASS | ввод генератора (Chrome, прогон координатора) |
+| `mapgen2/tools/controls.js` | PASS (23) | ввод генератора (Chrome) |
+| `game/tools/army.js` | PASS (38) | панель «Войска», цвет на спрайте, кольцо у воина на задании (Chrome) |
 | 15 браузерных приёмок целиком | частично | game/menu/mp/place прогонялись; остальные — NOT RUN |
 | Реальная сеть RTT 200 мс, Android/iOS | NOT RUN | устройства/канал недоступны |
 
