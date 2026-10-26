@@ -139,6 +139,7 @@
     el.resWoodIcon = $('resWoodIcon');
     el.villagerList = $('villagerList');
     el.villagerCount = $('villagerCount');
+    el.growthNote = $('growthNote');
     el.crest = $('crest');
     el.hints = $('hintBar');
     el.toasts = $('toasts');
@@ -1063,6 +1064,7 @@
       refreshEvents(st);
       paintSimBadge(st);
       paintVillagers(st);
+      paintGrowth(st);
       fillHire();
       if (squad.open) refreshSquad();
       if (buildOpen) refreshBuildMenu();
@@ -1076,6 +1078,40 @@
     }
 
     drawMinimap();
+  }
+
+  /* Население и рост своей деревни словами: «население 3 / 4 · заселение
+     через 12 с», а если роста нет — почему (один житель, нет места, двери
+     заняты, город выбыл). Считает движок (Play.birthInfo → Session.
+     birthStatus); HUD только повторяет — своей арифметики у панели нет. */
+  function paintGrowth(st) {
+    var info = global.Play && global.Play.birthInfo ? global.Play.birthInfo() : null;
+    if (!el.growthNote) return;
+    var note = '—';
+    if (info) {
+      if (info.alive === false) note = 'деревня выбыла из партии';
+      else {
+        var head = 'население ' + (info.population || 0) + ' / ' + (info.capacity || 0);
+        var tail = '';
+        if (info.reason) tail = info.reason;
+        else if (typeof info.next === 'number') {
+          var left = Math.max(0, Math.ceil(info.next - (st.seconds || 0)));
+          tail = left > 0 ? 'заселение через ' + left + ' с' : 'заселение вот-вот';
+        }
+        note = head + (tail ? ' · ' + tail : '');
+        if (typeof info.retryIn === 'number' && info.retryIn > 0 && !info.reason) {
+          note += ' · повтор через ' + Math.ceil(info.retryIn) + ' с';
+        }
+      }
+      if (el.villagerCount) {
+        el.villagerCount.textContent = (info.population || 0) + ' / ' +
+          (info.capacity || 0) + ' чел.';
+      }
+    }
+    if (el.growthNote.textContent !== note) {
+      el.growthNote.textContent = note;
+      el.growthNote.classList.toggle('bad', !!(info && (info.reason || info.alive === false)));
+    }
   }
 
   /* ------------------------------ счётчики ------------------------------ */
@@ -1738,6 +1774,21 @@
     setBatchBtn(el.fireAll, work.fire, 'Распустить всех');
     if (!el.hireBatchNote) return;
     var notes2 = [];
+    /* Состояние работы — словами движка (Session.hireStatus): занято,
+       вакансии, идут, нет пути, нет леса. Строку «работники N / M» панель
+       берёт оттуда же, поэтому числа не расходятся. */
+    var wi = global.Play && global.Play.workInfo ? global.Play.workInfo(camp) : null;
+    if (wi) {
+      if (wi.text && el.hireSlots) {
+        el.hireSlots.textContent = wi.text;
+        el.hireSlots.title = wi.reason || '';
+      }
+      if (wi.status === 'нет леса' || wi.status === 'нет пути') {
+        notes2.push(wi.status + ' у ' + (wi.standing || 0) + ' из ' + (wi.workers || 0));
+      } else if (wi.status === 'идут' && wi.coming) {
+        notes2.push('идут к работе: ' + wi.coming);
+      }
+    }
     if (!work.hire.ok && work.hire.reason) notes2.push('Нанять свободных: ' + work.hire.reason);
     if (!work.fire.ok && work.fire.reason) notes2.push('Распустить всех: ' + work.fire.reason);
     el.hireBatchNote.textContent = notes2.join(' · ');

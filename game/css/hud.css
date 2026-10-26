@@ -1753,3 +1753,15 @@
   #hud .minimap-frame #mm { width: 112px; height: 112px; }
   .event-log.open .event-list { max-height: min(30vh, 120px); }
 }
+
+/* Строка роста деревни в панели сведений: население/вместимость и причина
+   задержки заселения. Не кнопка — мышь пропускает. */
+.growth-note {
+  margin: 0 0 8px;
+  padding: 0 2px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #e9dcb4;
+  pointer-events: none;
+}
+.growth-note.bad { color: #ffb27a; }
