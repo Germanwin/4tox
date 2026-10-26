@@ -704,20 +704,45 @@ if (placeWorld) {
   check('постановка: поворот прямоугольного дома поверх соседнего запрещён',
     rot.ok === false, rot.ok ? 'поворот разрешён' : 'отказ: ' + rot.reason);
 
-  /* 4.3. Защищённый выход. API проверки выходов пока нет: выдумывать имя
-     функции и подменять проверку нельзя, поэтому честный NOT RUN. */
-  const exitApi = ['exitCells', 'exits', 'protectedExits', 'exitSpots', 'frontCells']
-    .find((n) => typeof B[n] === 'function');
-  if (!exitApi) {
-    notRun('постановка: защищённый выход действующей постройки запирать нельзя',
-      'в Buildings нет API выходов (exitCells/protectedExits); контракт §4 ждёт его от агента 9');
-  } else if (typeof B.planLine !== 'function' && typeof B.canPlace !== 'function') {
-    notRun('постановка: защищённый выход действующей постройки запирать нельзя',
-      'есть ' + exitApi + ', но нет проверки постановки, которая спрашивала бы выходы');
-  } else {
-    notRun('постановка: защищённый выход действующей постройки запирать нельзя',
-      'есть ' + exitApi + ', но контракт вызова ещё не назван — проверка не написана');
+  /* 4.3. Защищённый выход. Мирок с водой кругом: дом 2×3 в нише, наружу
+     ведут ровно три клетки справа (12,10..12,12). Казарма 4×3 встаёт справа,
+     не пересекая дом, но закрывает все три выхода — постановка обязана
+     отказать словами. С protectExits:false то же место годится: проверка
+     проверяет именно выходы, а не «вообще запрещено». */
+  const EW = 32, EH = 20;
+  const exitWorld = {
+    width: EW, height: EH, seed: 'выходы-1', objects: [], removedIds: [],
+    towns: null, village: null,
+    isLand: new Uint8Array(EW * EH),
+    tile: new Uint8Array(EW * EH)
+  };
+  exitWorld.tile.fill(WG.T.WATER);
+  function makeLand(x0, y0, w, h) {
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+      const k = (y0 + j) * EW + (x0 + i);
+      exitWorld.isLand[k] = 1;
+      exitWorld.tile[k] = WG.T.GRASS;
+    }
   }
+  makeLand(10, 10, 2, 3);        // пятно дома
+  makeLand(12, 10, 1, 3);        // единственные выходы
+  makeLand(12, 10, 4, 3);        // место казармы (не пересекает дом)
+  exitWorld._villagers = [];
+  const houseExit = B.make({ type: 'house', variant: 'a', rot: 0, x: 10, y: 10 });
+  const barracksBlock = B.make({ type: 'barracks', variant: 'a', rot: 0, x: 12, y: 10 });
+  const exitsBefore = B.exitCells(exitWorld, [houseExit], houseExit);
+  const sealed = B.canPlace(exitWorld, [houseExit], barracksBlock,
+    { clearable: false, requireClear: false, yard: 0, villagers: [],
+      protectExits: true });
+  check('постановка: защищённый выход действующей постройки запирать нельзя',
+    exitsBefore.length === 3 && sealed.ok === false && /запирает выход/i.test(sealed.reason || ''),
+    'выходов ' + exitsBefore.length + ', ответ: ' + (sealed.ok ? 'разрешено' : sealed.reason));
+  const unsealed = B.canPlace(exitWorld, [houseExit], barracksBlock,
+    { clearable: false, requireClear: false, yard: 0, villagers: [],
+      protectExits: false });
+  check('постановка: без защиты выходов то же место годится',
+    unsealed.ok === true,
+    unsealed.ok ? 'разрешено' : 'отказ: ' + unsealed.reason);
 }
 
 /* ============================== 5. Серия =============================== */

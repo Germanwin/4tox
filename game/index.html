@@ -178,6 +178,19 @@
         </span>
       </div>
 
+      <!-- Население и заселение: сколько живёт, сколько поместится, когда
+           ждать следующего и почему его нет. Числа и причину отдаёт
+           Play.birthInfo (движок), HUD только пишет их словами. -->
+      <div class="drawer-stat" id="growthRow" title="Население и заселение">
+        <b id="growthText">население —</b>
+        <i id="growthReason" class="hidden"></i>
+      </div>
+      <!-- «Мир пропустил N с» — постоянная строка (boot.js выбрасывает долг
+           больше MAX_DEBT); это не тост и не событие. -->
+      <div class="drawer-stat sim-row hidden" id="simRow" title="Мир пропустил время">
+        <b id="simText">—</b>
+      </div>
+
       <div class="drawer-actions">
         <button id="btnFollow" class="icon-btn" type="button" title="Камера следит за выбранным жителем (C)">
           <span aria-hidden="true">◎</span> Следить
@@ -193,10 +206,6 @@
 
       <div class="drawer-villagers">
         <div class="drawer-sub"><b>Жители</b><span id="villagerCount">—</span></div>
-        <!-- Население, вместимость домов и когда ждать заселения: правило
-             2026-10-26 (агент 5) — причина задержки должна быть видна, а не
-             угадываться по «жители перестали появляться». -->
-        <p class="growth-note" id="growthNote">—</p>
         <ul class="villager-list" id="villagerList"></ul>
       </div>
     </aside>

@@ -139,7 +139,6 @@
     el.resWoodIcon = $('resWoodIcon');
     el.villagerList = $('villagerList');
     el.villagerCount = $('villagerCount');
-    el.growthNote = $('growthNote');
     el.crest = $('crest');
     el.hints = $('hintBar');
     el.toasts = $('toasts');
@@ -219,6 +218,11 @@
     // «Мир пропустил N с» и профиль экономии.
     el.simBadge = $('simBadge');
     el.btnEconomy = $('btnEconomy');
+    // Панель деревни: население/заселение и «мир пропустил N с».
+    el.growthText = $('growthText');
+    el.growthReason = $('growthReason');
+    el.simRow = $('simRow');
+    el.simText = $('simText');
 
     /* Плотность мини-карты ограничена двумя: внутренний холст 192 x 2 — это
        уже 147 456 пикселей на перерисовку, а DPR 3 давал 331 776 при том же
@@ -1063,6 +1067,7 @@
       paintLogs(st);
       refreshEvents(st);
       paintSimBadge(st);
+      paintGrowth(st);
       paintVillagers(st);
       paintGrowth(st);
       fillHire();
@@ -1078,40 +1083,6 @@
     }
 
     drawMinimap();
-  }
-
-  /* Население и рост своей деревни словами: «население 3 / 4 · заселение
-     через 12 с», а если роста нет — почему (один житель, нет места, двери
-     заняты, город выбыл). Считает движок (Play.birthInfo → Session.
-     birthStatus); HUD только повторяет — своей арифметики у панели нет. */
-  function paintGrowth(st) {
-    var info = global.Play && global.Play.birthInfo ? global.Play.birthInfo() : null;
-    if (!el.growthNote) return;
-    var note = '—';
-    if (info) {
-      if (info.alive === false) note = 'деревня выбыла из партии';
-      else {
-        var head = 'население ' + (info.population || 0) + ' / ' + (info.capacity || 0);
-        var tail = '';
-        if (info.reason) tail = info.reason;
-        else if (typeof info.next === 'number') {
-          var left = Math.max(0, Math.ceil(info.next - (st.seconds || 0)));
-          tail = left > 0 ? 'заселение через ' + left + ' с' : 'заселение вот-вот';
-        }
-        note = head + (tail ? ' · ' + tail : '');
-        if (typeof info.retryIn === 'number' && info.retryIn > 0 && !info.reason) {
-          note += ' · повтор через ' + Math.ceil(info.retryIn) + ' с';
-        }
-      }
-      if (el.villagerCount) {
-        el.villagerCount.textContent = (info.population || 0) + ' / ' +
-          (info.capacity || 0) + ' чел.';
-      }
-    }
-    if (el.growthNote.textContent !== note) {
-      el.growthNote.textContent = note;
-      el.growthNote.classList.toggle('bad', !!(info && (info.reason || info.alive === false)));
-    }
   }
 
   /* ------------------------------ счётчики ------------------------------ */
@@ -1374,6 +1345,19 @@
 
   function panelApi(camp) { return isTrainMode(camp) ? trainApi() : hireApi(); }
 
+  /* Свободный гражданский — предикат ДВИЖКА (Session.freeCivilian, контракт
+     §4), а не «нет employer»: воин, ученик и чужой житель тоже без employer,
+     но нанять их нельзя. Пока движок не отдал предикат, остаётся прежняя
+     проверка — но она записана в одном месте, а не раскидана по панели. */
+  function isFreeCivilian(v, owner) {
+    var S = global.Session;
+    if (S && typeof S.freeCivilian === 'function') {
+      try { return !!S.freeCivilian(v, owner); } catch (e) { /* старая подпись */ }
+    }
+    if (!v || v.dead || v.warrior || v.trainee || v.employer) return false;
+    return (v.owner === undefined ? 0 : v.owner) === (owner === undefined ? 0 : owner);
+  }
+
   function isWorker(camp, list, v) {
     var S = global.Session;
     if (S && typeof S.worksAt === 'function') return S.worksAt(camp, v);
@@ -1387,7 +1371,8 @@
     }
     if (S && S.hireGroup) return S.hireGroup(camp, v);
     if (v && v.employer === camp) return 'here';
-    return (v && !v.employer) ? 'free' : 'other';
+    var owner = camp && camp.owner !== undefined ? camp.owner : 0;
+    return isFreeCivilian(v, owner) ? 'free' : 'other';
   }
 
   function groupLabel(camp, group) {
@@ -1586,6 +1571,18 @@
     /* Порядок строк — движковый: у лагеря «нанятые здесь → свободные →
        занятые», у казармы «тренируются здесь → свободные → воины → занятые».
        HUD его только рисует. */
+    /* Если движок отдаёт готовую строку места работы (Play.workInfo),
+       подпись и причину берём у него: иначе HUD собрал бы второй ответ на
+       вопрос «сколько занято / почему нельзя», и он разошёлся бы с canHire
+       на первой правке правил (контракт §4). */
+    var wi = global.Play && typeof global.Play.workInfo === 'function'
+      ? global.Play.workInfo(camp) : null;
+    if (wi && wi.text) el.hireSlots.textContent = wi.text;
+    if (wi && wi.reason) {
+      el.hireNote.textContent = wi.reason;
+      el.hireNote.classList.remove('hidden');
+    }
+
     var sig = hireKey(camp, ordered, slots);
     if (sig !== hire.sig) { rebuildHire(camp, ordered); hire.sig = sig; }
     updateHire(camp, ordered);
@@ -1862,13 +1859,13 @@
       list.forEach(function (v) {
         if ((v.owner === undefined ? 0 : v.owner) !== me) return;
         if (isTrainMode(camp)) {
-          if (!v.trainee && !v.warrior && !v.employer) {
+          if (isFreeCivilian(v, me)) {
             global.Net.command({ type: 'train', campId: camp.id, villagerId: v.id });
             sent++;
           }
         } else {
           var working = isWorker(camp, list, v);
-          if ((kind === 'hire' && !working && !v.employer) ||
+          if ((kind === 'hire' && !working && isFreeCivilian(v, me)) ||
               (kind === 'fire' && working)) {
             global.Net.command({ type: kind === 'hire' ? 'hire' : 'fire',
               campId: camp.id, villagerId: v.id });
@@ -2324,6 +2321,49 @@
     el.eventLogList.innerHTML = html;
   }
 
+  /* Население и заселение — для панели деревни: «население 3 / 4 ·
+     заселение через 12 с», а если ждать нечего — причина словами движка
+     (Play.birthInfo: один житель / нет места / двери заняты / город выбыл).
+     У гостя next может не быть — тогда отсчёта нет, но население есть. */
+  function paintGrowth(st) {
+    if (!el.growthText) return;
+    var P = global.Play;
+    var info = P && typeof P.birthInfo === 'function' ? P.birthInfo() : null;
+    if (!info) {
+      el.growthText.textContent = 'население —';
+      if (el.growthReason) el.growthReason.classList.add('hidden');
+      return;
+    }
+    var pop = info.pop !== undefined ? info.pop
+      : (info.population !== undefined ? info.population : 0);
+    var cap = info.cap !== undefined ? info.cap
+      : (info.capacity !== undefined ? info.capacity : 0);
+    var free = info.free !== undefined ? info.free : Math.max(0, cap - pop);
+    var left = null;
+    if (info.in !== undefined && info.in !== null) left = info.in;
+    else if (info.retryIn !== undefined && info.retryIn !== null) left = info.retryIn;
+    else if (info.next !== undefined && info.next !== null) {
+      left = Math.max(0, info.next - ((st && st.seconds) || 0));
+    }
+    var text = 'население ' + pop + ' / ' + cap;
+    /* Отсчёт — только если он осмысленный: в сети гость может получить
+       «следующая граница» от чужого времени, а тест — далёкое будущее. Час и
+       больше — это не «через 12 с», а «пока неизвестно». */
+    if (left !== null && isFinite(left) && left <= 3600 && pop > 1) {
+      text += ' · заселение через ' + Math.max(0, Math.ceil(left)) + ' с';
+    } else if (free > 0 && pop > 1) {
+      text += ' · свободно ' + free;
+    }
+    if (free <= 0) text += ' · дом полон';
+    el.growthText.textContent = text;
+    var why = info.reason || '';
+    if (info.alive === false) why = 'город выбыл';
+    if (el.growthReason) {
+      el.growthReason.textContent = why;
+      el.growthReason.classList.toggle('hidden', !why);
+    }
+  }
+
   /* «Мир пропустил N с» — постоянная строка, а не тост: boot.js выбрасывает
      долг больше MAX_DEBT и пишет его в Play.state.simDropped. Молчаливое
      ускорение мира запрещено контрактом §1 — отброшенное время должно быть
@@ -2333,12 +2373,17 @@
     var lost = (st && st.simDropped) || 0;
     if (!(lost > 0.05)) {
       el.simBadge.classList.add('hidden');
+      if (el.simRow) el.simRow.classList.add('hidden');
       return;
     }
     el.simBadge.classList.remove('hidden');
     el.simBadge.textContent = 'мир пропустил ' +
       (lost >= 10 ? String(Math.round(lost)) : String(Math.round(lost * 10) / 10).replace('.', ',')) +
       ' с';
+    if (el.simRow) {
+      el.simRow.classList.remove('hidden');
+      if (el.simText) el.simText.textContent = el.simBadge.textContent;
+    }
     el.simBadge.title = 'Браузер не успел догнать простой: ' + Math.round(lost) +
       ' с мира отброшено (boot.js, MAX_DEBT). Игра не ускорялась — время потеряно.';
   }

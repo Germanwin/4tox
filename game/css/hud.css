@@ -342,6 +342,32 @@
   color: #6b5236;
   opacity: 1;
 }
+/* Строка панели деревни: население/заселение и «мир пропустил N с».
+   Это текст, а не кнопка: мышь сквозь него проходит к карте, как у подсказок. */
+.drawer-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 10px;
+  border-radius: 12px;
+  background: rgba(24, 19, 12, .30);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16);
+  font-size: 12.5px;
+  line-height: 1.25;
+  color: #fdf3d9;
+  text-shadow: 0 1px 0 rgba(40, 24, 10, .5);
+  pointer-events: none;
+}
+.drawer-stat b { font-weight: 700; }
+.drawer-stat i {
+  font-style: normal;
+  font-size: 11px;
+  color: #ffd9a8;
+}
+.drawer-stat.sim-row { background: rgba(120, 60, 24, .42); }
+.drawer-stat.sim-row b { color: #ffd9a8; }
+.hidden { display: none !important; }
+
 .drawer-actions {
   display: flex;
   flex-wrap: wrap;          /* три кнопки в 92vw не влезают в одну строку */
@@ -1551,6 +1577,7 @@
  * включается сама, пока открыта полоса размещения: полоса и обзор стоят в
  * одном углу и спорили за место (замер 2026-10-26: пересечение 20 700 px²). */
 .mm-caption.mm-toggle {
+  --press: 1px;
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -1565,7 +1592,8 @@
   text-shadow: 0 1px 0 rgba(255, 255, 255, .35);
   cursor: pointer;
 }
-.mm-caption.mm-toggle:active { transform: translateY(1px); }
+.mm-caption.mm-toggle:active { transform: translateY(var(--press)); }
+.mm-caption.mm-toggle:hover { color: #2f2013; }
 .minimap-frame.folded {
   display: flex;
   align-items: center;
@@ -1753,15 +1781,3 @@
   #hud .minimap-frame #mm { width: 112px; height: 112px; }
   .event-log.open .event-list { max-height: min(30vh, 120px); }
 }
-
-/* Строка роста деревни в панели сведений: население/вместимость и причина
-   задержки заселения. Не кнопка — мышь пропускает. */
-.growth-note {
-  margin: 0 0 8px;
-  padding: 0 2px;
-  font-size: 12px;
-  line-height: 1.35;
-  color: #e9dcb4;
-  pointer-events: none;
-}
-.growth-note.bad { color: #ffb27a; }
