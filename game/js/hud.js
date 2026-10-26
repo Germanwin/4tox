@@ -1817,7 +1817,32 @@
        правили бы разные копии мира. */
     if (st.netRole === 'client' && global.Net) {
       var netType = isTrainMode(camp) ? 'train' : (isWorker(camp, list, v) ? 'fire' : 'hire');
-      global.Net.command({ type: netType, campId: camp.id, villagerId: v.id });
+      var Pd = global.Pending, S = global.Session, B = global.Buildings;
+      /* UX-01: снимок ещё не знает об уже отправленных командах. Повтор по
+         тому же жителю — это второй приказ поверх первого, а не «ещё раз»;
+         места тренировки и работы тоже считаются с ожидающими. */
+      if (Pd && Pd.hasPendingFor({ villagerId: v.id })) {
+        toast('уже отправлено, ждём подтверждения'); return;
+      }
+      if (netType === 'train' && Pd && S && B) {
+        var freeSlots = B.trainingSlots(camp) -
+          S.traineesOf(camp, list).length - Pd.pendingCount('train', camp.id);
+        if (freeSlots <= 0) { toast('в казарме нет свободных мест для тренировки'); return; }
+      }
+      if (netType === 'hire' && Pd && B) {
+        var workingNow = 0;
+        for (var wi = 0; wi < list.length; wi++) if (isWorker(camp, list, list[wi])) workingNow++;
+        var freeWork = B.workSlots(camp) - workingNow - Pd.pendingCount('hire', camp.id);
+        if (freeWork <= 0) { toast('в лагере нет свободных мест'); return; }
+      }
+      var cmd = { type: netType, campId: camp.id, villagerId: v.id };
+      if (global.Play && global.Play.clientCommand) {
+        global.Play.clientCommand(cmd, who, {
+          kind: netType, campId: camp.id, villagerId: v.id
+        });
+      } else {
+        global.Net.command(cmd);
+      }
       toast(who + (netType === 'train' ? ' отправлен учиться'
         : (netType === 'fire' ? ' больше не работает' : ' нанят')));
       return;
@@ -1855,19 +1880,49 @@
       /* Только свои: список партии общий, а чужие в панели не показываются и
          командовать ими нельзя — хост всё равно ответил бы отказом. */
       var me = camp.owner === undefined ? 0 : camp.owner;
+      var Pd = global.Pending, S2 = global.Session, B2 = global.Buildings;
+      var busyWork = 0;
+      list.forEach(function (x) { if (isWorker(camp, list, x)) busyWork++; });
+      var freeTrain2 = (S2 && B2) ? B2.trainingSlots(camp) -
+        S2.traineesOf(camp, list).length -
+        (Pd ? Pd.pendingCount('train', camp.id) : 0) : 0;
+      var freeWork2 = B2 ? B2.workSlots(camp) - busyWork -
+        (Pd ? Pd.pendingCount('hire', camp.id) : 0) : 0;
       list.forEach(function (v) {
         if ((v.owner === undefined ? 0 : v.owner) !== me) return;
+        if (Pd && Pd.hasPendingFor({ villagerId: v.id })) return;
         if (isTrainMode(camp)) {
-          if (isFreeCivilian(v, me)) {
-            global.Net.command({ type: 'train', campId: camp.id, villagerId: v.id });
+          if (freeTrain2 > 0 && isFreeCivilian(v, me)) {
+            if (global.Play && global.Play.clientCommand) {
+              global.Play.clientCommand({ type: 'train', campId: camp.id,
+                villagerId: v.id }, 'тренировка',
+                { kind: 'train', campId: camp.id, villagerId: v.id });
+            } else {
+              global.Net.command({ type: 'train', campId: camp.id, villagerId: v.id });
+            }
+            freeTrain2--;
             sent++;
           }
         } else {
           var working = isWorker(camp, list, v);
-          if ((kind === 'hire' && !working && isFreeCivilian(v, me)) ||
-              (kind === 'fire' && working)) {
-            global.Net.command({ type: kind === 'hire' ? 'hire' : 'fire',
-              campId: camp.id, villagerId: v.id });
+          if (kind === 'hire' && freeWork2 > 0 && !working && isFreeCivilian(v, me)) {
+            if (global.Play && global.Play.clientCommand) {
+              global.Play.clientCommand({ type: 'hire', campId: camp.id,
+                villagerId: v.id }, 'наём',
+                { kind: 'hire', campId: camp.id, villagerId: v.id });
+            } else {
+              global.Net.command({ type: 'hire', campId: camp.id, villagerId: v.id });
+            }
+            freeWork2--;
+            sent++;
+          } else if (kind === 'fire' && working) {
+            if (global.Play && global.Play.clientCommand) {
+              global.Play.clientCommand({ type: 'fire', campId: camp.id,
+                villagerId: v.id }, 'увольнение',
+                { kind: 'fire', campId: camp.id, villagerId: v.id });
+            } else {
+              global.Net.command({ type: 'fire', campId: camp.id, villagerId: v.id });
+            }
             sent++;
           }
         }

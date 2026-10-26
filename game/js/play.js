@@ -1532,6 +1532,21 @@
     return p;
   }
 
+  /* Ожидающее действие клиента без объекта в мире: найм, обучение, приказ.
+     Та же отправка, что у постройки, плюс метка в pending-слое: интерфейс
+     видит «отправлено», пока снимок не подтвердил. */
+  function clientCommand(cmd, label, mark) {
+    var m = mark || {};
+    return sendCommand(cmd, label, function (n) {
+      if (!global.Pending) return;
+      global.Pending.addMark(m.kind || 'mark', {
+        commandId: n, n: n, owner: state.playerOwner,
+        campId: m.campId, villagerId: m.villagerId,
+        x: m.x, y: m.y, label: label || ''
+      });
+    });
+  }
+
   /* Результат команды: applied | rejected. Хост пишет его в снимок
      (`cmdDone`), сервер хранит по паре (from,n), клиент опрашивает
      `/api/command-state`. HTTP 200 на приём команды значит только «в
@@ -3642,8 +3657,9 @@
     if (!canCommand()) return false;
     if (!state.order || !state.world || !global.Army) return false;
     if (state.netRole === 'client' && global.Net) {
-      sendCommand({ type: 'order', ids: state.order.ids,
-        x: cell.x + 0.5, y: cell.y + 0.5 });
+      clientCommand({ type: 'order', ids: state.order.ids,
+        x: cell.x + 0.5, y: cell.y + 0.5 }, 'приказ',
+        { kind: 'order', x: cell.x + 0.5, y: cell.y + 0.5 });
       state.lastOrder = { x: cell.x + 0.5, y: cell.y + 0.5,
         r: global.Army.MIN_R, until: state.seconds + 4 };
       cancelOrder();
@@ -4433,6 +4449,9 @@
     noteSimDropped: noteSimDropped,
     goToEvent: goToEvent,
     applyNetCommand: applyNetCommand,
+    /* Команда гостя с ожиданием (UX-01): HUD зовёт её вместо Net.command,
+       чтобы найм/обучение/приказ сразу имели pending-статус. */
+    clientCommand: clientCommand,
     /* Диагностическая граница и выгрузка (LOOP-01/OBS-01). */
     noteFault: noteFault,
     exportDiagnostics: exportDiagnostics,

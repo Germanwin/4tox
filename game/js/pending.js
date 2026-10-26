@@ -241,7 +241,21 @@
       var act = list[i];
       if (!act) continue;
       if (!snapSeq || snapSeq <= act.sentSeq) continue;   // старый снимок
-      if (act.kind !== 'build' && act.kind !== 'line') continue;
+      /* Поиск, найм, обучение и приказ не имеют объекта, который надо ждать
+         в снимке: их подтверждение — сам результат. Но если результата нет
+         (таймаут), ожидание не должно запирать панель навсегда: два снимка
+         спустя мир уже показал, что случилось, а значка ожидания достаточно. */
+      if (act.kind !== 'build' && act.kind !== 'line') {
+        if (snapSeq > act.sentSeq + 2) { drop(act, 'mark-settled', ''); done++; }
+        continue;
+      }
+      /* Долгий unknown: результат так и не пришёл, а мир давно ушёл вперёд.
+         Снимаем изображение (не команду!) и оставляем след — вечно висящий
+         призрак хуже честного «не знаем». */
+      if (act.status === 'unknown' && nowMs() - act.at > 30000) {
+        drop(act, 'unknown-timeout', act.reason); done++;
+        continue;
+      }
 
       /* 1. Результат уже назвал id — сверяем по id. Это главный путь. */
       if (act.ids && act.ids.length) {
@@ -325,6 +339,21 @@
     return out;
   }
 
+  /* Сколько ожиданий такого вида уже отправлено (и, если задан campId,
+     только для этой постройки). По нему HUD не отправляет лишний найм в
+     занятые места: снимок ещё не знает о наших командах (UX-01). */
+  function pendingCount(kind, campId) {
+    var n = 0;
+    for (var i = 0; i < list.length; i++) {
+      var a = list[i];
+      if (!a) continue;
+      if (kind && a.kind !== kind) continue;
+      if (campId !== undefined && a.campId !== campId) continue;
+      n++;
+    }
+    return n;
+  }
+
   function hasPendingFor(o) {
     o = o || {};
     for (var i = 0; i < list.length; i++) {
@@ -377,6 +406,7 @@
     status: status,
     unresolved: unresolved,
     hasPendingFor: hasPendingFor,
+    pendingCount: pendingCount,
     pendingAt: pendingAt,
     exportState: exportState,
     list: function () { return list.slice(); }
