@@ -394,6 +394,7 @@
     state.netCmdLast = {};
     state.netCmdApplied = {};
     state.netCmdAppliedN = 0;
+    state.netCmdRestoredFrom = {};
     state.netCmdDone = [];
     state.netInbox = {};
     state.netRejects = [];
@@ -582,6 +583,14 @@
         }
       }
     }
+    /* Номера, уже решённые ДО F5: ниже них команда — повтор, выше — новая,
+       даже если она пришла раньше по порядку приёма. */
+    state.netCmdRestoredFrom = {};
+    for (var who2 in state.netCmdLast) {
+      if (Object.prototype.hasOwnProperty.call(state.netCmdLast, who2)) {
+        state.netCmdRestoredFrom[who2] = state.netCmdLast[who2];
+      }
+    }
     state.netCentered = true;
     var home = own && own.townhall ? own.townhall : null;
     if (home) {
@@ -608,8 +617,9 @@
       v.target = null; v.combatMode = null; v.tree = null; v.job = null;
       /* Кэши выбора цели/работы привязаны к старому миру и кадру: после
          возврата их нельзя наследовать. */
-      v.planSkip = 0; v.noPathKey = null; v.jobWhy = '';
-      v.holdFire = false;
+      v.planSkip = 0; v.planSkipVer = null; v.noPathKey = null; v.jobWhy = '';
+      v.pathTryKey = null; v.pathTryN = 0; v.blockedT = 0;
+      v.holdFire = false; v.campKey = undefined; v.trainKey = null;
       v.campKey = undefined; v.stationKey = undefined;
       v.intoYard = false; v.exitYard = false; v.escape = false;
       v.spotTrip = false; v.jobPath = false; v.close = false;
@@ -687,6 +697,7 @@
     state.netCmdLast = {};
     state.netCmdApplied = {};
     state.netCmdAppliedN = 0;
+    state.netCmdRestoredFrom = {};
     state.netCmdDone = [];
     state.netInbox = {};
     state.netRejects = [];
@@ -746,9 +757,23 @@
          будит хоста — снимок уходит сразу, не ожидая 80 мс. Так путь
          выполнения один (ответ снимка, порядок по `sn`), а задержка не
          зависит от частоты кадров. */
-      state.netOff.push(global.Net.on('command', function () {
-        state.netForce = true;
-      }));
+      function wakeForCommand() {
+        /* Если снимок уже в пути, force-флаг потеряется до его конца —
+           поэтому после ответа шлём ещё один: команда не должна ждать
+           следующего тика (в скрытой вкладке он редкий). */
+        if (state.netBusy) {
+          state.netForce = true;
+          global.setTimeout(function () {
+            if (state.netRole === 'host' && !state.netBusy && state.netForce) netSend(true);
+          }, 120);
+        } else {
+          netSend(true);
+        }
+      }
+      if (global.Net.on) {
+        state.netOff.push(global.Net.on('command', wakeForCommand));
+        state.netOff.push(global.Net.on('command-ready', wakeForCommand));
+      }
       /* Первый снимок — сразу, не ожидая тика: гостю нечего рисовать до него. */
       netSend(true);
     } else {
@@ -773,6 +798,16 @@
       state.netOff.push(global.Net.on('command-error', function (ev) {
         emit({ type: 'net-note',
           text: 'Команда не ушла: ' + ((ev && ev.message) || 'сеть') });
+      }));
+      /* Конечный результат команды (applied/rejected/expired) — в журнал.
+         Это не всплывашка: в сети их нет, а причина должна быть видна. */
+      state.netOff.push(global.Net.on('command-result', function (res) {
+        if (!res || res.state === 'applied' || res.state === 'pending') return;
+        var text = 'приказ не выполнен: ' + (res.reason || res.state || 'отказ');
+        if (global.Events && state.world) {
+          global.Events.refuse(state.world, state.playerOwner, 'command-rejected', text, null, null);
+        }
+        emit({ type: 'command-result', state: res.state, text: text, n: res.n });
       }));
     }
     state.running = !state.over;
@@ -1139,6 +1174,37 @@
   /* Команда клиента на хосте. Всё проверяется теми же правилами, что и у
      хоста: чужой не может поставить дом в воду, построить без брёвен или
      тренировать в чужой казарме. */
+  /* Команда хосту с явным результатом. В сети всплывашек нет (правило
+     2026-10-24), поэтому отказ/просрочка идут в журнал событий и в
+     состояние — игрок видит правду, а не «нажал и тишина». Успех не шумит:
+     он виден по миру. Промис отдаётся вызывающему, если ему нужен. */
+  function sendCommand(cmd, label) {
+    if (!global.Net || typeof global.Net.command !== 'function') return null;
+    var p = global.Net.command(cmd);
+    if (!p || typeof p.then !== 'function') return p;
+    p.then(function (res) {
+      var st = res && res.state ? res.state : 'applied';
+      state.netCmdState = st;
+      state.netCmdStateAt = nowMs();
+      if (st === 'applied' || st === 'pending') return;
+      var why = (res && res.reason) || (st === 'expired'
+        ? 'истекло время ожидания' : 'отклонено');
+      var text = (label ? label + ': ' : '') + why;
+      if (global.Events && state.world) {
+        global.Events.refuse(state.world, state.playerOwner, 'command-rejected', text, null, null);
+      }
+      emit({ type: 'command-result', state: st, text: text, n: res && res.n });
+    }, function (e) {
+      state.netCmdState = 'failed';
+      var text = (label ? label + ': ' : '') + ((e && e.message) || 'команда не ушла');
+      if (global.Events && state.world) {
+        global.Events.refuse(state.world, state.playerOwner, 'command-rejected', text, null, null);
+      }
+      emit({ type: 'command-result', state: 'failed', text: text });
+    });
+    return p;
+  }
+
   /* Результат команды: applied | rejected. Координатор пишет его в снимок
      (`cmdDone`), сервер хранит по паре (from,n), клиент опрашивает
      `/api/command-state`. HTTP 200 на приём команды значит только «в
@@ -1164,13 +1230,19 @@
     /* owner — номер города в партии, from — id игрока в лобби. Это разные
        числа, как только кто-то выходил из комнаты до старта. */
     var who = cmd.owner === undefined ? cmd.from : cmd.owner;
-    var last = state.netCmdLast[cmd.from] || 0;
+    /* `netCmdLast` — ТОЛЬКО подтверждение серверу (`cmdAck`), оно двигается
+       после решения команды. Повтором считается либо уже решённая пара
+       (from,n), либо номер не больше ВОССТАНОВЛЕННОГО при F5 водяного знака.
+       Сравнивать с живым `netCmdLast` нельзя: сервер отдаёт пачку по порядку
+       приёма, и команда 7101 может прийти после 7102; тогда 7101 была бы
+       молча съедена как «повтор», хотя не выполнялась. */
     if (cmd.n !== undefined && cmd.from !== undefined) {
       state.netCmdApplied = state.netCmdApplied || {};
       var key = cmd.from + ':' + cmd.n;
-      /* n не больше подтверждённого — это выполнено ДО этого захода (в том
-         числе до F5, см. restoreFromSnapshot). */
-      if (cmd.n <= last || state.netCmdApplied[key]) {
+      var restored = state.netCmdRestoredFrom
+        ? (state.netCmdRestoredFrom[cmd.from] || 0) : 0;
+      var last = state.netCmdLast[cmd.from] || 0;
+      if (state.netCmdApplied[key] || (restored && cmd.n <= restored)) {
         return { status: 'applied', reason: '', duplicate: true };
       }
       state.netCmdApplied[key] = 1;
@@ -1178,7 +1250,7 @@
       if (state.netCmdAppliedN > 400) {
         for (var k in state.netCmdApplied) {
           var m = /^(.*):(\d+)$/.exec(k);
-          if (m && +m[2] <= last) delete state.netCmdApplied[k];
+          if (m && +m[2] <= (restored || last)) delete state.netCmdApplied[k];
         }
         state.netCmdAppliedN = Object.keys(state.netCmdApplied).length;
       }
@@ -1246,6 +1318,7 @@
         return cmdNo(linePoor);
       }
       town.logs -= cost;
+      var builtLine = [];
       for (var li = 0; li < plan.items.length; li++) {
         var it = plan.items[li];
         var lb = B.make({
@@ -1253,9 +1326,13 @@
           x: it.x, y: it.y, owner: who, town: who,
           id: 'p' + (cmd.from === undefined ? who : cmd.from) + ':b' + (state.nextBuildId++)
         });
-        B.settle(state.world, lb, { clear: false });
+        builtLine.push(lb);
         state.buildings.push(lb);
       }
+      /* Серия — одна транзакция мира: мелочь сминается одним проходом, а не
+         N проходами по всем объектам, и кеши обновляются один раз. */
+      if (B.settleMany) B.settleMany(state.world, builtLine, { clear: false });
+      else for (var si = 0; si < builtLine.length; si++) B.settle(state.world, builtLine[si], { clear: false });
       B.touch(state.world);
       if (cmd.buildingType === 'warcamp' && S.rebalanceGarrison) {
         S.rebalanceGarrison(state.world, state.buildings, state.villagers);
@@ -1615,6 +1692,12 @@
         if (state.villagers[di] && state.villagers[di].dead) { dead = true; break; }
       }
       if (dead) {
+        for (var dj = 0; dj < state.villagers.length; dj++) {
+          var dv = state.villagers[dj];
+          if (dv && dv.dead && global.Villagers.freeCombatCell) {
+            global.Villagers.freeCombatCell(state.world, dv);
+          }
+        }
         state.villagers = state.villagers.filter(function (v) { return v && !v.dead; });
         state.world._villagers = state.villagers;
         renderer.setVillagers(state.villagers);
@@ -2358,15 +2441,15 @@
         /* Поворот после переноса: сначала место, потом угол — очередь команд
            сохранит порядок. Иначе хост повернул бы дом на старом месте. */
         if (e.orig && (e.orig.x !== b.x || e.orig.y !== b.y)) {
-          global.Net.command({ type: 'edit', action: 'move', id: b.id, x: b.x, y: b.y });
+          sendCommand({ type: 'edit', action: 'move', id: b.id, x: b.x, y: b.y }, 'перенос');
         }
-        global.Net.command({ type: 'edit', action: 'rotate', id: b.id });
+        sendCommand({ type: 'edit', action: 'rotate', id: b.id }, 'поворот');
         editClose();
       } else if (action === 'delete') {
-        global.Net.command({ type: 'edit', action: 'delete', id: b.id });
+        sendCommand({ type: 'edit', action: 'delete', id: b.id }, 'снос');
         editClose();
       } else if (action === 'place') {
-        global.Net.command({ type: 'edit', action: 'move', id: b.id, x: b.x, y: b.y });
+        sendCommand({ type: 'edit', action: 'move', id: b.id, x: b.x, y: b.y }, 'перенос');
         editClose();
       } else if (action === 'apply') {
         /* «Применить» после переноса — это и есть команда хосту. Раньше
@@ -2375,7 +2458,7 @@
         if (!e.valid) return { ok: false, reason: e.reason };
         var moved = e.orig && (e.orig.x !== b.x || e.orig.y !== b.y);
         if (moved) {
-          global.Net.command({ type: 'edit', action: 'move', id: b.id, x: b.x, y: b.y });
+          sendCommand({ type: 'edit', action: 'move', id: b.id, x: b.x, y: b.y }, 'перенос');
         }
         editClose();
       } else if (action === 'cancel') {
@@ -2807,7 +2890,7 @@
       x: e.from.x, y: e.from.y, x2: e.to.x, y2: e.to.y
     };
     if (state.netRole === 'client' && global.Net) {
-      global.Net.command(spec);
+      sendCommand(spec, 'серия');
       lineCancel();
       return { ok: true, reason: '', pending: true };
     }
@@ -2871,10 +2954,10 @@
       return { ok: false, reason: poor };
     }
     if (state.netRole === 'client' && global.Net) {
-      global.Net.command({
+      sendCommand({
         type: 'build', buildingType: e.type, variant: e.variant,
         rot: e.rot, x: e.x, y: e.y
-      });
+      }, 'постройка');
       state.build = null;
       renderer.ghost = null;
       view.classList.remove('placing');
@@ -2959,7 +3042,7 @@
     if (!canCommand()) return false;
     if (!state.order || !state.world || !global.Army) return false;
     if (state.netRole === 'client' && global.Net) {
-      global.Net.command({ type: 'order', ids: state.order.ids,
+      sendCommand({ type: 'order', ids: state.order.ids,
         x: cell.x + 0.5, y: cell.y + 0.5 });
       state.lastOrder = { x: cell.x + 0.5, y: cell.y + 0.5,
         r: global.Army.MIN_R, until: state.seconds + 4 };
@@ -2988,7 +3071,7 @@
     if (!canCommand()) return 0;
     var list, i, n = 0, me = state.playerOwner || 0;
     if (state.netRole === 'client' && global.Net) {
-      global.Net.command({ type: 'stop', ids: ids || null });
+      sendCommand({ type: 'stop', ids: ids || null }, 'стоп');
       /* Без списка команда останавливает всех СВОИХ воинов. Число для
          всплывашки считаем по своим: раньше здесь всегда был 0, и гость
          читал «останавливать некого», хотя приказ уже ушёл хосту. */

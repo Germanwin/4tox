@@ -34,9 +34,14 @@
     return world.events;
   }
 
+  /* Список событий, но БЕЗ полного сброса агрегатов. Прежде `push` звал
+     `init`, если массива ещё не было, и заодно обнулял `_evAgg`: первое
+     событие теряло счётчик повторов, и два первых удара давали два события
+     вместо одного. Полный сброс — только `init` на старте партии. */
   function list(world) {
     if (!world) return [];
-    if (!world.events) init(world);
+    if (!world.events) { world.events = []; world._evSeq = world._evSeq || 0; }
+    if (!world._evAgg) world._evAgg = {};
     return world.events;
   }
 
@@ -59,7 +64,8 @@
   function throttled(world, kind, owner, text, gap, extra) {
     if (!world) return null;
     var key = kind + ':' + owner;
-    var agg = world._evAgg || (world._evAgg = {});
+    list(world);
+    var agg = world._evAgg;
     var now = world.time || 0;
     var last = agg[key];
     if (last && last.ev && now - last.t < (gap || ATTACK_GAP)) {
