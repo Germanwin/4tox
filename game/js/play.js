@@ -1400,7 +1400,7 @@
     /* Номер команды создан ДО отправки (Net.command выдаёт n синхронно, а POST
        уходит из очереди промисов). Ожидание получает тот же id: по нему
        сопоставляются результат и снимок. */
-    var commandId = p.n;
+    var commandId = p.commandId !== undefined ? p.commandId : p.n;
     state.lastCommands = state.lastCommands || [];
     state.lastCommands.push({ n: commandId, label: label || '', at: Date.now(),
       snapSeq: state.netSeq });
@@ -2928,7 +2928,7 @@
      дрожит на 5–12 px (на Windows-мыши это норма), поэтому к моменту срабатывания
      захват пересчитывается по ТЕКУЩЕЙ клетке: дом остаётся там, где стоял, а не
      прыгает под курсор на величину дрожи. */
-  function holdStart(b, grab, pid) {
+  function holdStart(b, grab, pid, cx, cy, pressTs) {
     holdCancel();
     var id = ++editHoldSeq;
     var take = grab || { x: 0, y: 0 };
@@ -2979,19 +2979,53 @@
           traceDiag('edit-refused', { source: 'hold', reason: 'открыта другая правка' });
           return;
         }
-        if (state.edit.mode !== 'move') editMove(take);
+        if (state.edit.mode !== 'move') {
+          state.edit.pressTs = pressTs;
+          state.edit.pressChecked = false;
+          editMove(take);
+        }
         return;
       }
-      if (editOpen(b, 'hold')) editMove(take);
+      if (editOpen(b, 'hold')) {
+        /* Метка нажатия остаётся в правке: если из-за занятого главного потока
+           таймер успел сработать раньше, чем доехал pointermove, первый же
+           сдвиг с меткой ДО порога докажет, что это была панорама, и правка
+           отменится, а дом не поедет (INPUT-01). */
+        state.edit.pressTs = pressTs;
+        state.edit.pressChecked = false;
+        editMove(take);
+      }
     }
 
+    /* Пока жест ВЗЯТ, отпускание и сдвиг слушаются на ОКНЕ, а не только на
+       полотне. Причина: нажали на карте, повели мышь и отпустили над табличкой
+       HUD — до полотна не доходит ни pointermove, ни pointerup; таймер
+       удержания считал кнопку нажатой (запись в `pointers` жива) и открывал
+       правку после панорамы. Теперь любой сдвиг больше HOLD_SLOP или отпускание
+       где угодно гасит жест. Слушаем в capture: перехват цели событием не
+       отменяет доставку к окну. */
+    var winMove = function (e) {
+      if (!editHold || editHold.id !== id || e.pointerId !== pid) return;
+      var d = Math.hypot(e.clientX - cx, e.clientY - cy);
+      if (d > HOLD_SLOP) finishHold('панорама (окно)');
+    };
+    var winUp = function (e) {
+      if (!editHold || editHold.id !== id || e.pointerId !== pid) return;
+      finishHold('отпущено вне полотна');
+    };
     editHold = {
       id: id, pid: pid,
       building: b,
       grab: take,
       at: at,
+      pressTs: pressTs,
+      winMove: winMove,
+      winUp: winUp,
       timer: global.setTimeout(arm, EDIT_HOLD_MS)
     };
+    global.addEventListener('pointermove', winMove, true);
+    global.addEventListener('pointerup', winUp, true);
+    global.addEventListener('pointercancel', winUp, true);
   }
 
   /* Записать причину, по которой удержание не стало правкой: без этого
@@ -3007,6 +3041,11 @@
     editHoldSeq++;
     if (!editHold) return;
     if (editHold.timer) global.clearTimeout(editHold.timer);
+    if (editHold.winMove) global.removeEventListener('pointermove', editHold.winMove, true);
+    if (editHold.winUp) {
+      global.removeEventListener('pointerup', editHold.winUp, true);
+      global.removeEventListener('pointercancel', editHold.winUp, true);
+    }
     editHold = null;
   }
 
@@ -3741,12 +3780,18 @@
       var cell = cellAt(p.x, p.y);
       var b = renderer.buildingAt(cell.x, cell.y);
       if (b && global.Buildings.isBuilding(b)) {
-        holdStart(b, { x: cell.x - b.x, y: cell.y - b.y }, e.pointerId);
+        holdStart(b, { x: cell.x - b.x, y: cell.y - b.y }, e.pointerId,
+          e.clientX, e.clientY, e.timeStamp);
       }
     });
 
     view.addEventListener('pointermove', function (e) {
       var p = pointerAt(e);
+      state.pointerTrace = state.pointerTrace || [];
+      state.pointerTrace.push({ at: Date.now(), type: 'move', id: e.pointerId,
+        x: Math.round(p.x), y: Math.round(p.y), buttons: e.buttons,
+        drag: !!drag, moved: drag ? +drag.moved.toFixed(1) : null });
+      if (state.pointerTrace.length > 24) state.pointerTrace.shift();
       var rec = pointers[e.pointerId];
       if (rec) { rec.x = p.x; rec.y = p.y; rec.cx = e.clientX; rec.cy = e.clientY; }
 
@@ -3791,6 +3836,24 @@
          Панорама в этот момент выключена намеренно — иначе дом уезжал бы
          вместе с картой и встать точно было бы нельзя. */
       if (state.edit && state.edit.mode === 'move') {
+        /* Первый сдвиг после правки, открытой удержанием: если событие
+           случилось РАНЬШЕ порога удержания (по метке самого события, а не по
+           времени его обработки), значит, жест был панорамой, а таймер сработал
+           позже из-за занятого главного потока. Тогда правку отменяем и дом не
+           ведём. Настоящее удержание и следующий за ним перенос дома имеют
+           метку позже порога и работают как раньше. */
+        if (state.editSource === 'hold' && !state.edit.pressChecked) {
+          state.edit.pressChecked = true;
+          var pts = state.edit.pressTs;
+          if (pts !== undefined && e.timeStamp - pts >= 0 &&
+              e.timeStamp - pts < EDIT_HOLD_MS) {
+            if (drag) drag = null;
+            view.classList.remove('dragging');
+            editAction('cancel');
+            lastPointer = p;
+            return;
+          }
+        }
         holdCancel();
         if (drag) drag = null;
         view.classList.remove('dragging');

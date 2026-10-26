@@ -3086,7 +3086,8 @@ const getJSON = (u) => new Promise((res, rej) => {
     const t = (P.state.diagTrace || []).filter(x =>
       x.kind === 'edit-open' || x.kind === 'edit-hold' || x.kind === 'hold-cancelled');
     return { edit: !!P.state.edit,
-      source: P.state.editSource, trace: t.slice(-4) };
+      source: P.state.editSource, trace: t.slice(-4),
+      ptr: (P.state.pointerTrace || []).slice(-6) };
   })()`);
   await inputRelease(platformPt.x + 40, platformPt.y + 12);
   await sleep(200);
