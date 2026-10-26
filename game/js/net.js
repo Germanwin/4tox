@@ -632,13 +632,12 @@
 
   function ping() {
     if (!code || !token) return Promise.reject(new Error('нет лобби'));
-    /* Буфер Resource Timing ограничен; чистим перед своим кругом, чтобы
-       запись не вытеснилась долгой партией. */
-    try {
-      if (global.performance && global.performance.clearResourceTimings) {
-        global.performance.clearResourceTimings();
-      }
-    } catch (e) {}
+    /* Буфер Resource Timing НЕ чистим. Прежде здесь стоял clear перед
+       каждым кругом — и два круга, идущие внахлёст (игра шлёт свой раз в
+       2.5 с, приёмка зовёт свой), стирали запись друг друга: чтение
+       возвращало 0, и честный сетевой круг показывался как «wall». Запись
+       ищется по имени и времени старта, поэтому старая не мешает; браузер
+       сам выбрасывает самые старые, когда буфер полон. */
     var t0 = (global.performance && global.performance.now) ? global.performance.now() : Date.now();
     return apiGet('/api/ping?code=' + encodeURIComponent(code) +
       '&token=' + encodeURIComponent(token), 4000).then(function (j) {
