@@ -2001,7 +2001,45 @@ const getJSON = (u) => new Promise((res, rej) => {
     'клетка ' + walkedOut.x.toFixed(1) + ',' + walkedOut.y.toFixed(1) + ' · ' + walkedOut.state);
 
   /* Поворот и отмена: поворот меняет пятно (3 x 2 на 2 x 3), а «отменить»
-     возвращает и место, и угол — то, что было на момент открытия правки. */
+     возвращает и место, и угол — то, что было на момент открытия правки.
+
+     С 2026-10-26 поворот проверяет МЕСТО так же, как перенос: дом нельзя
+     развернуть в клетку жителя или так, чтобы запереть выход. Дом после
+     «Применить» стоит у соседей, и законный поворот там может быть запрещён —
+     это не поломка, а правило. Сценарий проверяет МЕХАНИКУ поворота и
+     отмены, поэтому дом переставляется на место, где годны оба угла (сами
+     правила расстановки сторожат place.js и regress.js). Жителей на время
+     уводим из пятна: житель в клетке — тоже законный отказ. */
+  const rotSpot = await js(`(() => {
+    const P = window.__game.Play, B = window.Buildings, st = P.state, b = ${findHouse};
+    window.__rotSave = { x: b.x, y: b.y, rot: b.rot };
+    for (const v of st.villagers) {
+      if (Math.abs(v.x - b.x) < 5 && Math.abs(v.y - b.y) < 7) {
+        v.x = b.x + 7.5; v.y = b.y + 0.5; v.path = null;
+      }
+    }
+    let spot = null;
+    for (let r = 2; r <= 14 && !spot; r++) {
+      for (let dy = -r; dy <= r && !spot; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          const x = b.x + dx, y = b.y + dy;
+          const a = B.checkAt(st.world, st.buildings, b, { x: x, y: y, rot: b.rot });
+          const c = B.checkAt(st.world, st.buildings, b, { x: x, y: y, rot: (b.rot + 90) % 360 });
+          if (a.ok && c.ok) { spot = { x: x, y: y }; break; }
+        }
+      }
+    }
+    if (spot) {
+      B.setSpot(st.world, b, spot);
+      B.touch(st.world);
+      P.renderer().setBuildings(st.buildings);
+    }
+    window.__rotSpot = spot;
+    return spot;
+  })()`);
+  check('правка: нашлось место, где законны оба угла',
+    !!rotSpot, rotSpot ? rotSpot.x + ',' + rotSpot.y : 'нет свободного места');
   const rotated = await (async () => {
     const at = await js(`(() => { const b = ${findHouse}; return [b.x, b.y]; })()`);
     await holdOn(at[0] + 1, at[1]);
@@ -2024,9 +2062,20 @@ const getJSON = (u) => new Promise((res, rej) => {
              bar: !document.getElementById('editBar').classList.contains('hidden') };
   })()`);
   check('«Отменить» возвращает угол и место, режим закрыт',
-    !cancelled.open && cancelled.rot === 90 && cancelled.at[0] === applied.at[0] &&
-    cancelled.at[1] === applied.at[1] && !cancelled.bar,
+    !cancelled.open && cancelled.rot === 90 &&
+    !!rotSpot && cancelled.at[0] === rotSpot.x && cancelled.at[1] === rotSpot.y &&
+    !cancelled.bar,
     cancelled.rot + '° · ' + cancelled.at.join(','));
+  /* Дом возвращается туда, где его оставил сценарий: дальнейшие проверки
+     говорят о том же мире, что до поворота. */
+  await js(`(() => {
+    const P = window.__game.Play, B = window.Buildings, b = ${findHouse};
+    const s = window.__rotSave;
+    if (s) { B.setSpot(P.state.world, b, { x: s.x, y: s.y, rot: s.rot }); B.touch(P.state.world);
+      P.renderer().setBuildings(P.state.buildings); }
+    return 1;
+  })()`);
+  await sleep(120);
 
   /* Ратуша: снести нельзя, и об этом говорят и кнопка, и всплывашка — одной и
      той же фразой движка. */
