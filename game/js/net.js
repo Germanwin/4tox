@@ -617,9 +617,13 @@
       for (var i = list.length - 1; i >= 0; i--) {
         var e = list[i];
         if ((e.name || '').indexOf('/api/ping') < 0) continue;
-        if (e.startTime + 0.5 < t0) continue;         // круг прошлых секунд
-        if (!(e.requestStart > 0) || !(e.responseEnd > 0)) continue;
-        var ms = e.responseEnd - e.requestStart;
+        if (e.startTime + 1 < t0) continue;           // круг прошлых секунд
+        if (!(e.responseEnd > 0)) continue;
+        /* requestStart может быть 0 (старый/занятый браузер): тогда от
+           начала записи — это всё ещё сетевой стек, а не стенные часы
+           главного потока. */
+        var from = e.requestStart > 0 ? e.requestStart : e.startTime;
+        var ms = e.responseEnd - from;
         if (ms >= 0) return Math.round(ms);
       }
     } catch (e) { /* нет Resource Timing — ниже запасной замер */ }
@@ -653,7 +657,11 @@
          показать стенные 3 мс как «сеть»: приёмочный тест и игрок должны
          видеть источник числа. */
       return new Promise(function (resolve) {
-        global.setTimeout(function () { resolve(finish(resourceRtt(t0))); }, 30);
+        global.setTimeout(function () {
+          var again = resourceRtt(t0);
+          if (again > 0) { resolve(finish(again)); return; }
+          global.setTimeout(function () { resolve(finish(resourceRtt(t0))); }, 90);
+        }, 30);
       });
     });
   }
