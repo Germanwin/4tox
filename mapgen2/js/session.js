@@ -1342,6 +1342,8 @@
       rebalanceGarrison(world, world._buildings, villagers);
     }
     var opts = { buildings: buildings };
+    /* Бюджет поиска пути на этот кадр — ОДИН на всех жителей. */
+    if (global.Villagers.beginFrame) global.Villagers.beginFrame(world);
     var felled = 0;
     for (var i = 0; i < villagers.length; i++) {
       global.Villagers.update(villagers[i], world, renderer.villagerSprites, dt, opts);

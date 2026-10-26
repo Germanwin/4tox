@@ -47,10 +47,18 @@
   /* Если снимок идёт до сервера дольше этого, канал уже забит: редеем до
      NET_INTERVAL_MAX. Так загрузка хоста не превращается в растущий пинг у
      всех — 12 кадров в секунду лучше 25, из которых половина стоит в очереди
-     и приходит устаревшей. */
+     и приходит устаревшей.
+     Круг меряется ДО СВОЕГО сервера (loopback), поэтому о сети друга он не
+     говорит ничего. Настоящий признак — очередь в сокете отстающего друга:
+     сервер отдаёт её в ответе на снимок (queue, байт после сжатия). Выше
+     NET_QUEUE_HIGH хост редеет, ниже NET_QUEUE_LOW — снова ускоряется.
+     24 КБ при сжатом кадре ~0,7 КБ — это 2–3 секунды отставания; 4 КБ —
+     меньше половины секунды. */
   var NET_INTERVAL_MAX = 0.2;
   var NET_SLOW_MS = 420;
   var NET_FAST_MS = 170;
+  var NET_QUEUE_HIGH = 24 * 1024;
+  var NET_QUEUE_LOW = 4 * 1024;
   var NET_SMOOTH = 0.07;
   /* Сколько клиент молчит, прежде чем сказать «связь с хостом пропала». */
   var NET_SILENCE = 1.8;
@@ -144,6 +152,13 @@
        вернулся); netForce — послать вне очереди после команды. */
     netSeq: 0, netAcc: 0, netBusy: false, netForce: false,
     netEvery: NET_INTERVAL,
+    /* Сколько байт не ушло самому отстающему другу (ответ сервера `queue`).
+       Число живёт для приёмки и разбора жалоб: по нему видно, редеет ли хост
+       из-за реальной очереди или просто из-за своего loopback-круга. */
+    netQueue: 0,
+    /* Сжимает ли браузер тело снимка (ответ сервера `gzip`). Видно приёмке:
+       иначе «умеем сжимать» и «сжимаем» — разные вещи. */
+    netGzip: false,
     netSilence: 0, netStale: false, netHostGone: false, netLastTick: 0,
     netCmdLast: {}, netRejects: [], netSeqSeen: {},
     /* Умеет ли сервер отдавать команды в ответе снимка. false — старый
@@ -341,6 +356,8 @@
     state.netSeq = 0;
     state.netAcc = 0;
     state.netEvery = NET_INTERVAL;
+    state.netQueue = 0;
+    state.netGzip = false;
     state.netSilence = 0;
     state.netStale = false;
     state.netHostGone = false;
@@ -351,6 +368,16 @@
     state.netPing = 0;
     state.netPingBusy = false;
     if (reset !== false && global.Net) global.Net.reset();
+  }
+
+  /* Вернулись в игру (вкладка, окно, разморозка) — сразу базовая частота
+     снимков. Пока вкладка была скрыта, браузер редеет её таймеры, и «круг»
+     вокруг POST мерился задержкой самого браузера: хост зря уходил на 200 мс
+     и оставался там после возврата, а друзья получали редкие кадры. Реально
+     забитую сеть очередь сервера (`queue`) снова заметит и снова замедлит. */
+  function netWake() {
+    if (state.netRole !== 'host') return;
+    state.netEvery = NET_INTERVAL;
   }
 
   /* Один кадр мира на провод. Возвращает промис (или null, если слать
@@ -391,18 +418,26 @@
     /* Частота подстраивается под фактическое время круга. На быстрой сети
        остаётся 80 мс; на забитой — редеет до 200 мс, чтобы хост не топил
        собственный канал и пинг у друзей не рос. Это не задержка мира:
-       клиент сглаживает позиции между снимками. */
-    function pace() {
+       клиент сглаживает позиции между снимками.
+       Главный сигнал здесь — очередь сервера (queue): сколько байт ещё не
+       ушло самому медленному другу. Круг до своего сервера почти всегда
+       2–7 мс, поэтому один он не замечал забитый канал никогда. */
+    function pace(res) {
       var rtt = nowMs() - started;
-      if (rtt > NET_SLOW_MS) {
+      var q = res && typeof res.queue === 'number' ? res.queue : -1;
+      state.netQueue = q > 0 ? q : 0;
+      state.netGzip = !!(res && res.gzip);
+      if (q > NET_QUEUE_HIGH) {
+        state.netEvery = Math.min(NET_INTERVAL_MAX, state.netEvery + 0.04);
+      } else if (rtt > NET_SLOW_MS) {
         state.netEvery = Math.min(NET_INTERVAL_MAX, state.netEvery + 0.02);
-      } else if (rtt < NET_FAST_MS) {
+      } else if (rtt < NET_FAST_MS && (q < 0 || q < NET_QUEUE_LOW)) {
         state.netEvery = Math.max(NET_INTERVAL, state.netEvery - 0.01);
       }
     }
     var p = global.Net.snapshot(snap).then(function (res) {
       state.netBusy = false;
-      pace();
+      pace(res);
       /* Команды гостей пришли в ответе на наш снимок — тот же POST, которым
          хост доказывает, что жив. Применяем по порядку, как их положил
          сервер; повтор (n не больше уже выполненного) отсеет netCmdLast. */
@@ -426,7 +461,7 @@
       return true;
     }, function () {
       state.netBusy = false;
-      pace();
+      pace(null);
       return false;
     });
     return p;
@@ -587,6 +622,8 @@
     state.netSeq = payload.lastSeq || 0;
     state.netAcc = 0;
     state.netEvery = NET_INTERVAL;
+    state.netQueue = 0;
+    state.netGzip = false;
     state.netBusy = false;
     state.netForce = false;
     state.netSilence = 0;
@@ -2867,6 +2904,7 @@
     start: start,
     startNet: startNet,
     stopNet: stopNet,
+    netWake: netWake,
     applyNetCommand: applyNetCommand,
     applySnapshot: applySnapshot,
     tick: tick,

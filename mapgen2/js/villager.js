@@ -229,6 +229,52 @@
   var DIAG = [false, false, false, false, true, true, true, true];
   var SQ2 = Math.SQRT2;
 
+  /* ------------------------- бюджет поиска пути -------------------------- *
+   *
+   * Зачем он. Один выбор дерева — это до TREE_TRIES x 4 поисков A*, а каждый
+   * поиск на карте 192 разбирал до 36 864 клеток. Двадцать лесорубов,
+   * которым разом перерезали путь, давали в кадре сотни тысяч разобранных
+   * клеток — и кадр замирал. Это не «медленный поиск», это его отсутствие
+   * предела.
+   *
+   * Предел теперь в двух местах, и оба — ЧИСЛО КЛЕТОК, а не время: время
+   * зависит от машины, а «сколько клеток разобрали» — свойство задачи.
+   *   PATH_DIV  — один поиск разбирает не больше N/PATH_DIV клеток. Для 192
+   *               это 9216 из 36 864: маршрут через пол-острова проходит,
+   *               а перебор всего острова в поисках несуществующей дороги
+   *               обрывается.
+   *   FRAME_DIV — весь кадр (все жители вместе) разбирает не больше N/FRAME_DIV.
+   *               Когда бюджет кончился, поиск возвращает null сразу же; житель
+   *               повторит попытку в следующем кадре. Так один кадр — не
+   *               больше N/2 клеток, сколько бы людей ни искало путь
+   *               одновременно.
+   *
+   * Упор в бюджет — это НЕ «пути нет»: житель, которому не хватило кадра,
+   * повторит попытку, а не запишет дерево в недостижимые. Поэтому счётчик
+   * budgetHits есть в Metrics, а кэш недостижимого — нет: см. дерево ниже.
+   *
+   * Заготовки массивов живут на мире (см. scratch): поиск больше не заводит
+   * три массива на весь остров. */
+  var PATH_DIV = 4;
+  var FRAME_DIV = 2;
+  var PATH_MIN_LIMIT = 2500;
+
+  function pathLimit(world) {
+    var N = (world.width || 0) * (world.height || 0);
+    return Math.max(PATH_MIN_LIMIT, Math.round(N / PATH_DIV));
+  }
+
+  /* Начало кадра: свежий бюджет на всех. Зовётся из Session.stepVillagers —
+     один раз на кадр, а не из каждого update: иначе бюджет обнулялся бы у
+     каждого жителя по отдельности и предела не было бы вовсе. */
+  function beginFrame(world) {
+    if (!world) return null;
+    world._pathBudgetHit = false;
+    var N = (world.width || 0) * (world.height || 0);
+    world._pathFrame = { left: Math.max(PATH_MIN_LIMIT, Math.round(N / FRAME_DIV)) };
+    return world._pathFrame;
+  }
+
   /* -------------------------------- атлас -------------------------------- */
 
   function joinPath(base, rel) {
@@ -305,6 +351,15 @@
     return world.objects.length + '/' + list.length + '/' + (world._buildRev || 0);
   }
 
+  /* Версия карты, по которой сейчас считали путь. У жителя она уже посчитана
+     в blockedMap; для вызовов без update (приёмки, генератор) считаем по тем
+     же трём числам, что и blockedMap. */
+  function mapVer(world) {
+    return world._villagerBlocked
+      ? world._villagerBlocked.version
+      : mapVersion(world, world._buildings || []);
+  }
+
   function blockedMap(world, buildings) {
     var list = buildings || [];
     var ver = mapVersion(world, list);
@@ -333,6 +388,7 @@
       }
     }
     m = world._villagerBlocked = { version: ver, solid: solid };
+    if (global.Metrics && global.Metrics.on) global.Metrics.counters.blockedBuilds++;
     return solid;
   }
 
@@ -384,6 +440,7 @@
       next++;
     }
     world._villagerAreas = { version: ver, ids: ids, count: next };
+    if (global.Metrics && global.Metrics.on) global.Metrics.counters.areaBuilds++;
     return world._villagerAreas;
   }
 
@@ -396,34 +453,76 @@
 
   /* ------------------------------ поиск пути ----------------------------- */
 
+  /* Заготовка поиска: одна на мир и размер карты, а не на каждый вызов.
+
+     Раньше каждый findPath заводил g (Float64Array), came (Int32Array) и
+     closed (Uint8Array) на ВСЕ клетки острова и заполнял их нулями: на 192-й
+     карте это 0.5 МБ и ~37 тыс. записей на ОДИН поиск. Выбор дерева делал до
+     тридцати двух поисков подряд — десятки мегабайт мусора на одну ходку,
+     и вся эта память потом собиралась GC посреди кадра.
+
+     Теперь массивы живут в мире, а «посещали ли клетку» — не значение, а
+     НОМЕР ПОКОЛЕНИЯ: gGen[i] === gen значит «в этом поиске клетка уже
+     видна». Поколение растёт на каждый поиск, и старые записи просто
+     перестают совпадать — занулять нечего. `came` занулять не нужно вовсе:
+     читаем его только на пути, а путь состоит из клеток с нашим поколением.
+
+     Заготовка не разделяется между вложенными поисками — их нет: findPath
+     не зовёт сам себя. */
+  function scratch(world, N) {
+    var s = world._pathScratch;
+    if (!s || s.n !== N) {
+      s = world._pathScratch = {
+        n: N, gen: 0,
+        gGen: new Int32Array(N), g: new Float64Array(N),
+        came: new Int32Array(N), closedGen: new Int32Array(N),
+        heap: new Int32Array(2048), hf: new Float64Array(2048), hn: 0
+      };
+    }
+    s.gen++;
+    /* Переполнение номера (в игре не наступит: 2^31 поисков — это годы)
+       лечится полной очисткой, а не сбросом в ноль с ложными совпадениями. */
+    if (s.gen >= 0x7fffffff) {
+      s.gGen.fill(0); s.closedGen.fill(0); s.gen = 1;
+    }
+    return s;
+  }
+
   /* A* по клеткам. Ходьба в восемь сторон, оценка — октильная
      (max + (√2−1)·min): она кратчайший путь не завышает, поэтому первый
-     найденный путь и есть кратчайший. Именно поэтому обход ратуши выходит
-     БЛИЖАЙШИМ путём к дереву, а не «каким-нибудь»: поиск не перебирает
-     варианты, а считает длину.
+     найденный путь и есть кратчайший.
 
-     Кучи и таблицы заводятся на один поиск, а поиск идёт раз на появление
-     жителя, а не раз на кадр: 128 x 128 клеток — это доли миллисекунды. */
-  function findPath(world, solid, sx, sy, tx, ty) {
+     `opts.limit` — предел разобранных клеток для ЭТОГО поиска; по умолчанию
+     pathLimit(world). `opts.ignoreBudget` — служебный, для тестов и для
+     аварийного выхода из занятой клетки: там поиск идёт по временной карте и
+     десяток клеток ничего не стоит. */
+  function findPath(world, solid, sx, sy, tx, ty, opts) {
+    opts = opts || {};
     var W = world.width, H = world.height, N = W * H;
     if (sx === tx && sy === ty) return null;
     if (!walkable(world, solid, sx, sy) || !walkable(world, solid, tx, ty)) return null;
 
-    var start = sy * W + sx, goal = ty * W + tx;
-    var g = new Float64Array(N);         // 0 = «ещё не дошли»: вход в клетку стоит >= 1
-    var came = new Int32Array(N);
-    var closed = new Uint8Array(N);
+    var frame = opts.ignoreBudget ? null : world._pathFrame;
+    if (frame && !(frame.left > 0)) {
+      world._pathBudgetHit = true;
+      if (global.Metrics && global.Metrics.on) global.Metrics.counters.budgetHits++;
+      return null;
+    }
+    var limit = opts.limit > 0 ? opts.limit : pathLimit(world);
+    if (frame && frame.left < limit) limit = frame.left;
 
-    /* Двоичная куча: индексы клеток и их оценки. Растёт по надобности —
-       клетка может попасть в кучу больше одного раза (зашли дешевле), а
-       лишнее отсеет closed. Ставить потолок «на глаз» тут нечего. */
-    var heap = new Int32Array(1024), hf = new Float64Array(1024), hn = 0;
+    var s = scratch(world, N);
+    var gen = s.gen, g = s.g, gGen = s.gGen, came = s.came, closedGen = s.closedGen;
+    var heap = s.heap, hf = s.hf;
+    var start = sy * W + sx, goal = ty * W + tx;
 
     function grow() {
       var h2 = new Int32Array(heap.length * 2); h2.set(heap); heap = h2;
       var f2 = new Float64Array(hf.length * 2); f2.set(hf); hf = f2;
+      s.heap = heap; s.hf = hf;
     }
 
+    var hn = 0;
     function push(i, f) {
       if (hn >= heap.length) grow();
       var c = hn++;
@@ -444,14 +543,14 @@
       heap[0] = heap[hn]; hf[0] = hf[hn];
       var c = 0;
       for (;;) {
-        var l = c * 2 + 1, r = l + 1, s = c;
-        if (l < hn && hf[l] < hf[s]) s = l;
-        if (r < hn && hf[r] < hf[s]) s = r;
-        if (s === c) break;
-        var ti = heap[s], tf = hf[s];
-        heap[s] = heap[c]; hf[s] = hf[c];
+        var l = c * 2 + 1, r = l + 1, sel = c;
+        if (l < hn && hf[l] < hf[sel]) sel = l;
+        if (r < hn && hf[r] < hf[sel]) sel = r;
+        if (sel === c) break;
+        var ti = heap[sel], tf = hf[sel];
+        heap[sel] = heap[c]; hf[sel] = hf[c];
         heap[c] = ti; hf[c] = tf;
-        c = s;
+        c = sel;
       }
       return top;
     }
@@ -463,15 +562,17 @@
     }
 
     g[start] = 1;                        // 1, а не 0: ноль значит «не посещали»
+    gGen[start] = gen;
     came[start] = -1;
     push(start, h(start));
 
-    var found = false;
+    var nodes = 0, found = false, spent = false;
     while (hn > 0) {
+      if (++nodes > limit) { spent = true; break; }
       var cur = pop();
       if (cur === goal) { found = true; break; }
-      if (closed[cur]) continue;
-      closed[cur] = 1;
+      if (closedGen[cur] === gen) continue;
+      closedGen[cur] = gen;
 
       var cx = cur % W, cy = (cur / W) | 0;
       for (var d = 0; d < 8; d++) {
@@ -482,13 +583,25 @@
         if (DIAG[d] && (!walkable(world, solid, cx + dx, cy) ||
                         !walkable(world, solid, cx, cy + dy))) continue;
         var ni = ny * W + nx;
-        if (closed[ni]) continue;
+        if (closedGen[ni] === gen) continue;
         var ng = g[cur] + (DIAG[d] ? SQ2 : 1);
-        if (g[ni] && ng >= g[ni] - CORNER) continue;
+        if (gGen[ni] === gen && ng >= g[ni] - CORNER) continue;
         g[ni] = ng;
+        gGen[ni] = gen;
         came[ni] = cur;
         push(ni, ng + h(ni));
       }
+    }
+    if (frame) frame.left = Math.max(0, frame.left - nodes);
+    if (spent) {
+      world._pathBudgetHit = true;
+      if (global.Metrics && global.Metrics.on) global.Metrics.counters.budgetHits++;
+    }
+    if (global.Metrics && global.Metrics.on) {
+      var m = global.Metrics.counters;
+      m.paths++;
+      m.nodes += nodes;
+      if (!found) m.fails++;
     }
     if (!found) return null;
 
@@ -581,20 +694,73 @@
 
   /* ------------------------------- дерево -------------------------------- */
 
-  /* Деревья по воздушному расстоянию от точки: ближайшее — первое. Список
-     режется: если двадцать четыре ближайших дерева недостижимы (житель на
-     островке без леса), то и двадцать пятое не спасёт, а перебор всех деревьев
-     острова — это сотни поисков пути на ровном месте. */
+  /* Индекс деревьев по клеткам. Одна постройка на состав мира: рубка меняет
+     длину world.objects, и по ней же видно, что индекс устарел. Клетка —
+     ключ, значение — массив деревьев в ней (в одной клетке их не бывает, но
+     массив дешевле объекта и переживёт будущие правила «два пня»). */
+  function treeIndex(world) {
+    var objs = world.objects || [];
+    var idx = world._treeIndex;
+    if (idx && idx.n === objs.length && idx.src === objs) return idx;
+    var map = new Map();
+    var i, o, k;
+    for (i = 0; i < objs.length; i++) {
+      o = objs[i];
+      if (!o || o.kind !== 'tree') continue;
+      k = (o.y | 0) * 1024 + (o.x | 0);
+      var bucket = map.get(k);
+      if (bucket) bucket.push(o); else map.set(k, [o]);
+    }
+    idx = world._treeIndex = { n: objs.length, src: objs, map: map };
+    return idx;
+  }
+
+  /* Деревья по воздушному расстоянию от точки: ближайшее — первое.
+
+     Раньше здесь был проход по ВСЕМ объектам мира и sort НА КАЖДОЕ
+     планирование: 3000 деревьев на 192-й карте, O(n log n) на каждую ходку
+     каждого лесоруба. Теперь выборка идёт кольцами вокруг точки по индексу:
+     как только собрано больше limit, дальше кольца не нужны — деревья за
+     кольцом по воздуху дальше любого собранного. Сортировка по точному
+     расстоянию остаётся: она решает, кто из собранных первый, и она же
+     отсекает то, что пришло из внешнего кольца «на запас».
+
+     Если в радиусе 12 колец деревьев нет (лес далеко), честно падаем на
+     прежний полный проход: это редкий случай, и он дешевле, чем расширять
+     кольца до края карты. */
   function treesNear(world, x, y, limit, awayFrom) {
+    var idx = treeIndex(world);
+    var cx = Math.floor(x), cy = Math.floor(y);
+    var want = limit ? limit + 8 : 0;
     var all = [], i, o;
-    for (i = 0; i < world.objects.length; i++) {
-      o = world.objects[i];
-      if (o.kind !== 'tree') continue;
-      /* Дерево, на которое уже нацелен ДРУГОЙ рабочий, не выбирается: метка
-         (tree.mark) — это и есть «занято». Иначе трое идут к одному стволу и
-         рубят его втроём, стоя в одной клетке. */
-      if (awayFrom && o.mark && o.mark !== awayFrom) continue;
-      all.push(o);
+    var R = 12;
+    for (var r = 0; r <= R; r++) {
+      for (var dy = -r; dy <= r; dy++) {
+        var edgeY = (dy === -r || dy === r);
+        for (var dx = -r; dx <= r; dx++) {
+          if (!edgeY && dx !== -r && dx !== r) continue;
+          var bucket = idx.map.get((cy + dy) * 1024 + (cx + dx));
+          if (!bucket) continue;
+          for (i = 0; i < bucket.length; i++) {
+            o = bucket[i];
+            /* Дерево, на которое уже нацелен ДРУГОЙ рабочий, не выбирается:
+               метка (tree.mark) — это и есть «занято». */
+            if (awayFrom && o.mark && o.mark !== awayFrom) continue;
+            all.push(o);
+          }
+        }
+      }
+      if (want && all.length >= want) break;
+    }
+    /* У края леса никого не нашлось в 12 кольцах — полный проход, как раньше. */
+    if (!all.length && R < Math.max(world.width, world.height)) {
+      var objs = world.objects || [];
+      for (i = 0; i < objs.length; i++) {
+        o = objs[i];
+        if (!o || o.kind !== 'tree') continue;
+        if (awayFrom && o.mark && o.mark !== awayFrom) continue;
+        all.push(o);
+      }
     }
     all.sort(function (a, b) {
       return ((a.x - x) * (a.x - x) + (a.y - y) * (a.y - y)) -
@@ -721,7 +887,11 @@
           if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
           var cx = sx + dx, cy = sy + dy;
           if (!walkable(world, solid, cx, cy)) continue;
-          var cellsPath = findPath(world, temp, sx, sy, cx, cy);
+          /* Аварийный выход из занятой клетки не тратит бюджет кадра:
+             это не выбор работы, а спасение человека, и клеток в такой
+             поиск уходит десятки, а не десятки тысяч. */
+          var cellsPath = findPath(world, temp, sx, sy, cx, cy,
+            { ignoreBudget: true, limit: 20000 });
           if (!cellsPath || cellsPath.length < 2) continue;
           if (cellsPath.length < bestLen) {
             bestLen = cellsPath.length;
@@ -886,10 +1056,20 @@
        лагеря: подходить надо с той стороны, откуда он идёт, — это и есть
        «прямо за углом», а не «вокруг ствола». */
     var best = null, bestCost = Infinity;
+    /* Версия карты и клетка, с которой ищется путь: вместе они — ключ
+       «отсюда к этому дереву дороги нет». Кэш живёт на САМОМ дереве и
+       сбрасывается сменой версии карты: дерево, к которому не дойти, не
+       заставляет снова перебирать четыре стоянки на каждой попытке. Ключ
+       включает клетку старта намеренно: с другой стороны стены дорога может
+       быть, и «недостижимо» — свойство пары, а не дерева. */
+    var ver = mapVer(world);
+    var hereKey = ver + '@' + sx + ',' + sy;
     for (var i = 0; i < trees.length; i++) {
       var tree = trees[i];
+      if (tree._noPath === hereKey) continue;
       var spots = standCells(world, solid, tree, v.x, v.y);
       var treeBest = null, treeCost = Infinity;
+      var budgetSpent = false;
       for (var j = 0; j < spots.length; j++) {
         // Он уже стоит под этим деревом — идти некуда, но повернуться надо.
         if (spots[j].cx === sx && spots[j].cy === sy) {
@@ -901,13 +1081,17 @@
           return true;
         }
         var cells = findPath(world, solid, sx, sy, spots[j].cx, spots[j].cy);
-        if (!cells || cells.length < 2) continue;
+        if (!cells || cells.length < 2) {
+          if (world._pathBudgetHit) budgetSpent = true;
+          continue;
+        }
         var cost = pathCost(world, cells);
         if (cost < treeCost) {
           treeCost = cost;
           treeBest = { spot: spots[j], cells: cells };
         }
       }
+      if (!treeBest && !budgetSpent) tree._noPath = hereKey;
       if (treeBest && treeCost < bestCost) {
         best = { tree: tree, spot: treeBest.spot, cells: treeBest.cells };
         bestCost = treeCost;
@@ -1498,27 +1682,39 @@
     return (world._villagerLand = Int32Array.from(out));
   }
 
-  function create(world, opts) {
+  /* Полный житель без поиска места и без первого плана: все поля живой
+     симуляции на месте, координаты и прописка — из opts. Это единственное
+     место, где перечислены поля жителя, и именно поэтому им пользуются и
+     рождение (`create`), и возврат хоста после F5 (`hydrate`).
+
+     Почему отдельно от create. Прежде объект собирался прямо в create, и
+     всякий, кому нужен был житель БЕЗ планирования пути (снимок, возврат в
+     партию), собирал его сам — набором полей из головы. Так и появился
+     дефект 2026-10-26: `Serialize.apply` делал `{}` с x/y/state, и у
+     восстановленного жителя не было ни `speed`, ни `rng`; `walk` умножал
+     undefined на dt, и человек либо стоял, либо уезжал в NaN. Один шаблон на
+     всех лечит причину, а не следствие. */
+  function blank(world, opts) {
     opts = opts || {};
-    var solid = blockedMap(world, opts.buildings);
-    var spot = spawnSpot(world, solid, opts.x === undefined ? world.width / 2 : opts.x,
-      opts.y === undefined ? world.height / 2 : opts.y, opts.avoid);
-    if (!spot) spot = { x: opts.x || world.width / 2, y: opts.y || world.height / 2 };
+    var sx = opts.x === undefined ? world.width / 2 : opts.x;
+    var sy = opts.y === undefined ? world.height / 2 : opts.y;
     // ГПСЧ свой, от сида мира и номера жителя: тот же сид — та же прогулка.
     // Мир от этого не меняется: генератор считает своей ручкой, не этой.
-    var rng = new global.RNG((world.seed || 'seed') + ':житель:' + (opts.index || 0));
+    // rngKey — для восстановления из снимка: номер там есть, индекс рождения нет.
+    var rngKey = opts.rngKey === undefined ? (opts.index || 0) : opts.rngKey;
+    var rng = new global.RNG((world.seed || 'seed') + ':житель:' + rngKey);
     var B = global.Buildings;
     /* Прописка и якорь прогулки: v.home — постройка-дом или null, а гуляет он
        вокруг клетки перед дверью СВОЕГО дома (у бездомного — вокруг места, где
        появился: дома нет, значит и «вокруг дома» считать не от чего). */
     var home = opts.home || null;
-    var anchor = { x: spot.x, y: spot.y };
+    var anchor = { x: sx, y: sy };
     if (home && B) {
       var door = B.frontSpot(home);
       anchor = { x: door.x + 0.5, y: door.y + 0.5 };
     }
-    var v = {
-      x: spot.x, y: spot.y,
+    return {
+      x: sx, y: sy,
       id: opts.id === undefined ? (opts.index || 0) + 1 : opts.id,
       home: home,
       anchor: anchor,
@@ -1615,6 +1811,21 @@
       speed: SPEED,
       rng: rng
     };
+  }
+
+  /* Житель, который появляется сейчас: место ищется вокруг заданной точки,
+     первый план прогулки ставится сразу («появился — пошёл»). */
+  function create(world, opts) {
+    opts = opts || {};
+    var solid = blockedMap(world, opts.buildings);
+    var spot = spawnSpot(world, solid, opts.x === undefined ? world.width / 2 : opts.x,
+      opts.y === undefined ? world.height / 2 : opts.y, opts.avoid);
+    if (!spot) spot = { x: opts.x || world.width / 2, y: opts.y || world.height / 2 };
+    var bopts = {}, k;
+    for (k in opts) if (Object.prototype.hasOwnProperty.call(opts, k)) bopts[k] = opts[k];
+    bopts.x = spot.x;
+    bopts.y = spot.y;
+    var v = blank(world, bopts);
     /* Новорождённый сначала проявляется на месте: цели не выбирает, с клетки
        не сходит. Это единственное отличие от обычного создания; после
        проявления он живёт как все (см. update). */
@@ -3193,11 +3404,12 @@
   }
 
   global.Villagers = {
-    load: load, build: build, create: create, update: update,
+    load: load, build: build, create: create, blank: blank, update: update,
     appearing: appearing, appear: appear,
     visibility: visibility, visible: visible,
     sprite: sprite, scaleAt: scaleAt, setAnim: setAnim, animResolve: animResolve,
     findPath: findPath, smoothPath: smoothPath, lineClear: lineClear,
+    beginFrame: beginFrame, pathLimit: pathLimit, mapVer: mapVer,
     routeTo: routeTo, plan: plan, treesNear: treesNear, standCells: standCells,
     planWorkSpot: planWorkSpot, keepOrFindSpot: keepOrFindSpot, goToCamp: goToCamp,
     mark: mark, unmark: unmark, isTaken: isTaken, working: working,

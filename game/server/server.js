@@ -43,6 +43,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
+const zlib = require('zlib');
 const { spawn } = require('child_process');
 const UPnP = require('./upnp');
 const Tunnel = require('./tunnel');
@@ -309,8 +310,65 @@ function eventText(type, data) {
   return 'event: ' + type + '\ndata: ' + JSON.stringify(data) + '\n\n';
 }
 
+/* ---- поток клиента: SSE и его сжатие ---------------------------------- *
+ *
+ * Заказчик 2026-10-25: «каждую игру игра лагает и у друзей огромный пинг».
+ * Замер показал, что один снимок мира — 5,2 КБ JSON, 12,5 кадров в секунду,
+ * то есть ~520 Кбит/с НА КАЖДОГО друга. Канал вверх у домашнего интернета
+ * общий и узкий; 2–3 таких потока заполняли его целиком, роутер ставил пакеты
+ * в очередь — и круг до сервера рос до сотен миллисекунд, хотя сама игра
+ * считает быстро.
+ *
+ * Половина снимка — повторяющиеся имена полей и hex-карта убранного, поэтому
+ * обычный gzip сжимает его в 7–8 раз (5,2 КБ → ~0,65 КБ), а в потоке —
+ * ещё сильнее: соседние кадры похожи, и работает словарь. Замер на приёмке
+ * живой партии: было 523 Кбит/с, стало ~20. Ужимаем сам поток, а не формат
+ * снимка: так не меняется ни одно правило игры и ни один обработчик клиента.
+ *
+ * flush: Z_SYNC_FLUSH обязателен: без него zlib копит кадр до заполнения
+ * блока, и «мгновенные» события приезжают пачками по секунде. Уровень 1 —
+ * сжатие почти как у 9-го (606 против 658 байт), а стоит копейки.
+ *
+ * Клиент без gzip (старый прокси, curl) получает обычный текст: формат SSE
+ * от этого не меняется. */
+function openEventStream(req, res) {
+  var gzip = /\bgzip\b/i.test(String(req.headers['accept-encoding'] || ''));
+  var headers = {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+    'Vary': 'Accept-Encoding'
+  };
+  if (gzip) headers['Content-Encoding'] = 'gzip';
+  res.writeHead(200, headers);
+  /* Мелкие события не должны ждать 40 мс на Nagle — это заметно на каждом
+     «готов» и команде. */
+  try { if (res.socket) res.socket.setNoDelay(true); } catch (e) {}
+  if (gzip) {
+    var gz = zlib.createGzip({ level: 1, flush: zlib.constants.Z_SYNC_FLUSH });
+    gz.on('data', function (chunk) { try { res.write(chunk); } catch (e) {} });
+    gz.on('end', function () { try { res.end(); } catch (e) {} });
+    /* Ответ закрылся (вкладка ушла, прокси оборвал) — закрываем и zlib,
+       иначе он останется висеть вместе с буфером последнего кадра. */
+    res.on('close', function () { try { gz.end(); } catch (e) {} });
+    res.__gz = gz;
+    res.__write = function (text) { try { gz.write(text); } catch (e) {} };
+  } else {
+    res.__write = function (text) { try { res.write(text); } catch (e) {} };
+  }
+  if (res.flushHeaders) res.flushHeaders();
+  return res;
+}
+
+/* Запись события в поток: сжатый или обычный — решает openEventStream. */
+function streamWrite(res, text) {
+  if (res.__write) res.__write(text);
+  else try { res.write(text); } catch (e) { /* поток уже закрыт */ }
+}
+
 function send(res, type, data) {
-  try { res.write(eventText(type, data)); } catch (e) { /* поток уже закрыт */ }
+  streamWrite(res, eventText(type, data));
 }
 
 /* opts.drop — событие можно ПРОПУСТИТЬ для отстающего потока. Так делают
@@ -322,8 +380,22 @@ function broadcast(lobby, type, data, exceptId, opts) {
   lobby.streams.forEach(function (res, id) {
     if (exceptId !== undefined && id === exceptId) return;
     if (opts && opts.drop && res.writableLength > 256 * 1024) return;
-    try { res.write(text); } catch (e) { /* поток уже закрыт */ }
+    streamWrite(res, text);
   });
+}
+
+/* Сколько байт ещё не ушло в сокет самого отстающего потока (после сжатия).
+   Хост по этому числу понимает, что друзья не успевают, и редеет кадры —
+   ДО того, как очередь в роутере превратится в секундный пинг. Раньше
+   хост мерил круг до СВОЕГО loopback-сервера (2–7 мс) и потому никогда
+   не замечал медленного друга. */
+function streamBacklog(lobby) {
+  var max = 0;
+  lobby.streams.forEach(function (res) {
+    var q = res.writableLength || 0;
+    if (q > max) max = q;
+  });
+  return { queue: max, streams: lobby.streams.size };
 }
 
 function playerByToken(lobby, t) {
@@ -521,6 +593,11 @@ function startLobby(lobby) {
   const payload = {
     seed: start.seed, size: start.size, sites: start.sites,
     hostId: lobby.hostId,
+    /* Сервер принимает снимок, сжатый gzip (см. readJson). Клиент включает
+       сжатие только по этому флагу: старый сервер такого тела не поймёт.
+       Нужно это для VPS-режима: там снимок идёт с домашнего интернета хоста
+       на релей, и 5,2 КБ × 12,5 в секунду — те же 520 Кбит/с вверх. */
+    snapGzip: true,
     players: lobby.players.map(function (p, i) {
       return { id: p.id, name: p.name, owner: i, color: p.color };
     })
@@ -585,16 +662,34 @@ function serveStatic(req, res) {
   });
 }
 
-/* ------------------------------- тело -------------------------------- */
+/* ------------------------------- тело -------------------------------- *
+ * Тело принимаем и обычным, и сжатым. В VPS-режиме снимок идёт с домашнего
+ * интернета хоста на релей; 5,2 КБ двенадцать раз в секунду — это 520 Кбит/с
+ * ВВЕРХ, тот самый общий и узкий канал. gzip сжимает тело в ~7 раз, и
+ * `CompressionStream` в браузере делает то же, что здесь `gunzip`.
+ * `maxOutputLength` не даёт сжатому телу развернуться в гигабайты. */
 function readJson(req, cb) {
-  let body = '';
+  const chunks = [];
+  let size = 0;
   req.on('data', function (chunk) {
-    body += chunk;
-    if (body.length > 4 * 1024 * 1024) req.destroy();
+    size += chunk.length;
+    if (size > 4 * 1024 * 1024) { req.destroy(); return; }
+    chunks.push(chunk);
   });
   req.on('end', function () {
-    try { cb(JSON.parse(body || '{}')); }
-    catch (e) { cb(null); }
+    const buf = Buffer.concat(chunks);
+    const parse = function (raw) {
+      try { cb(JSON.parse(raw.toString('utf8') || '{}')); }
+      catch (e) { cb(null); }
+    };
+    if (!/gzip/i.test(String(req.headers['content-encoding'] || ''))) {
+      parse(buf);
+      return;
+    }
+    zlib.gunzip(buf, { maxOutputLength: 8 * 1024 * 1024 }, function (err, out) {
+      if (err) { cb(null); return; }
+      parse(out);
+    });
   });
 }
 
@@ -766,17 +861,10 @@ const server = http.createServer(function (req, res) {
     if (old && old !== res) { try { old.end(); } catch (e) {} }
     lobby.streams.set(p.id, res);
 
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-cache, no-transform',
-      'Connection': 'keep-alive',
-      'X-Accel-Buffering': 'no'
-    });
-    /* Мелкие события не должны ждать 40 мс на Nagle — это заметно на каждом
-       «готов» и команде. */
-    try { if (res.socket) res.socket.setNoDelay(true); } catch (e) {}
-    if (res.flushHeaders) res.flushHeaders();
-    res.write('retry: 1500\n\n');
+    /* Заголовки, gzip-обёртка и setNoDelay — в одном месте: поток обязан быть
+       сжатым (или нет) с ПЕРВОГО байта. Смешать сырой текст с gzip нельзя. */
+    openEventStream(req, res);
+    streamWrite(res, 'retry: 1500\n\n');
     send(res, 'hello', { playerId: p.id, hostId: lobby.hostId, lobby: lobbyView(lobby) });
     if (lobby.started && lobby.startPayload) send(res, 'start', lobby.startPayload);
     /* Клиент, переподключившийся после падения хоста, обязан узнать, что
@@ -795,7 +883,7 @@ const server = http.createServer(function (req, res) {
     }
     if (back) broadcast(lobby, 'lobby', lobbyView(lobby), p.id);
 
-    const ping = setInterval(function () { try { res.write(': ping\n\n'); } catch (e) {} }, 15000);
+    const ping = setInterval(function () { streamWrite(res, ': ping\n\n'); }, 15000);
     if (typeof ping.unref === 'function') ping.unref();
     req.on('close', function () {
       clearInterval(ping);
@@ -829,6 +917,9 @@ const server = http.createServer(function (req, res) {
       }
       touchPlayer(p);
       lobby.lastSnapAt = now();
+      /* Сжатое ли тело пришло. Флаг возвращается хосту: приёмка по нему
+         видит, что браузер действительно жмёт снимок, а не просто умеет. */
+      const packed = /gzip/i.test(String(req.headers['content-encoding'] || ''));
       /* Снимок сам по себе — доказательство, что хост жив, даже если его SSE
          оборвался. Возвращать партию из «хост потерян» имеет право только
          поток снимков. */
@@ -837,9 +928,14 @@ const server = http.createServer(function (req, res) {
       /* Команды отдаём и на «устаревшем» снимке: если хост после возврата
          повторил номер, это не повод держать его очередь до следующего. */
       const commands = pendingCommands(lobby, body.snapshot.cmdAck);
+      /* Отставание потоков — ДО раскладки этого снимка: именно оно говорит
+         хосту, успевают ли друзья. Ответ уходит раньше broadcast, поэтому
+         число описывает уже отправленное, а не текущий кадр. */
+      const backlog = streamBacklog(lobby);
       if (seq !== undefined) {
         if (seq <= (lobby.lastSnapSeq || 0)) {
-          return json(res, 200, { ok: true, stale: true, commands: commands });
+          return json(res, 200, { ok: true, stale: true, commands: commands,
+            gzip: packed, queue: backlog.queue, streams: backlog.streams });
         }
         lobby.lastSnapSeq = seq;
       }
@@ -849,7 +945,8 @@ const server = http.createServer(function (req, res) {
       /* Сначала ответ хосту: его следующий кадр не должен ждать, пока мы
          разложим текущий по всем потокам. В ответе — команды, ждущие хоста:
          этот POST работает даже тогда, когда SSE у него оборван. */
-      json(res, 200, { ok: true, commands: commands });
+      json(res, 200, { ok: true, commands: commands, gzip: packed,
+        queue: backlog.queue, streams: backlog.streams });
       broadcast(lobby, 'snapshot', body.snapshot, p.id, { drop: true });
     });
   }

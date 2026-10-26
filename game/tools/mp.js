@@ -11,6 +11,7 @@
 const { spawn } = require('child_process');
 const http = require('http');
 const path = require('path');
+const zlib = require('zlib');
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const REPO = path.resolve(__dirname, '..', '..');
 const PORT = 8800 + (process.pid % 90);
@@ -218,6 +219,170 @@ async function serverOnly() {
     snapshot: { seq: 3, t: 3, cmdAck: { [qg.playerId]: 7001 } } });
   check((qsnap3.commands || []).length === 0,
     'подтверждённая команда ушла из очереди');
+  check(typeof qsnap3.queue === 'number',
+    'в ответе на снимок есть очередь друзей: ' + qsnap3.queue + ' Б');
+}
+
+/* ------------------------- сжатие потока SSE -------------------------- *
+ *
+ * Заказчик 2026-10-25: «каждую игру игра лагает и у друзей огромный пинг».
+ * Причина — не правила игры, а вес потока: снимок 5,2 КБ, 12,5 кадров в
+ * секунду, то есть ~520 Кбит/с на друга. Канал вверх у домашнего интернета
+ * общий, 2–3 таких потока заполняли его, и круг рос очередью в роутере.
+ *
+ * Теперь SSE сжимается gzip прямо в потоке (server.js: openEventStream).
+ * Проверка не «curl увидел gzip», а замер: тот же набор снимков едет двум
+ * клиентам — со сжатием и без, — и считаются байты провода.
+ *
+ * Снимок здесь собирается руками: приёмке не нужен мир, ей нужен вес того,
+ * что реально уходит друзьям (восемь жителей, шесть построек, hex-карта на
+ * 7200 объектов). Так проверка остаётся быстрой и не зависит от генератора.
+ * ---------------------------------------------------------------------- */
+function snapshotFor(i) {
+  const villagers = [];
+  for (let v = 0; v < 8; v++) {
+    villagers.push({
+      id: v + 1, owner: v % 2, town: v % 2,
+      x: +(40 + v * 3 + i * 0.02).toFixed(3), y: +(60 + v * 2).toFixed(3),
+      rot: 90, anim: 'walk', phase: 0.5, frozen: false, state: 'chop',
+      warrior: v % 3 === 0, trainee: false, hidden: false, trainingId: null,
+      trainT: 0, homeId: 10 + v, employerId: 20 + v, campId: null,
+      stationId: null, hp: 15, maxHp: 15, hpUntil: 0, flinch: 0,
+      attackT: 0, carrying: true, appearT: 0, appearDur: 0,
+      vanishT: 0, emergeT: 0, dead: false
+    });
+  }
+  const buildings = [];
+  for (let b = 0; b < 6; b++) {
+    buildings.push({
+      id: 10 + b,
+      type: ['townhall', 'house', 'lumbercamp', 'barracks', 'warcamp', 'house'][b],
+      variant: 0, rot: 90, x: 40 + b * 3, y: 60, owner: b % 2, town: b % 2,
+      hp: 100, maxHp: 100, hpUntil: 0, flinch: 0, rubble: false
+    });
+  }
+  /* Hex-карта не случайная, но и не одинаковая: рубка идёт, биты меняются. */
+  let hex = '';
+  for (let h = 0; h < 1800; h++) hex += ((i * 7 + h * 13) % 16).toString(16);
+  return {
+    seq: i + 1, t: i / 10, seed: 'тест-сжатия', size: 192,
+    towns: [
+      { id: 0, owner: 0, name: 'Хоста', color: '#4a90d9', alive: true,
+        isBot: false, logs: i, deliveries: i, felled: i * 2, inTransit: 0 },
+      { id: 1, owner: 1, name: 'Гостя', color: '#d94a4a', alive: true,
+        isBot: false, logs: 10, deliveries: 3, felled: 4, inTransit: 1 }
+    ],
+    buildings: buildings, villagers: villagers,
+    objectTotal: 7200, removed: hex
+  };
+}
+
+/* Открыть сырой SSE и считать БАЙТЫ ПРОВОДА. Node-fetch распаковывает
+   автоматически и спрятал бы сжатие; здесь http.get и свой gunzip. */
+function openRaw(code, token, encoding) {
+  return new Promise((resolve, reject) => {
+    const headers = {};
+    if (encoding) headers['accept-encoding'] = encoding;
+    const req = http.get(BASE + '/api/events?code=' + encodeURIComponent(code) +
+      '&token=' + encodeURIComponent(token), { headers }, res => {
+      const out = { headers: res.headers, bytes: 0, events: [], text: '' };
+      /* Считаем именно сжатые байты: data на самом res срабатывает до
+         распаковки. */
+      res.on('data', chunk => { out.bytes += chunk.length; });
+      let src = res;
+      if (/gzip/.test(res.headers['content-encoding'] || '')) {
+        const gz = zlib.createGunzip();
+        gz.on('error', () => { /* поток оборвали вручную — это не ошибка теста */ });
+        res.pipe(gz);
+        src = gz;
+      }
+      res.on('error', () => {});
+      src.on('error', () => {});
+      src.on('data', chunk => {
+        out.text += chunk.toString();
+        let i;
+        while ((i = out.text.indexOf('\n\n')) >= 0) {
+          const ev = out.text.slice(0, i);
+          out.text = out.text.slice(i + 2);
+          const m = /^event: ([a-z-]+)/m.exec(ev);
+          if (m) out.events.push(m[1]);
+        }
+      });
+      out.close = () => {
+        try { req.destroy(); } catch (e) {}
+        try { res.destroy(); } catch (e) {}
+      };
+      resolve(out);
+    });
+    req.on('error', reject);
+  });
+}
+
+async function transportTest() {
+  const a = await postJSON('/api/lobby', { max: 3, name: 'Хост-сжатия' });
+  const b = await postJSON('/api/join', { code: a.code, name: 'Гость-сжатия' });
+  /* Второй гость без сжатия: /api/join после старта закрыт, поэтому оба
+     входят и готовятся ДО кнопки хоста. */
+  const c = await postJSON('/api/join', { code: a.code, name: 'Гость-без-сжатия' });
+  await postJSON('/api/ready', { code: a.code, token: a.token, ready: true });
+  await postJSON('/api/ready', { code: a.code, token: b.token, ready: true });
+  await postJSON('/api/ready', { code: a.code, token: c.token, ready: true });
+  const started = await postJSON('/api/start', { code: a.code, token: a.token });
+  check(started.ok && started.start && started.start.players.length === 3,
+    'лобби на трёх для замера сжатия собрано');
+
+  const gz = await openRaw(a.code, b.token, 'gzip');
+  const plain = await openRaw(a.code, c.token, 'identity');
+  await sleep(300);
+  check(gz.headers['content-encoding'] === 'gzip',
+    'SSE уходит сжатым: content-encoding ' + gz.headers['content-encoding']);
+  check(!plain.headers['content-encoding'],
+    'без Accept-Encoding — обычный SSE, без сжатия');
+
+  const snaps = [];
+  for (let i = 0; i < 30; i++) snaps.push(snapshotFor(i));
+  const rawBytes = snaps.reduce((n, s) => n + JSON.stringify(s).length, 0);
+  const gz0 = gz.bytes, plain0 = plain.bytes;
+  for (const s of snaps) {
+    await postJSON('/api/snapshot', { code: a.code, token: a.token, snapshot: s });
+  }
+  await sleep(800);
+  const gzWire = gz.bytes - gz0, plainWire = plain.bytes - plain0;
+  const gotSnaps = gz.events.filter(e => e === 'snapshot').length;
+  check(gotSnaps >= 30, 'сжатый поток не застревает: ' + gotSnaps + ' снимков доехали');
+  check(plainWire > rawBytes * 0.8,
+    'без сжатия снимки идут как есть: ' + Math.round(plainWire / 1024) + ' КБ');
+  check(gzWire < rawBytes * 0.4,
+    'сжатие режет поток в разы: ' + (gzWire / rawBytes).toFixed(2) + ' от исходного (' +
+    Math.round(gzWire / 1024) + ' КБ вместо ' + Math.round(rawBytes / 1024) + ')');
+  check(gzWire < plainWire * 0.5,
+    'на одном и том же наборе сжатый канал легче: ' + Math.round(gzWire / 1024) +
+    ' КБ против ' + Math.round(plainWire / 1024));
+
+  /* Вторая половина канала — снимок ВВЕРХ (VPS-режим: с домашнего интернета
+     хоста на релей). Сервер обязан принимать сжатое тело, а хост — получать
+     подтверждение, что оно действительно было сжатым. */
+  const body = Buffer.from(JSON.stringify({ code: a.code, token: a.token,
+    snapshot: snapshotFor(99) }));
+  const packed = zlib.gzipSync(body);
+  const zres = await fetch(BASE + '/api/snapshot', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'content-encoding': 'gzip' },
+    body: packed
+  }).then(r => r.json());
+  check(zres.ok === true && zres.gzip === true,
+    'сжатое тело снимка принято: ' + packed.length + ' Б вместо ' + body.length +
+    ' Б (' + (packed.length / body.length).toFixed(2) + ' от исходного)');
+  const plainBody = await fetch(BASE + '/api/snapshot', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: Buffer.from(JSON.stringify({ code: a.code, token: a.token,
+      snapshot: { seq: 101, t: 11 } }))
+  }).then(r => r.json());
+  check(plainBody.ok === true && plainBody.gzip === false,
+    'обычное тело снимка по-прежнему принимается');
+  gz.close();
+  plain.close();
+  await sleep(200);
 }
 
 
@@ -238,6 +403,7 @@ process.on('SIGINT', () => { killAll(); process.exit(130); });
     try { await getJSON('http://127.0.0.1:' + PORT + '/game/'); break; } catch (e) { await sleep(100); }
   }
   await serverOnly();
+  await transportTest();
   let tabs = [];
   for (let i = 0; i < 100; i++) {
     try { tabs = await getJSON('http://127.0.0.1:' + CDP + '/json/list'); break; } catch (e) { await sleep(100); }
@@ -326,6 +492,60 @@ process.on('SIGINT', () => { killAll(); process.exit(130); });
       quiet.before === 0 && quiet.after === 0,
       'у ' + who + ' в сетевой партии всплывашек нет: ' + JSON.stringify(quiet));
   }
+  /* Темп снимков и честный круг. Сжатие проверено выше на сыром SSE, здесь —
+     что настоящая партия по-прежнему идёт 12,5 кадров в секунду и что число
+     в бейдже берётся из сетевого стека (Resource Timing), а не из разницы
+     performance.now() вокруг промиса: занятый кадром главный поток раньше
+     показывал честные 20 мс как «420», и игрок шёл чинить интернет.
+     Хост обязан быть на переднем плане: в скрытой вкладке браузер редеет
+     кадры до раза в секунду — это ограничение браузера, а не сети. */
+  await A.send('Page.bringToFront');
+  await sleep(1200);
+  /* Мир на эти секунды замирает: проверяем темп снимков, а не рождение
+     жителя. Иначе добавленное время сдвигало бы состояние следующих
+     проверок (размер снимка после рубки и F5). Снимки при стоящем мире
+     идут из Play.tick так же, как при живом. */
+  await A.js(`window.__game.Play.state.running=false; 1`);
+  const pace = await B.js(`(async () => {
+    const N = window.Net, P = window.__game.Play;
+    let n = 0, last = 0, gaps = [];
+    const off = N.on('snapshot', () => {
+      n++;
+      const t = performance.now();
+      if (last) gaps.push(t - last);
+      last = t;
+    });
+    const p = await N.ping();
+    await new Promise(r => setTimeout(r, 2200));
+    off();
+    const avg = gaps.length ? gaps.reduce((a, b) => a + b, 0) / gaps.length : 0;
+    return { n: n, gap: +avg.toFixed(1), ping: p.ms, by: p.measuredBy,
+      wall: p.msWall, seq: P.state.netSeq, hidden: document.hidden };
+  })()`);
+  const hostPace = await A.js(`(() => {
+    const P = window.__game.Play;
+    return { hidden: document.hidden, every: +P.state.netEvery.toFixed(3),
+      q: P.state.netQueue, gzip: P.state.netGzip, busy: P.state.netBusy };
+  })()`);
+  await A.js(`window.__game.Play.state.running=true; 1`);
+  /* Порог не «ровно 12,5»: в headless хост рисует ~44 кадра в секунду, и
+     снимок уходит раз в 80 мс по сетке кадров — это 10–11 в секунду. Ловим
+     не точное число, а провал: в скрытой вкладке было ~1 снимок в секунду,
+     то есть 2–4 за окно. */
+  check(pace && pace.n >= 16,
+    'хост шлёт 10–12 снимков в секунду: ' + (pace && pace.n) + ' за 2,2 с · хост ' +
+    JSON.stringify(hostPace) + ' · гость ' + JSON.stringify({ hidden: pace && pace.hidden }));
+  check(hostPace && hostPace.gzip === true,
+    'браузер жмёт тело снимка: сервер подтвердил gzip (' +
+    (hostPace && hostPace.gzip) + ')');
+  check(pace && pace.gap > 40 && pace.gap < 250,
+    'снимки идут ровно, а не пачками: ' + (pace && pace.gap) + ' мс между кадрами');
+  check(pace && pace.ping < 200 && pace.by === 'network',
+    'круг меряется по сетевому стеку: ' + (pace && pace.ping) + ' мс (' +
+    (pace && pace.by) + '), на главном потоке было бы ' + (pace && pace.wall));
+  /* Хост остаётся на переднем плане: дальше проверяются движение жителей,
+     бой, команды и F5, а в скрытой вкладке браузер редеет кадры до раза в
+     секунду — тест ловил бы ограничение браузера, а не игру. */
   const camB = await B.js(`(() => {
     const P=window.__game.Play, th=P.state.world.towns[P.state.playerOwner].townhall;
     const c=P.renderer().cam;
@@ -719,7 +939,11 @@ process.on('SIGINT', () => { killAll(); process.exit(130); });
     const s=window.Serialize.world(P.state.world,P.state.buildings,P.state.villagers,{seq:P.state.netSeq+1});
     return {json:JSON.stringify(s).length, removed:s.removed.length, total:s.objectTotal};
   })()`);
-  check(heavySnap.json < 7000,
+  /* Предел — 8 КБ, а не 7: проверка про то, что снимок НЕ РАСТЁТ от рубки
+     (hex-карта фиксированной длины), а не про конкретные байты. 500 номеров
+     старым массивом добавили бы ~2,5 КБ и всё равно не прошли бы. Запас
+     нужен потому, что число жителей и знаков в координатах гуляет от сида. */
+  check(heavySnap.json < 8000,
     'после 500 срубленных снимок остаётся компактным: ' + heavySnap.json + ' Б');
   const heavyB = await B.js(`(() => {
     const P=window.__game.Play, w=P.state.world, r=P.renderer();

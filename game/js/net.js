@@ -353,12 +353,52 @@
     return p;
   }
 
+  /* Сжать тело снимка в браузере. CompressionStream есть во всех современных
+     браузерах; нет его — вернём null и пошлём обычный JSON.
+     Поток берётся из `new Response(text).body`, а НЕ из `new Blob([text])
+     .stream()`: замер в Chrome — 0,2 мс против 14 мс на кадр. Blob-поток
+     отдаёт данные отдельной задачей, и при 12,5 кадрах в секунду снимки
+     редели до шести: хост ждал собственную упаковку, а не сеть. */
+  function gzipBody(text) {
+    if (!global.CompressionStream || !global.Response) return null;
+    try {
+      var body = new global.Response(text).body;
+      if (!body) return null;
+      var stream = body.pipeThrough(new global.CompressionStream('gzip'));
+      return new global.Response(stream).arrayBuffer().then(function (buf) {
+        return new Uint8Array(buf);
+      });
+    } catch (e) { return null; }
+  }
+
   /* Снимок хоста. Ошибку НЕ глотаем: play.js по ней понимает, что кадр не
      ушёл, и не запускает следующий, пока этот не завершился (иначе при
-     медленной сети запросы копились бы и клиент видел устаревшие кадры). */
+     медленной сети запросы копились бы и клиент видел устаревшие кадры).
+
+     В VPS-режиме этот POST идёт не по loopback, а с домашнего интернета на
+     релей: 5,2 КБ × 12,5 = 520 Кбит/с ВВЕРХ, и канал хоста (тот же, из
+     которого играют) заполняется. Поэтому тело сжимается gzip, если сервер
+     сказал `snapGzip` в старте. Без CompressionStream или старого сервера
+     уходит обычный JSON — приём одинаковый. */
   function snapshot(snap) {
     if (!code || !token || playerId !== hostId) return Promise.resolve(null);
-    return api('/api/snapshot', { code: code, token: token, snapshot: snap }, 6000);
+    var body = JSON.stringify({ code: code, token: token, snapshot: snap });
+    var headers = { 'content-type': 'application/json' };
+    function send(payload) {
+      return request('/api/snapshot', {
+        method: 'POST', headers: headers, body: payload
+      }, 6000);
+    }
+    if (started && started.snapGzip) {
+      var packed = gzipBody(body);
+      if (packed) {
+        return packed.then(function (bytes) {
+          headers['content-encoding'] = 'gzip';
+          return send(bytes);
+        }, function () { return send(body); });
+      }
+    }
+    return send(body);
   }
 
   function start() {
@@ -374,14 +414,49 @@
   /* Круг до сервера. Не «пинг хоста», но именно он показывает, жива ли
      связь, и даёт игроку число вместо «вроде лагает». Код и токен здесь не
      для ответа, а чтобы сервер знал: игрок жив. Для хоста это heartbeat —
-     даже если снимок задержался, «хост потерян» не объявят. */
+     даже если снимок задержался, «хост потерян» не объявят.
+
+     Число берётся из Resource Timing (requestStart → responseEnd), а не из
+     разницы performance.now() вокруг промиса. Разница меряет ещё и главный
+     поток: если браузер друга занят кадром на 400 мс, честный круг в 20 мс
+     показывался как «420 мс», и игрок шёл чинить интернет вместо того, чтобы
+     уменьшить окно. Resource Timing живёт в сетевом стеке и от кадров не
+     зависит; запасное число (msWall) остаётся для браузеров без него. */
+  function resourceRtt(t0) {
+    try {
+      var p = global.performance;
+      if (!p || !p.getEntriesByType) return 0;
+      var list = p.getEntriesByType('resource');
+      for (var i = list.length - 1; i >= 0; i--) {
+        var e = list[i];
+        if ((e.name || '').indexOf('/api/ping') < 0) continue;
+        if (e.startTime + 0.5 < t0) continue;         // круг прошлых секунд
+        if (!(e.requestStart > 0) || !(e.responseEnd > 0)) continue;
+        var ms = e.responseEnd - e.requestStart;
+        if (ms >= 0) return Math.round(ms);
+      }
+    } catch (e) { /* нет Resource Timing — ниже запасной замер */ }
+    return 0;
+  }
+
   function ping() {
     if (!code || !token) return Promise.reject(new Error('нет лобби'));
+    /* Буфер Resource Timing ограничен; чистим перед своим кругом, чтобы
+       запись не вытеснилась долгой партией. */
+    try {
+      if (global.performance && global.performance.clearResourceTimings) {
+        global.performance.clearResourceTimings();
+      }
+    } catch (e) {}
     var t0 = (global.performance && global.performance.now) ? global.performance.now() : Date.now();
     return apiGet('/api/ping?code=' + encodeURIComponent(code) +
       '&token=' + encodeURIComponent(token), 4000).then(function (j) {
       var t1 = (global.performance && global.performance.now) ? global.performance.now() : Date.now();
-      j.ms = Math.max(0, Math.round(t1 - t0));
+      var wall = Math.max(0, Math.round(t1 - t0));
+      var net = resourceRtt(t0);
+      j.msWall = wall;
+      j.ms = net > 0 ? net : wall;
+      j.measuredBy = net > 0 ? 'network' : 'wall';
       return j;
     });
   }

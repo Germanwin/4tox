@@ -375,19 +375,29 @@
 
   /* Всё, что возвращает страницу в мир: вкладку выбрали, окно вернули,
      страницу разморозили. Мир к этому моменту отстал на весь отрезок — и
-     догоняет его сразу, до первого кадра. */
+     догоняет его сразу, до первого кадра. Хосту тут же возвращается базовая
+     частота снимков: в скрытой вкладке её замер сети врёт (см. Play.netWake),
+     и без сброса друзья получали редкие кадры ещё несколько секунд. */
   function bindClock() {
     document.addEventListener('visibilitychange', function () {
       catchUp();
       if (!document.hidden && global.Play && global.Play.checkCache) global.Play.checkCache();
+      if (!document.hidden && global.Play && global.Play.netWake) global.Play.netWake();
     });
-    global.addEventListener('focus', catchUp);
+    global.addEventListener('focus', function () {
+      catchUp();
+      if (global.Play && global.Play.netWake) global.Play.netWake();
+    });
     global.addEventListener('blur', catchUp);
     global.addEventListener('pageshow', function () {
       catchUp();
       if (global.Play && global.Play.checkCache) global.Play.checkCache();
+      if (global.Play && global.Play.netWake) global.Play.netWake();
     });
-    document.addEventListener('resume', catchUp);
+    document.addEventListener('resume', function () {
+      catchUp();
+      if (global.Play && global.Play.netWake) global.Play.netWake();
+    });
     document.addEventListener('freeze', catchUp);
 
     /* Пока вкладка скрыта, кадров нет вовсе. Таймер там редеет (до раза в
