@@ -175,6 +175,10 @@
     /* Серия одинаковых построек: тип, поворот, начало и конец линии. Пока
        она открыта, касание карты двигает ЕЁ, а не ставит дом. */
     line: null,
+    /* Сколько секунд мира выброшено, потому что долг превысил предел
+       (game/js/boot.js). Это НЕ пауза и не ускорение: время просто не
+       считалось, и игрок видит, сколько именно. */
+    simDropped: 0,
     netSilence: 0, netStale: false, netHostGone: false, netLastTick: 0,
     netCmdLast: {}, netRejects: [], netSeqSeen: {},
     /* Умеет ли сервер отдавать команды в ответе снимка. false — старый
@@ -651,6 +655,7 @@
     state.spectator = false;
     state.gameMode = 'mp';
     state.seconds = 0;
+    state.simDropped = 0;
     state.birth = global.Session.birthClock();
     w.time = 0;
     resetEvents(w);
@@ -696,6 +701,16 @@
            заново — иначе развитие друзей пропало бы. */
         home = restoreFromSnapshot(w, resumeSnap);
         normalizeResumedVillagers(state.villagers);
+        /* Хост ПРОДОЛЖАЕТ СЧИТАТЬ, а снимок — формат отрисовки. Полные поля
+           живой симуляции (speed, rng, anchor, счётчики) восстанавливает
+           Serialize.hydrate; без него walk умножал undefined на dt, воин
+           падал на v.rng.pick, а гражданский стоял без anchor. Путь и цель
+           пересчитываются — это разрешено; груз, обучение и приказ остаются. */
+        if (global.Serialize && global.Serialize.hydrate) {
+          state.villagers = global.Serialize.hydrate(w, resumeSnap, state.buildings,
+            { renderer: renderer });
+          state.buildings = w._buildings || state.buildings;
+        }
         state.birth = global.Session.birthClock();
         if (state.birth) {
           state.birth.next = (Math.floor(state.seconds / global.Session.BIRTH_EVERY) + 1) *
@@ -783,6 +798,10 @@
     if (state.netRole !== 'client') return;
     state.netHostGone = true;
     state.running = false;
+    if (global.Events && state.world) {
+      global.Events.push(state.world, { kind: 'net-lost', owner: state.playerOwner,
+        x: null, y: null, text: 'связь с хостом пропала — ждём', count: 1 });
+    }
     emit({ type: 'net-host-left', name: ev && ev.name,
       owner: ev && ev.owner, host: true });
   }
@@ -796,6 +815,10 @@
     // время и за открытой доской; в главном меню сессия уже оставлена.
     if (!state.over && (state.mode === 'play' || state.mode === 'paused')) {
       state.running = true;
+    }
+    if (global.Events && state.world) {
+      global.Events.push(state.world, { kind: 'net-back', owner: state.playerOwner,
+        x: null, y: null, text: 'связь с хостом восстановлена', count: 1 });
     }
     emit({ type: 'net-host-back' });
   }
@@ -865,6 +888,51 @@
     return made;
   }
 
+  /* Часы мира отбросили долг (догон ограничен): сказать игроку словами, а не
+     молча ускорить мир. Одна функция на все места — boot.js зовёт её, HUD
+     показывает сумму. */
+  function noteSimDropped(sec) {
+    if (!(sec > 0) || !isFinite(sec)) return;
+    state.simDropped = (state.simDropped || 0) + sec;
+    emit({ type: 'sim-dropped', lost: sec, total: state.simDropped });
+  }
+
+  /* Население своей деревни и когда ждать следующего — для HUD.
+     Считает движок (Session.birthStatus), если он это умеет; иначе — тот же
+     расчёт по снимку, чтобы панель не врала в сети, где клиента не считает
+     мир. Одна функция на панель деревни и на экран «Меню». */
+  function birthInfo() {
+    var w = state.world;
+    if (!w) return null;
+    var who = state.playerOwner || 0;
+    var S = global.Session, B = global.Buildings;
+    if (S && S.birthStatus) {
+      var all = S.birthStatus(w, state.villagers, state.buildings, state.birth, state.seconds);
+      if (all && all[who]) return all[who];
+    }
+    var pop = 0, cap = 0, free = 0, i, v, h;
+    for (i = 0; i < state.villagers.length; i++) {
+      v = state.villagers[i];
+      if (v && (v.owner === undefined ? 0 : v.owner) === who && !v.dead) pop++;
+    }
+    for (i = 0; i < state.buildings.length; i++) {
+      h = state.buildings[i];
+      if (!h || h.rubble || (h.owner === undefined ? 0 : h.owner) !== who) continue;
+      if (B.typeOf(h) !== 'house') continue;
+      cap += B.housingCapacity(h);
+    }
+    free = Math.max(0, cap - pop);
+    var next = state.birth && state.birth.next ? state.birth.next : null;
+    var reason = '';
+    if (pop <= 1) reason = 'для рождения нужно хотя бы двое живых';
+    else if (free <= 0) reason = 'нет свободного места в домах';
+    return {
+      owner: who, pop: pop, cap: cap, free: free,
+      next: next, in: next === null ? null : Math.max(0, next - state.seconds),
+      reason: reason, blocked: !!reason
+    };
+  }
+
   /* Журнал игрока — для HUD. События чужих деревень сюда не попадают. */
   function playerEvents(n) {
     if (!global.Events || !state.world) return [];
@@ -928,6 +996,10 @@
     state.netSilence = 0;
     if (state.netStale) {
       state.netStale = false;
+      if (global.Events && state.world) {
+        global.Events.push(state.world, { kind: 'net-back', owner: state.playerOwner,
+          x: null, y: null, text: 'обновления снова идут', count: 1 });
+      }
       emit({ type: 'net-ok' });
     }
     /* Выбранный житель и открытая правка — те же объекты (serialize.js
@@ -1155,7 +1227,7 @@
       if (cmd.action === 'rotate') {
         var can = B.canEdit(b, 'rotate');
         if (!can.ok) { netReject(cmd, can.reason); return cmdNo(can.reason); }
-        var rots = B.checkAt(state.world, state.buildings, b, { rot: b.rot + 90 });
+        var rots = B.checkAt(state.world, state.buildings, b, { rot: b.rot + 90 }, buildSiteOpts());
         if (!rots.ok) { netReject(cmd, rots.reason); return cmdNo(rots.reason); }
         B.setSpot(state.world, b, { rot: b.rot + 90 });
         renderer.setBuildings(state.buildings);
@@ -1169,7 +1241,7 @@
         state.netForce = true;
         return cmdYes();
       } else if (cmd.action === 'move') {
-        var at = B.checkAt(state.world, state.buildings, b, { x: cmd.x, y: cmd.y });
+        var at = B.checkAt(state.world, state.buildings, b, { x: cmd.x, y: cmd.y }, buildSiteOpts());
         if (!at.ok) { netReject(cmd, at.reason); return cmdNo(at.reason); }
         B.setSpot(state.world, b, { x: cmd.x, y: cmd.y });
         B.touch(state.world);
@@ -1225,11 +1297,17 @@
       var na = a.n === undefined ? 0 : a.n, nb = b.n === undefined ? 0 : b.n;
       return na - nb;
     });
-    var n = 0;
+    var n = 0, now = Date.now();
     for (i = 0; i < arr.length; i++) {
       cmd = arr[i];
       key = cmd.from + '|' + (cmd.sn !== undefined ? 's' + cmd.sn : 'n' + cmd.n);
       delete bank[key];
+      /* Команда, пролежавшая в буфере дольше срока сервера, уже не актуальна:
+       * её результат — expired, а не «выполнить через минуту». */
+      if (cmd.at && now - cmd.at > 20000) {
+        recordCommandResult(cmd, { status: 'expired', reason: 'команда устарела' });
+        continue;
+      }
       var res = applyNetCommand(cmd);
       recordCommandResult(cmd, res);
       n++;
@@ -1270,6 +1348,7 @@
       : global.Session.spawnVillagers(st.world, renderer, st.buildings, st.home);
     villageCleanup();
     state.seconds = 0;
+    state.simDropped = 0;
     st.world.time = 0;
     state.result = null;
     state.over = false;
@@ -1468,7 +1547,12 @@
       global.Session.tryBirth(state.world, renderer, state.villagers, state.buildings);
     }
 
-    var felled = global.Session.stepVillagers(state.villagers, state.world, renderer, dt, state.buildings);
+    global.Session.stepVillagers(state.villagers, state.world, renderer, dt, state.buildings);
+    /* Срубленное считаем по СВОЕЙ деревне, а не суммой v.felled по всем
+       жителям: в бою и в сети чужие рубки — не наши. Заодно после F5 у
+       восстановленных жителей поле было undefined, и сумма давала NaN. */
+    var ownTown = playerTown();
+    var felled = ownTown ? (ownTown.felled || 0) : 0;
     /* Убитые боем уходят из списка после кадра: Combat только помечает dead,
        иначе он вынимал бы людей из массива, пока сам по нему идёт. */
     if (global.Combat) {
@@ -1586,11 +1670,27 @@
     return { x: v.x, y: v.y };
   }
 
+  /* Ограничение частоты КАДРОВ, а не мира. На телефоне 30 к/с заметно
+     дешевле 60 (половина отрисовки), и мир от этого не замедляется: время
+     мира двигает boot.advance по стенным часам, а не число кадров. Пропущенный
+     кадр не сдвигает ни один таймер профессий; оверлеи боя рисуются вместе с
+     миром, поэтому не отстают от него (поэтому cap здесь, а не в render.js). */
+  var lastDrawAt = -1;
   function draw(time) {
     if (!renderer || !state.world) return;
+    var cap = state.fpsCap || 0;
+    if (cap > 0 && lastDrawAt >= 0 && time - lastDrawAt < 1 / cap - 1e-6) return;
+    lastDrawAt = time;
     renderer.render(time);
     drawCombatOverlay();
     drawArmyOverlay();
+  }
+
+  /* Профиль экономии для телефона: 30 к/с. 0 — без предела (60 на ПК). */
+  function setFpsCap(n) {
+    state.fpsCap = n > 0 ? n : 0;
+    lastDrawAt = -1;
+    return state.fpsCap;
   }
 
   /* Полосы здоровья — экранный слой, а не часть спрайта: они не должны
@@ -2055,7 +2155,8 @@
   function recheck() {
     var e = state.edit;
     if (!e) return null;
-    editCheck = global.Buildings.canApply(state.world, state.buildings, e.building);
+    editCheck = global.Buildings.canApply(state.world, state.buildings, e.building,
+      buildSiteOpts());
     e.valid = !!editCheck.ok;
     e.reason = editCheck.ok ? '' : editCheck.reason;
     e.changed = editChanged();
@@ -2245,6 +2346,12 @@
     if (action === 'rotate') {
       var can = B.canEdit(b, 'rotate');
       if (!can.ok) return { ok: false, reason: can.reason };
+      /* Поворот проверяет МЕСТО, а не только право править: прямоугольное
+         пятно при развороте на 90° может налезть на соседний дом, жителя или
+         запереть выход. Та же проверка, что у хоста и у переноса. */
+      var turned = B.checkAt(state.world, state.buildings, b, { rot: b.rot + 90 },
+        buildSiteOpts());
+      if (!turned.ok) return { ok: false, reason: turned.reason };
       /* Поворот — через setSpot: он же нормализует угол и отметит, что пятно
          переехало. Пятно после поворота другое (3 x 4 вместо 4 x 3), поэтому
          порядок отрисовки сбрасывается. */
@@ -2417,7 +2524,16 @@
   }
 
   function emitBuild() { emit({ type: 'build', info: buildInfo() }); }
-  function buildNote(text) { emit({ type: 'build-note', text: text }); }
+  function buildNote(text) {
+    emit({ type: 'build-note', text: text });
+    /* В сети всплывашка отказа не показывается (правило 2026-10-24), а
+       причина должна остаться видна: журнал событий адресован владельцу. */
+    if (global.Events && text) {
+      var e = state.build || state.line;
+      global.Events.refuse(state.world, state.playerOwner, 'build-refused', text,
+        e ? e.x : null, e ? e.y : null);
+    }
+  }
 
   /* Пересчитать призрак под курсором. Ответ о месте — движковый; экран его
      только повторяет. Событие шлётся по изменению клетки/поворота/ответа, а не
@@ -2588,8 +2704,8 @@
     state.line = {
       type: opt.type, variant: opt.variant, price: opt.price, rot: B.FACE_ROT,
       from: { x: c.x, y: c.y }, to: { x: c.x, y: c.y },
-      dragging: false, items: [], count: 0, cost: 0, ok: false, afford: false,
-      reason: '', sig: ''
+      dragging: false, stage: 'end', items: [], count: 0, cost: 0,
+      ok: false, afford: false, reason: '', sig: ''
     };
     selectBuilding(null);
     view.classList.add('placing');
@@ -2830,21 +2946,12 @@
       }
       return ids.length;
     }
-    /* И у хоста «Стоп» без списка — только своя дружина: иначе он снимал бы
-       приказы и у друзей, а в «против деревни» — у бота. ownWarriorIds отдаёт
-       НОМЕРА своих воинов, поэтому обратно в объекты их переводит Army.wardens
-       (он же отсеивает мёртвых и учеников). */
-    list = global.Army
-      ? global.Army.wardens(ownWarriorIds(ids || null, me), state.villagers)
-      : [];
-    for (i = 0; i < list.length; i++) {
-      list[i].order = null;
-      list[i].path = null;
-      list[i].target = null;
-      list[i].combatMode = null;
-      list[i].state = 'stand';
-      n++;
-    }
+    /* Одна реализация стопа на всю игру: Army.stop. Своя копия чистки полей
+       здесь уже была, и она расходилась с сетевой командой — у гостя «Стоп»
+       не снимал бой, а воин продолжал добивать дом. Армия теперь чистит и
+       цель, и режим боя, и ставит holdFire (js/army.js). */
+    list = ownWarriorIds(ids || null, me);
+    n = global.Army ? global.Army.stop(list, state.villagers) : 0;
     if (n) state.netForce = true;
     return n;
   }
@@ -3000,10 +3107,26 @@
       /* Идёт постановка купленной постройки: нажатие только двигает камеру
          (панораму), правку оно не открывает. */
       if (state.line) {
-        var lc = cellAt(p.x, p.y);
-        state.line.from = { x: lc.x, y: lc.y };
-        state.line.to = { x: lc.x, y: lc.y };
-        state.line.dragging = true;
+        var lc = cellAt(p.x, p.y), L = state.line;
+        /* Телефон: два тычка вместо протяжки — первый ставит начало, второй
+           конец, подтверждение отдельной кнопкой. Мышь: протяжка от начала до
+           конца. Без этого второй тычок начинал НОВУЮ линию из одной клетки,
+           и серия на телефоне не собиралась вовсе. */
+        if (e.pointerType === 'touch') {
+          if (L.stage !== 'end') {
+            L.from = { x: lc.x, y: lc.y };
+            L.to = { x: lc.x, y: lc.y };
+            L.stage = 'end';
+          } else {
+            L.to = { x: lc.x, y: lc.y };
+            L.stage = 'done';
+          }
+          L.dragging = false;
+        } else {
+          L.from = { x: lc.x, y: lc.y };
+          L.to = { x: lc.x, y: lc.y };
+          L.dragging = true;
+        }
         refreshLine(lc);
         return;
       }
@@ -3212,6 +3335,7 @@
       drag = null;
       multi = null;
       suppressTap = false;
+      if (state.line) state.line.dragging = false;
       /* Отменённое касание НЕ подтверждает действие: правка возвращается на
          место, дом остаётся в руке, приказ не отдаётся. Это правило задания
          (4.10), а не осторожность. */
@@ -3502,6 +3626,7 @@
        подсказка, и им же меряет приёмка. */
     EDIT_HOLD_MS: EDIT_HOLD_MS,
     touchPreferred: touchPreferred,
+    setFpsCap: setFpsCap,
     editAction: editAction,
     /* «Править» из таблички выбранного здания: тот же режим, что у удержания и
        двойного клика, но одним нажатием (js/hud.js). */
@@ -3535,6 +3660,8 @@
     stopNet: stopNet,
     netWake: netWake,
     playerEvents: playerEvents,
+    birthInfo: birthInfo,
+    noteSimDropped: noteSimDropped,
     goToEvent: goToEvent,
     applyNetCommand: applyNetCommand,
     applySnapshot: applySnapshot,

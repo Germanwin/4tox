@@ -1064,7 +1064,13 @@
        быть, и «недостижимо» — свойство пары, а не дерева. */
     var ver = mapVer(world);
     var hereKey = ver + '@' + sx + ',' + sy;
-    for (var i = 0; i < trees.length; i++) {
+    /* С чего продолжать перебор, если прошлая попытка упёрлась в бюджет
+       кадра. Без этого житель у дальнего леса мог вечно перебирать первые
+       два недостижимых дерева, каждый раз обрываясь на бюджете, и никогда
+       не дойти до третьего достижимого. Упор в бюджет — не «пути нет»:
+       следующая попытка начинается со следующего дерева. */
+    var startI = (v.planSkip > 0 && v.planSkip < trees.length) ? v.planSkip : 0;
+    for (var i = startI; i < trees.length; i++) {
       var tree = trees[i];
       if (tree._noPath === hereKey) continue;
       var spots = standCells(world, solid, tree, v.x, v.y);
@@ -1091,6 +1097,11 @@
           treeBest = { spot: spots[j], cells: cells };
         }
       }
+      if (!treeBest && budgetSpent && !best) {
+        v.planSkip = i + 1;
+        if (v.planSkip >= trees.length) v.planSkip = 0;
+        return false;
+      }
       if (!treeBest && !budgetSpent) tree._noPath = hereKey;
       if (treeBest && treeCost < bestCost) {
         best = { tree: tree, spot: treeBest.spot, cells: treeBest.cells };
@@ -1101,6 +1112,7 @@
       if (best && i + 1 >= TREE_EVAL) break;
     }
     if (!best) return false;
+    v.planSkip = 0;
 
     mark(v, best.tree);
     v.tree = best.tree;
