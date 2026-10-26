@@ -712,9 +712,14 @@
           state.buildings = w._buildings || state.buildings;
         }
         state.birth = global.Session.birthClock();
-        if (state.birth) {
+        if (global.Session.rearmBirth) {
+          global.Session.rearmBirth(state.world, state.birth, state.seconds);
+        } else if (state.birth) {
           state.birth.next = (Math.floor(state.seconds / global.Session.BIRTH_EVERY) + 1) *
             global.Session.BIRTH_EVERY;
+        }
+        if (global.Session.syncVillagerIds) {
+          global.Session.syncVillagerIds(w, state.villagers);
         }
         if (global.Combat) global.Combat.init(w, state.buildings, state.villagers);
       } else {
@@ -1262,7 +1267,8 @@
       }
       var answer = cmd.type === 'train'
         ? S.train(camp, v, state.villagers, state.buildings)
-        : (cmd.type === 'fire' ? S.fire(camp, v) : S.hire(camp, v, state.villagers));
+        : (cmd.type === 'fire' ? S.fire(camp, v, { world: state.world })
+          : S.hire(camp, v, state.villagers));
       state.netForce = true;
       if (answer && answer.ok === false) { netReject(cmd, answer.reason); return cmdNo(answer.reason); }
       return cmdYes();
@@ -1363,6 +1369,9 @@
     state.netPlayers = [];
     if (global.Combat && global.Combat.init) {
       global.Combat.init(st.world, st.buildings, state.villagers);
+    }
+    if (global.Session.syncVillagerIds) {
+      global.Session.syncVillagerIds(st.world, state.villagers);
     }
     state.birth = global.Session.birthClock();
     resetEvents(st.world);
@@ -1544,7 +1553,8 @@
        поэтому границы в нём не теряются. До партии и после боя сюда не
        доходят: стоит state.running — экран «Меню» и заставка время не стоят. */
     if (global.Session.birthDue(state.birth, state.seconds)) {
-      global.Session.tryBirth(state.world, renderer, state.villagers, state.buildings);
+      global.Session.tryBirth(state.world, renderer, state.villagers, state.buildings,
+        { clock: state.birth, seconds: state.seconds });
     }
 
     global.Session.stepVillagers(state.villagers, state.world, renderer, dt, state.buildings);
