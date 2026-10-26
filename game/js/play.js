@@ -951,9 +951,10 @@
     if (!w) return null;
     var who = state.playerOwner || 0;
     var S = global.Session, B = global.Buildings;
-    if (S && S.birthStatus) {
-      var all = S.birthStatus(w, state.villagers, state.buildings, state.birth, state.seconds);
-      if (all && all[who]) return all[who];
+    var ownTown = (w.towns && w.towns[who]) || w.village || null;
+    if (S && S.birthStatus && ownTown) {
+      return S.birthStatus(w, ownTown, state.villagers, state.buildings,
+        state.birth, state.seconds);
     }
     var pop = 0, cap = 0, free = 0, i, v, h;
     for (i = 0; i < state.villagers.length; i++) {
