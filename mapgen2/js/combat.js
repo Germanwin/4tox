@@ -83,6 +83,38 @@
   var FIGHT_LEASH = CONFIG.leash.fight;
   var SELF_DEFENSE = CONFIG.selfDefense;
 
+  /* --------------------------- ограниченный след ------------------------- *
+   *
+   * OBS-01: бой нельзя объяснить постфактум по HP. Нужен след ДЛЯ НЕСКОЛЬКИХ
+   * выбранных юнитов: позиция, приказ, якорь стычки, цель/атакующий, причина
+   * отказа от цели и урон. Писать все пары каждый кадр навсегда запрещено —
+   * это нагрузка и шум. Поэтому:
+   *   * по умолчанию след ВЫКЛЮЧЕН и ничего не стоит;
+   *   * включает его игра/приёмка для конкретных id (или для всех);
+   *   * кольцо фиксированного размера (512 записей), старые вытесняются.
+   * В снимок и сеть след не попадает — только в выгрузку диагностики. */
+  var TRACE_MAX = 512;
+  var traceOn = false, traceIds = null, traceBuf = [];
+  function traceEnable(ids) {
+    traceOn = true;
+    traceIds = (ids && ids.length) ? ids.slice() : null;
+    return { on: true, ids: traceIds ? traceIds.length : 'all', max: TRACE_MAX };
+  }
+  function traceDisable() { traceOn = false; traceIds = null; return { on: false }; }
+  function traceWanted(v) {
+    if (!traceOn || !v) return false;
+    return !traceIds || traceIds.indexOf(v.id) >= 0;
+  }
+  function tracePush(rec) {
+    if (!traceOn) return;
+    traceBuf.push(rec);
+    if (traceBuf.length > TRACE_MAX) traceBuf.shift();
+  }
+  function traceDump() {
+    return { on: traceOn, ids: traceIds ? traceIds.slice() : null,
+      max: TRACE_MAX, items: traceBuf.slice() };
+  }
+
   function ownerOf(o) {
     if (!o) return -1;
     return o.owner === undefined ? 0 : o.owner;
@@ -541,6 +573,7 @@
        меня, я не буду защищаться». Контракт явный: holdFire разрешает ровно
        ответ тому, кто ударил, пока тот рядом; новых целей нет. */
     if (v.holdFire) {
+      v.targetWhy = 'hold';
       var att = v.attacker;
       if (att && v.attackerT > 0 && canTarget(v, att, world, solid) &&
           withinSelfDefense(v, att) &&
@@ -551,6 +584,7 @@
     }
 
     if (t && (!canTarget(v, t, world, solid) || !withinLeash(v, t))) {
+      v.targetWhy = canTarget(v, t, world, solid) ? 'leash' : 'invalid';
       t = null;
       v.target = null;
       /* Цель потеряна — стычка кончилась. Следующая заведёт свой якорь. */
@@ -643,6 +677,13 @@
     var before = target.hp || 0;
     var dmg = isBuilding(target) ? BUILDING_DAMAGE : WARRIOR_DAMAGE;
     target.hp = Math.max(0, before - dmg);
+    if (traceOn && (traceWanted(v) || traceWanted(target))) {
+      tracePush({
+        t: +((world && world.time) || 0).toFixed(3), kind: 'hit',
+        from: v && v.id, to: target && (target.id !== undefined ? target.id : 'bld'),
+        dmg: Math.min(dmg, before), hp: target.hp
+      });
+    }
     /* Событие — только по настоящему урону: «на деревню напали» один раз на
        владельца за 8 с (Events.attack троттлит сам). Удар по уже мёртвому или
        по завалу события не создаёт. */
@@ -779,6 +820,7 @@
            и отпускаем (следующий кадр вернёт к приказу/лагерю). Юнита не
            запоминаем по id: в ключ входит и его клетка, а он может отойти. */
         if (!clearShot(world, solid, v, t)) {
+          v.targetWhy = 'no-shot';
           if (isBuilding(t)) v.noPathKey = targetKey(world, v, t);
           v.target = null;
           v.combatMode = null;
@@ -796,6 +838,7 @@
         }
       } else {
         v.combatMode = 'chase';
+        v.targetWhy = v.targetWhy === 'no-shot' ? 'no-shot' : '';
         /* Цель жива, а воин не идёт: пути нет уже chaseGiveUp секунд —
            значит, недостижима (за водой, в закрытом кармане, за стеной из
            домов). В кеш, чтобы не гонять A* по кругу. Путь есть — идёт, и
@@ -805,6 +848,7 @@
         } else {
           v.noPathT = (v.noPathT || 0) + dt;
           if (v.noPathT >= CONFIG.chaseGiveUp) {
+            v.targetWhy = 'unreachable';
             v.noPathKey = targetKey(world, v, t);
             v.target = null;
             v.combatMode = null;
@@ -813,6 +857,26 @@
             v.noPathT = 0;
           }
         }
+      }
+    }
+
+    /* След для выбранных юнитов — ОДНА запись на кадр на юнита, уже после
+       выбора цели и режима. Здесь же видно, почему цель не взята. */
+    if (traceOn) {
+      for (i = 0; i < villagers.length; i++) {
+        var tv = villagers[i];
+        if (!traceWanted(tv)) continue;
+        var ta = leashAnchor(tv);
+        tracePush({
+          t: +(world.time || 0).toFixed(3), kind: 'unit', id: tv.id,
+          owner: ownerOf(tv), x: +tv.x.toFixed(2), y: +tv.y.toFixed(2),
+          order: tv.order ? { x: tv.order.x, y: tv.order.y } : null,
+          anchor: ta ? { x: +ta.x.toFixed(2), y: +ta.y.toFixed(2), r: ta.r } : null,
+          target: tv.target ? (tv.target.id !== undefined ? tv.target.id : 'bld') : null,
+          attacker: tv.attacker ? tv.attacker.id : null,
+          mode: tv.combatMode || '', why: tv.targetWhy || '',
+          holdFire: !!tv.holdFire
+        });
       }
     }
 
@@ -892,6 +956,10 @@
     approachCells: approachCells,
     killVillager: killVillager,
     ruinBuilding: ruinBuilding,
-    hit: hit
+    hit: hit,
+    /* OBS-01: включаемый след боя для выбранных юнитов. */
+    traceEnable: traceEnable,
+    traceDisable: traceDisable,
+    traceDump: traceDump
   };
 })(typeof window !== 'undefined' ? window : globalThis);

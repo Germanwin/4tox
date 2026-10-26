@@ -1259,23 +1259,118 @@ process.on('SIGINT', () => { killAll(); process.exit(130); });
   await A.js(`window.__game.Play.state.world.towns[1].logs = 200; 1`);
   await sleep(500);
   const reBefore = await B.js(`window.__game.Play.state.buildings.length`);
+  /* UX-01: у гостя действие имеет НЕМЕДЛЕННОЕ отображение, а не «призрак →
+     пусто → дом». Хост здесь намеренно отвечает с задержкой 400 мс (обёртка
+     Net.snapshot): это тот же RTT, из-за которого жаловались на исчезающий дом.
+     Проверяем: ожидание стоит уже в следующем кадре, в мир не входит, резерв
+     казны не даёт купить дважды, а каждый кадр до авторитетного появления
+     показывает дом (ожидающий или настоящий) — пустого кадра нет. */
+  await A.js(`(() => {
+    const N = window.Net;
+    window.__origSnap = N.snapshot;
+    let k = 0;
+    N.snapshot = function (snap) {
+      if (k < 3) {
+        k++;
+        return new Promise(function (res) {
+          setTimeout(function () { res(window.__origSnap.call(N, snap)); }, 450);
+        });
+      }
+      return window.__origSnap.call(N, snap);
+    };
+    return 1;
+  })()`);
+  const hostLogs0 = await A.js(`window.__game.Play.state.world.towns[1].logs`);
+  /* Мир хоста на эти секунды заморожен: доставка брёвен не должна подмешать
+     брёвна в проверку «списано ровно 12». Снимки и команды при этом идут — они
+     до проверки времени мира. */
+  await A.js(`window.__game.Play.state.running=false; 1`);
   const reBuild = await B.js(`(() => {
     const P = window.__game.Play, B = window.Buildings;
     const spot = B.findSpot(P.state.world, P.state.buildings, 'a', B.FACE_ROT,
       { type: 'house', minSep: 0 });
     if (!spot) return null;
+    const logs0 = P.state.logs;
     P.renderer().hover = { x: spot.x, y: spot.y };
     P.beginBuild('house');
     const res = P.buildAction('place');
-    return { ok: !!(res && res.pending), spot: [spot.x, spot.y] };
+    /* Где на самом деле стоит ожидание — по нему и смотрим кадры. Координата
+       из findSpot могла уйти на соседнюю клетку, и мерить «пустоту» не там
+       значило бы проверять не то. */
+    const pb = window.Pending ? window.Pending.buildings()[0] : null;
+    window.__uxSpot = pb ? { x: pb.x, y: pb.y } : { x: spot.x, y: spot.y };
+    window.__uxSamples = [];
+    window.__uxTimer = setInterval(function () {
+      const Q = window.__game.Play;
+      const s2 = window.__uxSpot;
+      const real = Q.state.buildings.some(function (b) {
+        return B.typeOf(b) === 'house' && b.x === s2.x && b.y === s2.y;
+      });
+      const pend = window.Pending ? window.Pending.buildings().some(function (b) {
+        return b.x === s2.x && b.y === s2.y;
+      }) : false;
+      window.__uxSamples.push({ real: real, pend: pend });
+    }, 20);
+    return {
+      ok: !!(res && res.pending), spot: [window.__uxSpot.x, window.__uxSpot.y], logs0: logs0,
+      pending: window.Pending ? window.Pending.buildings().length : -1,
+      rendererPending: P.renderer().pending.length,
+      inWorld: P.state.buildings.some(function (b) {
+        return B.typeOf(b) === 'house' && b.x === spot.x && b.y === spot.y;
+      }),
+      reserved: window.Pending ? window.Pending.reserved(P.state.playerOwner) : -1,
+      available: P.buildOptions().filter(function (o) { return o.type === 'house'; })[0]
+    };
   })()`);
-  await sleep(1800);
+  await sleep(3200);
+  const uxAfter = await B.js(`(() => {
+    clearInterval(window.__uxTimer);
+    const P = window.__game.Play, B = window.Buildings;
+    const samples = window.__uxSamples || [];
+    const pend = window.Pending ? window.Pending.buildings().length : -1;
+    const s = samples.length ? samples[samples.length - 1] : { real: false, pend: false };
+    return {
+      samples: samples.length,
+      empty: samples.filter(function (x) { return !x.real && !x.pend; }).length,
+      pendingOnly: samples.filter(function (x) { return !x.real && x.pend; }).length,
+      finalReal: !!s.real,
+      pendingLeft: pend,
+      reserved: window.Pending ? window.Pending.reserved(P.state.playerOwner) : -1,
+      houses: P.state.buildings.filter(function (b) { return B.typeOf(b) === 'house'; }).length,
+      logs: P.state.logs,
+      acts: window.Pending ? window.Pending.list().map(function (a) {
+        return { status: a.status, ids: a.ids, appliedSeq: a.appliedSeq,
+          sentSeq: a.sentSeq, items: a.items };
+      }) : null,
+      realAtSpot: P.state.buildings.filter(function (b) {
+        return B.typeOf(b) === 'house' && b.x === window.__uxSpot.x &&
+          b.y === window.__uxSpot.y;
+      }).map(function (b) { return { id: b.id, owner: b.owner, rot: b.rot }; }),
+      spot: window.__uxSpot,
+      netSeq: P.state.netSeq,
+      pendingStatus: window.Pending ? window.Pending.status() : null
+    };
+  })()`);
+  await A.js(`window.Net.snapshot = window.__origSnap; 1`);
+  await A.js(`window.__game.Play.state.running=true; 1`);
   const reAfterHost = await A.js(`window.__game.Play.state.buildings.length`);
   const reAfterGuest = await B.js(`window.__game.Play.state.buildings.length`);
-  check(!!reBuild && reBuild.ok && reAfterHost === reBefore + 1 &&
-    reAfterGuest === reAfterHost,
+  const hostLogs = await A.js(`window.__game.Play.state.world.towns[1].logs`);
+  check(!!reBuild && reBuild.ok && reBuild.pending === 1 &&
+    reBuild.rendererPending === 1 && reBuild.inWorld === false,
+    'гость сразу видит ожидание, а в мир оно не входит: ' + JSON.stringify(reBuild));
+  check(reBuild && reBuild.reserved === 12,
+    'резерв казны взят отдельно от снимка: ' + (reBuild && reBuild.reserved));
+  check(uxAfter && uxAfter.empty === 0 && uxAfter.pendingOnly > 0 &&
+    uxAfter.finalReal && uxAfter.pendingLeft === 0 &&
+    uxAfter.realAtSpot.length === 1 && uxAfter.realAtSpot[0].owner === 1,
+    'ни одного пустого кадра от подтверждения до авторитетного дома: ' +
+      JSON.stringify(uxAfter));
+  check(reAfterHost === reBefore + 1 && reAfterGuest === reAfterHost,
     'после F5 гость снова строит: ' + reBefore + ' -> ' +
       reAfterHost + ' / ' + reAfterGuest);
+  check(hostLogs0 - hostLogs === 12,
+    'двойной траты нет: у хоста списано ровно 12 (' + hostLogs0 + ' -> ' + hostLogs + ')');
 
   /* F5 у хоста: мир поднимается из последнего снимка, а не начинается заново.
      Перед снимком «до» замораживаем мир: иначе житель успеет свалить дерево

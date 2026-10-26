@@ -3648,6 +3648,209 @@ const getJSON = (u) => new Promise((res, rej) => {
     birthSeries.ok ? birthSeries.at.map(x => x.t.toFixed(1) + ' с: ' + x.n + ' чел.').join(' · ')
       : birthSeries.why);
 
+  /* --- 18. LOOP-01: ошибка одной подсистемы ------------------------- *
+   * Жалоба «часть жителей останавливается, а причина неизвестна»: раньше
+   * следующий requestAnimationFrame стоял ПОСЛЕ шага мира, и одно исключение
+   * обрывало цепочку кадров навсегда — полуживой мир без объяснения.
+   *
+   * Здесь внедряется исключение СНАЧАЛА в середине жителей, затем в отрисовке.
+   * Проверяется: стек и сущность записаны, мир явно остановлен, интерфейс и
+   * экран ошибки живы, выгрузка содержит контрольную точку, а восстановление из
+   * неё НЕ теряет груз, обучение и приказ. */
+  console.log('\nошибка подсистемы (LOOP-01):');
+  await js(`(() => {
+    window.__game.start('сбой-100', 64);
+    const P = window.__game.Play;
+    P.state.birth = { next: 1e9, attempts: 0 };
+    P.state.running = true;
+    return 1;
+  })()`);
+  await sleep(500);
+  await js(`window.__game.Play.fit()`);
+  await sleep(250);
+  const preFault = await js(`(() => {
+    const P = window.__game.Play, B = window.Buildings, V = P.state.villagers;
+    if (!V.length) return { ok: false, why: 'нет жителей' };
+    const camp = P.state.buildings.find(x => B.typeOf(x) === 'lumbercamp');
+    const hall = P.state.buildings.find(x => B.typeOf(x) === 'townhall');
+    const carrier = V[0];
+    carrier.carrying = true;
+    carrier.employer = camp || null;
+    carrier.state = 'carry';
+    /* Казарма для ученика: стартовая деревня её не содержит, поэтому ставим
+       отдельную (это подготовка сцены, а не проверка стройки). */
+    let bar = P.state.buildings.find(x => B.typeOf(x) === 'barracks');
+    if (!bar) {
+      bar = B.make({ type: 'barracks', variant: 'a', rot: 0,
+        x: Math.floor(hall.x) + 6, y: Math.floor(hall.y), owner: 0, town: 0,
+        id: 'test:barracks' });
+      P.state.buildings.push(bar);
+      P.renderer().setBuildings(P.state.buildings);
+    }
+    const trainee = V[1] || V[0];
+    trainee.trainee = true;
+    trainee.trainingAt = bar;
+    trainee.trainT = 5;
+    trainee.state = 'toBarracks';
+    const warrior = V[2] || V[0];
+    warrior.warrior = true;
+    warrior.warcamp = null;
+    warrior.order = { x: hall.x + 4, y: hall.y + 4 };
+    warrior.state = 'march';
+    P.captureCheckpoint();
+    window.__faultCarrier = carrier.id;
+    window.__faultTrainee = trainee.id;
+    window.__faultWarrior = warrior.id;
+    window.__faultCampId = camp && camp.id;
+    window.__faultBarId = bar.id;
+    return { ok: true, carrier: carrier.id, trainee: trainee.id,
+      warrior: warrior.id, checkpoint: !!P.state.checkpoint,
+      t: +P.state.world.time.toFixed(2), villagers: V.length };
+  })()`);
+  check('сцена сбоя собрана: груз, обучение и приказ в контрольной точке',
+    preFault.ok && preFault.checkpoint, JSON.stringify(preFault));
+
+  /* Исключение в СЕРЕДИНЕ жителей: конкретный житель, конкретный кадр. */
+  await js(`(() => {
+    const P = window.__game.Play, V = window.Villagers;
+    window.__origUpdate = V.update;
+    const bad = window.__faultCarrier;
+    V.update = function (v) {
+      if (v && v.id === bad && !window.__thrown) {
+        window.__thrown = true;
+        throw new Error('тест: сбой жителя ' + v.id);
+      }
+      return window.__origUpdate.apply(this, arguments);
+    };
+    window.__thrown = false;
+    return 1;
+  })()`);
+  const villagerFault = await waitFor(`!!window.__game.Play.state.faulted`, 6000);
+  const faultInfo = await js(`(() => {
+    const P = window.__game.Play, f = P.state.fault, el = document.getElementById('faultScreen');
+    return { faulted: !!P.state.faulted, phase: f && f.phase,
+      message: f && f.message, stack: f && f.stack,
+      entity: f && f.entity, screen: el ? el.style.display : null,
+      faultCount: P.state.faultCount };
+  })()`);
+  check('исключение в середине жителей остановило мир ЯВНО',
+    villagerFault && faultInfo.faulted, JSON.stringify(faultInfo));
+  check('в ошибке есть фаза, стек и КОНКРЕТНЫЙ житель',
+    faultInfo.phase === 'villagers' && /сбой жителя/.test(faultInfo.stack || '') &&
+    faultInfo.entity && faultInfo.entity.id === preFault.carrier,
+    JSON.stringify({ phase: faultInfo.phase, entity: faultInfo.entity }));
+  check('экран ошибки показан, интерфейс не мёртв', faultInfo.screen === 'flex',
+    'дисплей: ' + faultInfo.screen);
+
+  /* Мир стоит, а не «догоняет» пропущенное; одна и та же ошибка не повторяется
+     бесконечно. Hud.tick вызывается руками: кадры в приёмке редкие. */
+  const stopped = await js(`(async () => {
+    const P = window.__game.Play;
+    const t1 = P.state.world.time, n1 = P.state.faultCount;
+    await new Promise(r => setTimeout(r, 700));
+    window.Hud.tick(0.25);
+    const t2 = P.state.world.time, n2 = P.state.faultCount;
+    return { t1, t2, n1, n2, running: P.state.running };
+  })()`);
+  check('остановленный мир не считает время', stopped.t1 === stopped.t2,
+    JSON.stringify(stopped));
+  check('ошибка не повторяется каждый кадр', stopped.n1 === stopped.n2,
+    JSON.stringify({ n1: stopped.n1, n2: stopped.n2 }));
+
+  const diag = await js(`(() => {
+    const d = window.__game.Play.exportDiagnostics();
+    return { fault: !!d.fault, stack: d.fault && d.fault.stack,
+      entity: d.fault && d.fault.entity, checkpoint: !!d.checkpointSnap,
+      hasFaultEntity: !!(d.fault && d.fault.entity && d.fault.entity.id),
+      metrics: !!d.metrics, pathWait: !!d.pathWait,
+      pending: !!d.pending, combatState: d.combat ? d.combat.on : null,
+      hasToken: JSON.stringify(d).indexOf('token') >= 0,
+      keys: Object.keys(d).sort() };
+  })()`);
+  check('выгрузка несёт стек, сущность и контрольную точку',
+    diag.fault && diag.hasFaultEntity && diag.checkpoint, JSON.stringify(diag.keys));
+  check('в выгрузке нет токенов', diag.hasToken === false, JSON.stringify(diag.keys));
+  check('выгрузка содержит счётчики, ожидания и ожидания гостя',
+    diag.metrics && diag.pathWait && diag.pending, JSON.stringify(diag.keys));
+
+  /* Поддерживаемое восстановление: убрать причину и вернуться к последней
+     ЦЕЛОЙ точке. Груз, обучение и приказ должны вернуться. */
+  const recovered = await js(`(() => {
+    const P = window.__game.Play, V = window.Villagers;
+    V.update = window.__origUpdate;
+    const r = P.recoverFromCheckpoint();
+    const byId = {};
+    P.state.villagers.forEach(v => { byId[v.id] = v; });
+    const carrier = byId[window.__faultCarrier];
+    const trainee = byId[window.__faultTrainee];
+    const warrior = byId[window.__faultWarrior];
+    return { ok: r.ok, why: r.reason, faulted: P.state.faulted,
+      carrying: !!(carrier && carrier.carrying),
+      employer: !!(carrier && carrier.employer &&
+        (carrier.employer.id === window.__faultCampId)),
+      trainee: !!(trainee && trainee.trainee),
+      trainingAt: !!(trainee && trainee.trainingAt &&
+        trainee.trainingAt.id === window.__faultBarId),
+      order: !!(warrior && warrior.order),
+      warrior: !!(warrior && warrior.warrior),
+      time: P.state.world.time };
+  })()`);
+  check('восстановление из контрольной точки удалось',
+    recovered.ok && recovered.faulted === false, JSON.stringify(recovered));
+  check('после восстановления сохранены груз и работодатель',
+    recovered.carrying && recovered.employer, JSON.stringify(recovered));
+  check('после восстановления сохранено обучение и казарма',
+    recovered.trainee && recovered.trainingAt, JSON.stringify(recovered));
+  check('после восстановления сохранён приказ воина',
+    recovered.warrior && recovered.order, JSON.stringify(recovered));
+  const resumedTime = await js(`(() => {
+    const P = window.__game.Play, t0 = P.state.world.time;
+    P.tick(0.1); P.tick(0.1);
+    return { t0: t0, t1: P.state.world.time, faulted: P.state.faulted };
+  })()`);
+  check('после восстановления мир снова считает время',
+    resumedTime.t1 > resumedTime.t0 && !resumedTime.faulted,
+    JSON.stringify(resumedTime));
+
+  /* Теперь ошибка ОТРИСОВКИ: подсистема другая, граница та же. */
+  await js(`(() => {
+    const P = window.__game.Play;
+    window.__origPlayDraw = P.draw;
+    P.draw = function () {
+      if (window.__armDraw) { window.__armDraw = false; throw new Error('тест: сбой отрисовки'); }
+      return window.__origPlayDraw.apply(this, arguments);
+    };
+    window.__armDraw = true;
+    window.__loopBefore = window.__loop ? window.__loop.hud : 0;
+    /* Подаём кадр тем же путём, что rAF-цикл: ждать кадра браузера в приёмке
+       нельзя (страница занята), а граница кадра должна быть та же. */
+    window.__game.frame();
+    return 1;
+  })()`);
+  const drawFault = await waitFor(`!!window.__game.Play.state.faulted`, 6000);
+  const drawInfo = await js(`(() => {
+    const P = window.__game.Play, f = P.state.fault;
+    return { faulted: !!P.state.faulted, phase: f && f.phase,
+      message: f && f.message, screen: document.getElementById('faultScreen').style.display,
+      hudBefore: window.__loopBefore,
+      hudAfter: window.__loop ? window.__loop.hud : null };
+  })()`);
+  check('исключение в отрисовке поймано той же границей',
+    drawFault && drawInfo.faulted && drawInfo.phase === 'draw',
+    JSON.stringify(drawInfo));
+  check('экран ошибки при сбое отрисовки тоже показан',
+    drawInfo.screen === 'flex', JSON.stringify(drawInfo));
+  check('после сбоя отрисовки интерфейс продолжает считать кадры',
+    drawInfo.hudAfter > drawInfo.hudBefore, JSON.stringify(drawInfo));
+  const drawRecover = await js(`(() => {
+    const P = window.__game.Play;
+    P.draw = window.__origPlayDraw;
+    const res = P.recoverFromCheckpoint();
+    return { ok: res.ok, faulted: P.state.faulted };
+  })()`);
+  check('после сбоя отрисовки мир восстановлен',
+    drawRecover.ok && !drawRecover.faulted, JSON.stringify(drawRecover));
+
   await finish();
 
   async function finish() {

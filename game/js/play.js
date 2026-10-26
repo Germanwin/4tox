@@ -1100,6 +1100,16 @@
     });
     state.buildings = res.buildings;
     state.villagers = res.villagers;
+    /* Ожидающие действия согласуются с авторитетным миром ЗДЕСЬ, до отрисовки
+       кадра: либо ожидание заменяется настоящей постройкой, либо остаётся.
+       Пустого кадра «призрак → пусто → дом» быть не может (UX-01). */
+    if (global.Pending) {
+      var settled = global.Pending.reconcile({
+        seq: snap.seq === undefined ? state.netSeq : snap.seq,
+        buildings: state.buildings
+      });
+      if (settled) syncPending();
+    }
     state.seconds = state.world.time || 0;
     var town = state.world && state.world.towns && state.world.towns[state.playerOwner];
     state.logs = town ? town.logs : 0;
@@ -1311,12 +1321,27 @@
       return { ok: false, reason: 'контрольной точки нет' };
     }
     try {
-      restoreFromSnapshot(state.world, state.checkpoint.snap);
+      var snap = state.checkpoint.snap;
+      restoreFromSnapshot(state.world, snap);
+      /* Снимок — формат отрисовки. Для продолжения СЧЁТА нужны полные поля
+         симуляции (speed, rng, anchor, ссылки на дом/казарму): их собирает
+         hydrate. Без него после восстановления гражданский стоял бы без якоря,
+         а ученик потерял бы казарму — то есть «восстановление» теряло бы
+         обучение и груз, чего делать нельзя (LOOP-01). */
+      normalizeResumedVillagers(state.villagers);
+      if (global.Serialize && global.Serialize.hydrate) {
+        state.villagers = global.Serialize.hydrate(state.world, snap,
+          state.buildings, { renderer: renderer });
+        state.buildings = state.world._buildings || state.buildings;
+      }
       state.fault = null;
       state.faulted = false;
       state.running = true;
       state.tickPhase = '';
       state.birth = global.Session.birthClock();
+      if (global.Session.rearmBirth) {
+        global.Session.rearmBirth(state.world, state.birth, state.seconds);
+      }
       state.seconds = state.world.time || 0;
       emit({ type: 'fault-recovered' });
       traceDiag('recovered', { at: state.checkpoint.at });
@@ -1325,6 +1350,37 @@
       noteFault(e, 'recover', { extra: { from: 'checkpoint' } });
       return { ok: false, reason: (e && e.message) || 'восстановление не удалось' };
     }
+  }
+
+  /* Ожидание пути по владельцам: deferred — временный отказ планировщика, а
+     не «пути нет». Числа берутся с самих жителей (pathWaitMax/pathDeferCount),
+     поэтому показывают не «сколько раз отказали», а СКОЛЬКО ЖДАЛИ. */
+  function waitSummary() {
+    var out = {}, i;
+    var list = state.villagers || [];
+    for (i = 0; i < list.length; i++) {
+      var v = list[i];
+      if (!v) continue;
+      var own = v.owner === undefined ? 0 : v.owner;
+      var r = out[own] || (out[own] = {
+        villagers: 0, deferred: 0, maxWaitFrames: 0, maxWaitSec: 0
+      });
+      r.villagers++;
+      if (v.pathDeferCount) r.deferred++;
+      var f = Math.max(v.pathWaitMax || 0, v.pathWaitFrames || 0);
+      if (f > r.maxWaitFrames) {
+        r.maxWaitFrames = f;
+        r.maxWaitSec = +(f * 0.05).toFixed(2);
+      }
+    }
+    return out;
+  }
+
+  /* След боя для выбранных юнитов (OBS-01). По умолчанию выключен: включить
+     можно из консоли/приёмки, тогда в выгрузку попадёт последний отрезок. */
+  function traceCombat(ids) {
+    if (!global.Combat || !global.Combat.traceEnable) return null;
+    return global.Combat.traceEnable(ids);
   }
 
   /* Выгрузка диагностики: только то, что нужно разобрать инцидент. Токены и
@@ -1351,6 +1407,10 @@
       fault: state.fault,
       metrics: M && M.snapshot ? M.snapshot() : null,
       pending: global.Pending ? global.Pending.exportState() : null,
+      combat: global.Combat && global.Combat.traceDump
+        ? global.Combat.traceDump() : null,
+      pathWait: waitSummary(),
+      serverDiag: state.serverDiag || null,
       trace: (state.diagTrace || []).slice(-TRACE_MAX),
       commands: (state.lastCommands || []).slice(-20),
       server: state.serverInfo || null,
@@ -1371,6 +1431,26 @@
 
   function downloadDiagnostics() {
     var data = exportDiagnostics();
+    /* Серверная часть — по сети и только у хоста: у гостя /api/diag закрыт.
+       Не дольше 1.5 с; не успели — выгружаем клиентскую часть, это честно. */
+    var ready = Promise.resolve(data);
+    if (global.Net && global.Net.diag &&
+        (state.netRole === 'host' || !state.netRole)) {
+      ready = global.Net.diag().then(function (j) {
+        state.serverDiag = j;
+        data.serverDiag = j;
+        return data;
+      }, function () { return data; });
+    }
+    try {
+      return ready.then(function (d) { saveDiagnosticsFile(d); return d; });
+    } catch (e) {
+      saveDiagnosticsFile(data);
+      return data;
+    }
+  }
+
+  function saveDiagnosticsFile(data) {
     try {
       var text = JSON.stringify(data, null, 1);
       if (global.Blob && global.URL && global.document) {
@@ -1829,6 +1909,16 @@
     selectBuilding(null);
     setFocus(null);
     editClose();
+    /* Новая партия — чистые диагностика и контрольная точка: ошибка прошлого
+       мира не должна останавливать новый (LOOP-01). */
+    state.fault = null;
+    state.faulted = false;
+    state.checkpoint = null;
+    state.checkpointAt = 0;
+    state.diagTrace = [];
+    state.pointerTrace = [];
+    state.lastCommands = [];
+    resetPending();
   }
 
   function startArrival(home) {
@@ -1921,6 +2011,18 @@
         }, function () {
           state.netPingBusy = false;
         });
+      }
+      /* Серверная диагностика (OBS-01) — раз в 10 с, только у хоста. Она нужна
+         для выгрузки после инцидента: build, очереди, event-loop delay, heap,
+         причина host-timeout. Тяжёлой трассировки здесь нет. */
+      if (global.Net && global.Net.diag && !state.serverDiagBusy &&
+          nowMs() - (state.serverDiagAt || 0) > 10000) {
+        state.serverDiagBusy = true;
+        state.serverDiagAt = nowMs();
+        global.Net.diag().then(function (j) {
+          state.serverDiagBusy = false;
+          state.serverDiag = j;
+        }, function () { state.serverDiagBusy = false; });
       }
     }
 
@@ -4338,6 +4440,8 @@
     captureCheckpoint: captureCheckpoint,
     recoverFromCheckpoint: recoverFromCheckpoint,
     traceDiag: traceDiag,
+    traceCombat: traceCombat,
+    waitSummary: waitSummary,
     applySnapshot: applySnapshot,
     tick: tick,
     draw: draw,

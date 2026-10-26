@@ -582,7 +582,12 @@
     return drain(document.hidden ? BUDGET_HIDDEN_MS : BUDGET_MS);
   }
 
-  function catchUp() { advance(simNow()); }
+  /* Догон по событию и по таймеру идёт ЧЕРЕЗ ТУ ЖЕ границу, что кадр: раньше
+     исключение здесь уходило в window.onerror, и запись теряла фазу и жителя
+     (LOOP-01). */
+  function catchUp() {
+    guardFrame('catch-up', function () { advance(simNow()); });
+  }
 
   /* Всё, что возвращает страницу в мир: вкладку выбрали, окно вернули,
      страницу разморозили. Мир к этому моменту отстал на весь отрезок — и
@@ -619,7 +624,7 @@
     global.setInterval(function () {
       var now = simNow();
       if (!document.hidden && now - lastFrameAt < STALL_MS) return;
-      advance(now);
+      guardFrame('timer', function () { advance(now); });
     }, 1000);
   }
 
@@ -786,9 +791,19 @@
          ровно тот же advance(now), что зовёт цикл; возвращает, сколько мира
          догнано этим вызовом. */
       advance: function (now) {
-        return advance(typeof now === 'number' ? now : simNow());
+        return guardFrame('clock', function () {
+          return advance(typeof now === 'number' ? now : simNow());
+        });
       }
     }
+  };
+  /* Приёмке: подать ОДИН кадр ровно тем же путём, что rAF-цикл (frame), не
+     дожидаясь кадра браузера. Ошибка отрисовки/шага проходит через те же
+     границы guardFrame и останавливает мир так же, как в жизни. */
+  global.__game.frame = function (t) {
+    var now = typeof t === 'number' ? t
+      : ((global.performance && global.performance.now) ? global.performance.now() : Date.now());
+    return frame(now);
   };
   global.__game.Play = global.Play;
   global.__game.Menu = global.Menu;

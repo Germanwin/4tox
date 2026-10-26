@@ -969,7 +969,11 @@
       if (pe.re < t0 - RECENT) continue;
       var fromE = pe.rq > 0 ? pe.rq : pe.s;
       var msE = pe.re - fromE;
-      if (msE >= 0) return Math.round(msE);
+      /* Ноль здесь значит «записи нет», а не «круг 0 мс». На loopback
+         responseEnd-requestStart бывает 0.3 мс, Math.round даёт 0 — и честный
+         сетевой круг показывался бы как wall. Меньше миллисекунды — всё равно
+         1 мс сетевого стека. */
+      if (msE >= 0) return Math.max(1, Math.round(msE));
     }
     try {
       var p = global.performance;
@@ -985,7 +989,7 @@
            главного потока. */
         var from = e.requestStart > 0 ? e.requestStart : e.startTime;
         var ms = e.responseEnd - from;
-        if (ms >= 0) return Math.round(ms);
+        if (ms >= 0) return Math.max(1, Math.round(ms));
       }
     } catch (e) { /* нет Resource Timing — ниже запасной замер */ }
     return 0;
@@ -1048,6 +1052,19 @@
     });
   }
 
+  /* Серверная диагностика (OBS-01). Отдаёт только хост: у гостя сервер
+     ответит 403, и это нормально — его мир всё равно у хоста. Токены в
+     ответе сервер не кладёт, поэтому его можно включать в выгрузку. */
+  function diag() {
+    if (!code || !token) return Promise.reject(makeError('state', 'нет лобби'));
+    var gen = generation;
+    return apiGet('/api/diag?code=' + encodeURIComponent(code) +
+      '&token=' + encodeURIComponent(token), 5000).then(function (j) {
+      if (!isCurrent(gen)) throw staleError();
+      return j;
+    });
+  }
+
   function leave() {
     var c = code, t = token;
     clearSaved();
@@ -1089,6 +1106,7 @@
     hasSaved: hasSaved,
     clearSaved: clearSaved,
     serverInfo: serverInfo,
+    diag: diag,
     ping: ping,
     leave: leave,
     reset: reset,

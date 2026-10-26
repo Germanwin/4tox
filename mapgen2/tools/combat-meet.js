@@ -325,6 +325,31 @@ console.log('\n== 9. Время реакции защитника ==');
     'пакетный удар: оба с одним HP гибнут вместе (порядок не даёт преимущества)');
 }
 
+/* ================== 10. Ограниченный след боя (OBS-01) ================== */
+console.log('\n== 10. След боя для выбранных юнитов ==');
+{
+  const w = worldOf(64, 64);
+  const a = warrior(w, { id: 1, x: 20.5, y: 20.5, order: [40.5, 20.5] });
+  const b = warrior(w, { id: 2, owner: 1, x: 23.5, y: 20.5, order: [0.5, 20.5] });
+  C.traceEnable([1]);
+  run(w, [a, b], [], 4);
+  const dump = C.traceDump();
+  check(dump.on === true && dump.ids.join() === '1', 'след включён только для id 1');
+  check(dump.items.length > 0 && dump.items.length <= dump.max,
+    'записей ' + dump.items.length + ' (не больше ' + dump.max + ')');
+  check(dump.items.every(x => x.kind === 'hit' || x.id === 1),
+    'в следе только выбранный юнит и его удары');
+  const hit = dump.items.filter(x => x.kind === 'hit');
+  check(hit.length > 0 && hit[0].dmg > 0 && hit[0].to !== undefined,
+    'урон записан: ' + (hit[0] ? hit[0].dmg + ' по ' + hit[0].to : 'нет'));
+  const unit = dump.items.filter(x => x.kind === 'unit');
+  check(unit.length > 0 && unit[0].anchor && unit[0].why !== undefined,
+    'у юнита есть якорь стычки и причина цели: ' + JSON.stringify(unit[0] && {
+      anchor: unit[0].anchor, why: unit[0].why, target: unit[0].target }));
+  C.traceDisable();
+  check(C.traceDump().on === false, 'след выключается и не стоит ничего');
+}
+
 /* ================== итог ================== */
 console.log(fails ? '\nПРОВАЛЕНО проверок: ' + fails : '\nВСТРЕЧНЫЙ БОЙ ПРИНЯТ');
 process.exit(fails ? 1 : 0);
