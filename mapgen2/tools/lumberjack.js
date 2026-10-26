@@ -48,7 +48,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const CHROME = require('./chrome.js');
 /* Сид прогона задан в адресе, а не «какой выпадет»: приёмка должна быть
    воспроизводимой, иначе FAIL на одном острове не повторить на другом. */
 const SEED = process.env.LUMBERJACK_SEED || 'лагерь-приёмка';

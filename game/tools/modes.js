@@ -9,7 +9,7 @@
 const { spawn } = require('child_process');
 const http = require('http');
 const path = require('path');
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const CHROME = require('../../mapgen2/tools/chrome.js');
 const REPO = path.resolve(__dirname, '..', '..');
 const CDP = 9200 + (process.pid % 90);
 const PROF = '/tmp/dsh-4tox-modes-' + process.pid;

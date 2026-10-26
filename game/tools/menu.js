@@ -37,7 +37,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const CHROME = require('../../mapgen2/tools/chrome.js');
 const url = process.argv[2] || 'file://' + path.join(__dirname, '..', 'index.html');
 const OUT = path.join(__dirname, 'out');
 const PORT = 9500 + (process.pid % 90);

@@ -16,7 +16,7 @@ const http = require('http');
 const path = require("path");
 const fs = require("fs");
 
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const CHROME = require('./chrome.js');
 const url = process.argv[2] || 'file://' + path.join(__dirname, '..', 'index.html');
 const PORT = 9600 + (process.pid % 300);
 const PROFILE = '/tmp/dsh-controls-' + process.pid;
