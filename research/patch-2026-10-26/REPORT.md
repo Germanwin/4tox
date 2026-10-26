@@ -132,7 +132,7 @@ NOT RUN, а не PASS.
 | `mapgen2/tools/chrome.js` | PASS | CHROME_PATH → известные пути → понятная ошибка |
 | `node mapgen2/tools/game.js` | PASS (81) | обе оболочки движка (Chrome) |
 | `node game/tools/menu.js` | PASS (275) | игра, HUD, ввод, фон/заморозка (Chrome) |
-| `node game/tools/mp.js` | PASS | сеть, F5, команды, сжатие (Chrome + сервер) |
+| `node game/tools/mp.js` | PASS (125) | сеть, F5, команды, сжатие, ping по сетевому стеку (Chrome + сервер) |
 | `mapgen2/tools/place.js` | NOT RUN в финале | запускался агентом 9: 65 ok / 0 FAIL |
 | `mapgen2/tools/controls.js` | NOT RUN в финале | ввод генератора; render.js менялся, нужен прогон |
 | 15 браузерных приёмок целиком | частично | game/menu/mp/place прогонялись; остальные — NOT RUN |
@@ -152,6 +152,23 @@ NOT RUN, а не PASS.
 - Хром-приёмки `look/views/house/hut/townhall/ground/villager/modes/army`
   в финале не перезапускались: они не касаются изменённых правил (кроме
   render.js/HUD), но это NOT RUN, а не PASS.
+
+## Что изменено в коде (сводка)
+
+Движок: `mapgen2/js/{session,villager,combat,army,buildings,serialize,render}.js`;
+новые `mapgen2/js/{events,metrics}.js`; оболочка: `game/js/{play,boot,net,hud}.js`,
+`game/server/server.js`, `game/index.html`, `game/css/*`.
+Инструменты: `mapgen2/tools/{profile,chrome,regress}.js`; приёмки обновлены
+(`combat,path,menu,mp` и все браузерные — через `chrome.js`).
+Ключевые точки: `Serialize.hydrate` (F5), `Session.birthStatus/…` (рост),
+`Villagers.findPath` + бюджет/индекс (пути), `Army.stop`/`Combat.CONFIG` (бой),
+`Play.ingestCommands` + `/api/command-state` (команды), `Events` + журнал HUD
+(события), `Play.beginLine` + `Buildings.planLine` (серия), мультитач в
+`play.js`. Числа и матрица — выше; непроверенное помечено NOT RUN.
+
+Причина долгого «пинга» в приёмке: буфер Resource Timing (250 записей)
+заполнялся снимками хоста за полминуты, новые записи ping не писались; теперь
+буфер 4096 и `PerformanceObserver` — круг снова измеряется сетевым стеком.
 
 ## Что требует серверной симуляции
 
