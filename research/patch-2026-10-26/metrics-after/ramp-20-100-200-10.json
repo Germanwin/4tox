@@ -1,0 +1,639 @@
+{
+  "when": "2026-10-26T01:30:36.382Z",
+  "seed": "патч-замер-1",
+  "size": 192,
+  "players": 4,
+  "minutes": 10,
+  "stress": 0,
+  "entities": 0,
+  "ramp": [
+    20,
+    100,
+    200
+  ],
+  "dt": 0.016666666666666666,
+  "steps": 36000,
+  "wallMs": 8610,
+  "villagers": 200,
+  "villagersStart": 12,
+  "buildings": 12,
+  "trees": 3657,
+  "births": 0,
+  "step": {
+    "p50": 0.0567,
+    "p95": 0.1833,
+    "p99": 0.6893,
+    "max": 84.567,
+    "mean": 0.1137,
+    "over16": 23
+  },
+  "histogram": {
+    "<=0.5": 35399,
+    "<=1": 219,
+    "<=2": 82,
+    "<=4": 98,
+    "<=8": 45,
+    "<=16": 14,
+    "<=32": 13,
+    "<=64": 7,
+    ">64": 3
+  },
+  "paths": {
+    "calls": 8713,
+    "nodes": 969700,
+    "fails": 54,
+    "budgetHits": 81,
+    "perSec": 14.52,
+    "nodesPerStep": 26.9
+  },
+  "plans": {
+    "calls": 325,
+    "fails": 3,
+    "byKind": {}
+  },
+  "caches": {
+    "blockedBuilds": 156,
+    "areaBuilds": 0
+  },
+  "snapshot": {
+    "count": 6000,
+    "avgBytes": 14416,
+    "maxBytes": 22792,
+    "lastBytes": 22615,
+    "gzBytes": 3124,
+    "gzSamples": 1200,
+    "maxSerMs": 7.119,
+    "avgSerMs": 0.0804,
+    "avgJsonMs": 0.0943,
+    "maxJsonMs": 6.113,
+    "avgApplyMs": 0.4257,
+    "maxApplyMs": 7.945,
+    "applySamples": 1200,
+    "removedChars": 1740,
+    "removedShare": 0.077,
+    "gzShare": 0.219
+  },
+  "birthsStats": {
+    "born": 0,
+    "bornMetric": 0,
+    "blocked": 0,
+    "housing": 0,
+    "spot": 0,
+    "pending": 0,
+    "population": 200,
+    "housingFree": 0
+  },
+  "caughtUp": {
+    "sec": 0,
+    "dropped": 0,
+    "ms": 0
+  },
+  "commands": {
+    "seen": 0,
+    "applied": 0,
+    "rejected": 0,
+    "expired": 0,
+    "latencyMaxMs": 0
+  },
+  "combat": {
+    "ms": 278.0155665576458,
+    "attacks": 0,
+    "damage": 0
+  },
+  "economy": [
+    {
+      "at": 180,
+      "step": 10800,
+      "villagers": 20,
+      "towns": [
+        {
+          "id": 0,
+          "owner": 0,
+          "logs": 36,
+          "deliveries": 9,
+          "felled": 9,
+          "inTransit": 0,
+          "lost": 0,
+          "workers": 3,
+          "invariant": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "logs": 96,
+          "deliveries": 24,
+          "felled": 25,
+          "inTransit": 1,
+          "lost": 0,
+          "workers": 3,
+          "invariant": true
+        },
+        {
+          "id": 2,
+          "owner": 2,
+          "logs": 40,
+          "deliveries": 10,
+          "felled": 12,
+          "inTransit": 2,
+          "lost": 0,
+          "workers": 3,
+          "invariant": true
+        },
+        {
+          "id": 3,
+          "owner": 3,
+          "logs": 40,
+          "deliveries": 10,
+          "felled": 12,
+          "inTransit": 2,
+          "lost": 0,
+          "workers": 3,
+          "invariant": true
+        }
+      ]
+    },
+    {
+      "at": 300,
+      "step": 18000,
+      "villagers": 100,
+      "towns": [
+        {
+          "id": 0,
+          "owner": 0,
+          "logs": 60,
+          "deliveries": 15,
+          "felled": 15,
+          "inTransit": 0,
+          "lost": 0,
+          "workers": 3,
+          "invariant": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "logs": 148,
+          "deliveries": 37,
+          "felled": 38,
+          "inTransit": 1,
+          "lost": 0,
+          "workers": 3,
+          "invariant": true
+        },
+        {
+          "id": 2,
+          "owner": 2,
+          "logs": 72,
+          "deliveries": 18,
+          "felled": 18,
+          "inTransit": 0,
+          "lost": 0,
+          "workers": 3,
+          "invariant": true
+        },
+        {
+          "id": 3,
+          "owner": 3,
+          "logs": 68,
+          "deliveries": 17,
+          "felled": 19,
+          "inTransit": 2,
+          "lost": 0,
+          "workers": 3,
+          "invariant": true
+        }
+      ]
+    },
+    {
+      "at": 600,
+      "step": 36000,
+      "villagers": 200,
+      "towns": [
+        {
+          "id": 0,
+          "owner": 0,
+          "logs": 112,
+          "deliveries": 28,
+          "felled": 30,
+          "inTransit": 2,
+          "lost": 0,
+          "workers": 3,
+          "invariant": true
+        },
+        {
+          "id": 1,
+          "owner": 1,
+          "logs": 220,
+          "deliveries": 55,
+          "felled": 56,
+          "inTransit": 1,
+          "lost": 0,
+          "workers": 3,
+          "invariant": true
+        },
+        {
+          "id": 2,
+          "owner": 2,
+          "logs": 140,
+          "deliveries": 35,
+          "felled": 36,
+          "inTransit": 1,
+          "lost": 0,
+          "workers": 3,
+          "invariant": true
+        },
+        {
+          "id": 3,
+          "owner": 3,
+          "logs": 124,
+          "deliveries": 31,
+          "felled": 34,
+          "inTransit": 3,
+          "lost": 0,
+          "workers": 3,
+          "invariant": true
+        }
+      ]
+    }
+  ],
+  "marks": [
+    {
+      "at": 180,
+      "seconds": 180,
+      "villagers": 20,
+      "housingFree": 0,
+      "metrics": {
+        "paths": 1988,
+        "budgetHits": 68,
+        "plans": 131,
+        "births": 0
+      }
+    },
+    {
+      "at": 300,
+      "seconds": 300,
+      "villagers": 100,
+      "housingFree": 0,
+      "metrics": {
+        "paths": 3683,
+        "budgetHits": 75,
+        "plans": 200,
+        "births": 0
+      }
+    },
+    {
+      "at": 600,
+      "seconds": 600,
+      "villagers": 200,
+      "housingFree": 0,
+      "metrics": {
+        "paths": 8713,
+        "budgetHits": 81,
+        "plans": 325,
+        "births": 0
+      }
+    }
+  ],
+  "series": [
+    {
+      "min": 1,
+      "villagers": 20,
+      "housingFree": 0,
+      "stepP50": 0.0331,
+      "stepP95": 0.4062,
+      "stepMax": 67.366,
+      "long16": 14,
+      "paths": 826,
+      "nodes": 375684,
+      "nodesPerStep": 104.4,
+      "budgetHits": 63,
+      "planFails": 3,
+      "births": 0,
+      "birthsDelta": 0,
+      "snapBytes": 6747,
+      "snapGz": 1355,
+      "serMs": 0.111,
+      "jsonMs": 0.0877,
+      "applyMs": 0.6666,
+      "heapMB": 18.3,
+      "heapGcMB": null,
+      "rssMB": 126.9
+    },
+    {
+      "min": 2,
+      "villagers": 20,
+      "housingFree": 0,
+      "stepP50": 0.0227,
+      "stepP95": 0.1619,
+      "stepMax": 18.285,
+      "long16": 1,
+      "paths": 587,
+      "nodes": 59481,
+      "nodesPerStep": 16.5,
+      "budgetHits": 4,
+      "planFails": 0,
+      "births": 0,
+      "birthsDelta": 0,
+      "snapBytes": 6768,
+      "snapGz": 1439,
+      "serMs": 0.0546,
+      "jsonMs": 0.0778,
+      "applyMs": 0.4472,
+      "heapMB": 28.6,
+      "heapGcMB": null,
+      "rssMB": 130.8
+    },
+    {
+      "min": 3,
+      "villagers": 20,
+      "housingFree": 0,
+      "stepP50": 0.0208,
+      "stepP95": 0.1213,
+      "stepMax": 84.567,
+      "long16": 4,
+      "paths": 575,
+      "nodes": 111107,
+      "nodesPerStep": 30.9,
+      "budgetHits": 1,
+      "planFails": 0,
+      "births": 0,
+      "birthsDelta": 0,
+      "snapBytes": 6784,
+      "snapGz": 1473,
+      "serMs": 0.0361,
+      "jsonMs": 0.066,
+      "applyMs": 0.4185,
+      "heapMB": 38,
+      "heapGcMB": null,
+      "rssMB": 129.1
+    },
+    {
+      "min": 4,
+      "villagers": 100,
+      "housingFree": 0,
+      "stepP50": 0.0595,
+      "stepP95": 0.2685,
+      "stepMax": 28.945,
+      "long16": 4,
+      "paths": 873,
+      "nodes": 137164,
+      "nodesPerStep": 38.1,
+      "budgetHits": 7,
+      "planFails": 0,
+      "births": 0,
+      "birthsDelta": 0,
+      "snapBytes": 11522,
+      "snapGz": 2447,
+      "serMs": 0.0965,
+      "jsonMs": 0.1123,
+      "applyMs": 0.5201,
+      "heapMB": 43.4,
+      "heapGcMB": null,
+      "rssMB": 138.1
+    },
+    {
+      "min": 5,
+      "villagers": 100,
+      "housingFree": 0,
+      "stepP50": 0.056,
+      "stepP95": 0.1951,
+      "stepMax": 16.532,
+      "long16": 1,
+      "paths": 822,
+      "nodes": 29184,
+      "nodesPerStep": 8.1,
+      "budgetHits": 0,
+      "planFails": 0,
+      "births": 0,
+      "birthsDelta": 0,
+      "snapBytes": 13860,
+      "snapGz": 3022,
+      "serMs": 0.0938,
+      "jsonMs": 0.1109,
+      "applyMs": 0.4554,
+      "heapMB": 38.9,
+      "heapGcMB": null,
+      "rssMB": 168.9
+    },
+    {
+      "min": 6,
+      "villagers": 100,
+      "housingFree": 0,
+      "stepP50": 0.0415,
+      "stepP95": 0.1005,
+      "stepMax": 3.37,
+      "long16": 0,
+      "paths": 752,
+      "nodes": 30712,
+      "nodesPerStep": 8.5,
+      "budgetHits": 0,
+      "planFails": 0,
+      "births": 0,
+      "birthsDelta": 0,
+      "snapBytes": 13846,
+      "snapGz": 3048,
+      "serMs": 0.0589,
+      "jsonMs": 0.0743,
+      "applyMs": 0.2698,
+      "heapMB": 21.6,
+      "heapGcMB": null,
+      "rssMB": 172.2
+    },
+    {
+      "min": 7,
+      "villagers": 200,
+      "housingFree": 0,
+      "stepP50": 0.0414,
+      "stepP95": 0.1137,
+      "stepMax": 6.489,
+      "long16": 0,
+      "paths": 1015,
+      "nodes": 46848,
+      "nodesPerStep": 13,
+      "budgetHits": 1,
+      "planFails": 0,
+      "births": 0,
+      "birthsDelta": 0,
+      "snapBytes": 16807,
+      "snapGz": 3643,
+      "serMs": 0.0672,
+      "jsonMs": 0.0813,
+      "applyMs": 0.3022,
+      "heapMB": 46.9,
+      "heapGcMB": null,
+      "rssMB": 172.6
+    },
+    {
+      "min": 8,
+      "villagers": 200,
+      "housingFree": 0,
+      "stepP50": 0.0672,
+      "stepP95": 0.1741,
+      "stepMax": 9.318,
+      "long16": 0,
+      "paths": 1115,
+      "nodes": 68010,
+      "nodesPerStep": 18.9,
+      "budgetHits": 3,
+      "planFails": 0,
+      "births": 0,
+      "birthsDelta": 0,
+      "snapBytes": 22624,
+      "snapGz": 4913,
+      "serMs": 0.0982,
+      "jsonMs": 0.1145,
+      "applyMs": 0.4139,
+      "heapMB": 22,
+      "heapGcMB": null,
+      "rssMB": 173
+    },
+    {
+      "min": 9,
+      "villagers": 200,
+      "housingFree": 0,
+      "stepP50": 0.0649,
+      "stepP95": 0.1654,
+      "stepMax": 7.069,
+      "long16": 0,
+      "paths": 1086,
+      "nodes": 46181,
+      "nodesPerStep": 12.8,
+      "budgetHits": 1,
+      "planFails": 0,
+      "births": 0,
+      "birthsDelta": 0,
+      "snapBytes": 22589,
+      "snapGz": 4933,
+      "serMs": 0.0984,
+      "jsonMs": 0.1131,
+      "applyMs": 0.4102,
+      "heapMB": 28.6,
+      "heapGcMB": null,
+      "rssMB": 173.3
+    },
+    {
+      "min": 10,
+      "villagers": 200,
+      "housingFree": 0,
+      "stepP50": 0.0606,
+      "stepP95": 0.1415,
+      "stepMax": 8.73,
+      "long16": 0,
+      "paths": 1062,
+      "nodes": 65329,
+      "nodesPerStep": 18.1,
+      "budgetHits": 1,
+      "planFails": 0,
+      "births": 0,
+      "birthsDelta": 0,
+      "snapBytes": 22613,
+      "snapGz": 4967,
+      "serMs": 0.0896,
+      "jsonMs": 0.1055,
+      "applyMs": 0.3535,
+      "heapMB": 31,
+      "heapGcMB": null,
+      "rssMB": 174.7
+    }
+  ],
+  "forest": [
+    {
+      "town": 0,
+      "forest": 16.78
+    },
+    {
+      "town": 1,
+      "forest": 17.09
+    },
+    {
+      "town": 2,
+      "forest": 13.67
+    },
+    {
+      "town": 3,
+      "forest": 16.54
+    }
+  ],
+  "treasury": {
+    "id": 0,
+    "owner": 0,
+    "logs": 112,
+    "deliveries": 28,
+    "felled": 30,
+    "inTransit": 2,
+    "lost": 0,
+    "workers": 3,
+    "invariant": true
+  },
+  "towns": [
+    {
+      "id": 0,
+      "owner": 0,
+      "logs": 112,
+      "deliveries": 28,
+      "felled": 30,
+      "inTransit": 2,
+      "lost": 0,
+      "workers": 3,
+      "invariant": true
+    },
+    {
+      "id": 1,
+      "owner": 1,
+      "logs": 220,
+      "deliveries": 55,
+      "felled": 56,
+      "inTransit": 1,
+      "lost": 0,
+      "workers": 3,
+      "invariant": true
+    },
+    {
+      "id": 2,
+      "owner": 2,
+      "logs": 140,
+      "deliveries": 35,
+      "felled": 36,
+      "inTransit": 1,
+      "lost": 0,
+      "workers": 3,
+      "invariant": true
+    },
+    {
+      "id": 3,
+      "owner": 3,
+      "logs": 124,
+      "deliveries": 31,
+      "felled": 34,
+      "inTransit": 3,
+      "lost": 0,
+      "workers": 3,
+      "invariant": true
+    }
+  ],
+  "memoryMB": 39,
+  "memory": {
+    "heapMB": 39,
+    "heapGcMB": null,
+    "rssMB": 175,
+    "gc": false
+  },
+  "notWired": [
+    "frames/frameMs/frameOver* (в игре) ← game/js/boot.js",
+    "steps/stepMs (в игре) ← game/js/boot.js",
+    "caughtUp/dropped/catchUpMs/debtSec ← game/js/boot.js",
+    "snaps/snap* (в игре) ← game/js/play.js",
+    "commands* ← game/js/play.js, game/js/net.js",
+    "births/birthBlocked* (в игре; здесь считаются отдельно) ← mapgen2/js/session.js",
+    "attacks/damage ← mapgen2/js/combat.js",
+    "pathRetries/pathNodesMax/blockedVersionChurn/areasMs ← mapgen2/js/villager.js",
+    "plansByKind ← mapgen2/js/villager.js"
+  ],
+  "env": {
+    "cpu": "Apple M4",
+    "cores": 10,
+    "totalMemGB": 16,
+    "platform": "darwin arm64",
+    "node": "v24.12.0",
+    "commit": "eb1be10"
+  }
+}
