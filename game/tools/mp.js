@@ -223,6 +223,207 @@ async function serverOnly() {
     'в ответе на снимок есть очередь друзей: ' + qsnap3.queue + ' Б');
 }
 
+/* --------------------------- команды: протокол ------------------------- *
+ *
+ * Заказчик 2026-10-26: «здание встало через полминуты», «иногда быстрее»,
+ * «отказ без молчаливых потерь». Проверяем не «сервер ответил 200», а весь
+ * путь: приём → sn → доставка снимком → результат cmdDone → command-state.
+ *
+ * Один путь выполнения: SSE-событие `command` только будит хост (снимок
+ * уходит сразу), а выполняется команда из массива `commands` ответа на
+ * POST /api/snapshot, отсортированного сервером по sn. Поэтому SSE-команда
+ * без снимка обязана остаться pending — это и проверяется.
+ * ---------------------------------------------------------------------- */
+function sseWatch(code, token) {
+  const out = { events: [] };
+  const u = new URL(BASE + '/api/events?code=' + encodeURIComponent(code) +
+    '&token=' + encodeURIComponent(token));
+  const req = http.request({ host: u.hostname, port: u.port,
+    path: u.pathname + u.search, method: 'GET',
+    headers: { accept: 'text/event-stream' } }, res => {
+    let buf = '';
+    res.setEncoding('utf8');
+    res.on('data', chunk => {
+      buf += chunk;
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const raw = buf.slice(0, i);
+        buf = buf.slice(i + 2);
+        let type = '', data = '';
+        raw.split('\n').forEach(line => {
+          if (line.startsWith('event:')) type = line.slice(6).trim();
+          else if (line.startsWith('data:')) data += line.slice(5).trim();
+        });
+        if (!type || !data) continue;
+        let j = null;
+        try { j = JSON.parse(data); } catch (e) { continue; }
+        out.events.push({ type: type, data: j });
+      }
+    });
+  });
+  req.on('error', () => {});
+  req.end();
+  out.waitFor = (type, pred, ms) => new Promise(resolve => {
+    const t0 = Date.now();
+    (function tick() {
+      const hit = out.events.find(e => e.type === type && (!pred || pred(e.data)));
+      if (hit) return resolve(hit.data);
+      if (Date.now() - t0 > ms) return resolve(null);
+      setTimeout(tick, 20);
+    })();
+  });
+  out.close = () => { try { req.destroy(); } catch (e) {} };
+  return out;
+}
+
+async function commandsTest() {
+  console.log('\n== команды: два канала, порядок, результаты ==');
+  const h = await postJSON('/api/lobby', { max: 2, name: 'Хост-команд' });
+  const g = await postJSON('/api/join', { code: h.code, name: 'Гость-команд' });
+  const hA = { code: h.code, token: h.token };
+  const gA = { code: h.code, token: g.token };
+  await postJSON('/api/ready', { ...hA, ready: true });
+  await postJSON('/api/ready', { ...gA, ready: true });
+  const started = await postJSON('/api/start', hA);
+  check(started.ok && started.start && started.start.cmdProto === 2,
+    'старт несёт cmdProto:2 — клиент знает про конечный результат');
+  const watch = sseWatch(h.code, h.token);
+  await sleep(150);
+  let seq = 1;
+  const snap = extra => postJSON('/api/snapshot', { ...hA,
+    snapshot: Object.assign({ seq: seq++, t: 1 }, extra || {}) });
+  const stateOf = n => getJSON(BASE + '/api/command-state?code=' +
+    encodeURIComponent(h.code) + '&token=' + encodeURIComponent(g.token) +
+    '&n=' + encodeURIComponent(n));
+
+  /* (a/b) Команда без POST-снимков: SSE её приносит, но не выполняет. */
+  const c1 = await postJSON('/api/command', { ...gA, command: {
+    type: 'build', buildingType: 'house', x: 5, y: 5, rot: 0, n: 7001 } });
+  check(c1.ok && c1.state === 'pending' && typeof c1.sn === 'number',
+    'POST /api/command = {pending, sn}: ' + JSON.stringify(c1));
+  const ev = await watch.waitFor('command', d => d && d.n === 7001, 1000);
+  check(!!ev, 'SSE-команда доехала до хоста без единого снимка');
+  check((await stateOf(7001)).state === 'pending',
+    'без снимка команда pending: SSE только будит, а не выполняет');
+  await sleep(2000);                       // пауза снимков, как при задумке хоста
+  check((await stateOf(7001)).state === 'pending',
+    'через 2 с без снимков команда всё ещё pending, а не потеряна');
+  const snap1 = await snap();
+  const got1 = (snap1.commands || []).filter(c => c.n === 7001);
+  check(got1.length === 1 && got1[0].sn === c1.sn,
+    'снимок принёс команду с порядком приёма sn=' + c1.sn);
+  const c1dup = await postJSON('/api/command', { ...gA, command: {
+    type: 'build', buildingType: 'house', x: 5, y: 5, rot: 0, n: 7001 } });
+  check(c1dup.duplicate === true && c1dup.state === 'pending',
+    'повтор в очереди — duplicate pending, второй копии нет');
+  await snap({ cmdDone: [{ from: g.playerId, n: 7001, status: 'applied',
+    reason: '' }] });
+  check((await stateOf(7001)).state === 'applied',
+    'cmdDone applied → command-state applied');
+  const snap2 = await snap();
+  check(!(snap2.commands || []).some(c => c.n === 7001),
+    'cmdDone очистил очередь');
+  const after1 = await postJSON('/api/command', { ...gA, command: {
+    type: 'build', buildingType: 'house', x: 5, y: 5, rot: 0, n: 7001 } });
+  check(after1.duplicate === true && after1.state === 'applied',
+    'повтор после результата отдаёт applied, а не кладёт в очередь');
+
+  /* (d) Перестановка доставки: обе команды в одной пачке, порядок — по sn
+     (порядок приёма), более ранняя не теряется. */
+  await postJSON('/api/command', { ...gA, command: {
+    type: 'build', buildingType: 'house', x: 6, y: 5, rot: 0, n: 7102 } });
+  await postJSON('/api/command', { ...gA, command: {
+    type: 'build', buildingType: 'house', x: 7, y: 5, rot: 0, n: 7101 } });
+  const snap3 = await snap();
+  const pair = (snap3.commands || []).filter(c => c.n === 7102 || c.n === 7101);
+  check(pair.length === 2 && pair[0].sn < pair[1].sn,
+    'обе команды в одной пачке, sn возрастает: ' +
+    pair.map(c => c.n + '/sn' + c.sn).join(', '));
+  await snap({ cmdAck: { [g.playerId]: 7102 } });   // обе уже отданы хосту
+  /* Поздняя команда с МЕНЬШИМ n, принятая после ack: водяной знак не должен
+     съесть её, пока хост её не видел. */
+  await postJSON('/api/command', { ...gA, command: {
+    type: 'build', buildingType: 'house', x: 8, y: 5, rot: 0, n: 7100 } });
+  const snap4 = await snap({ cmdAck: { [g.playerId]: 7102 } });
+  check((snap4.commands || []).some(c => c.n === 7100),
+    'ack 7102 не съел невиденную n=7100 — нет молчаливой потери');
+  await snap({ cmdAck: { [g.playerId]: 7100 } });
+  check((await stateOf(7100)).state === 'applied',
+    'поздняя 7100 доехала и подтверждена');
+
+  /* (g) Отказ мира — это результат, а не сетевой сбой. */
+  await postJSON('/api/command', { ...gA, command: {
+    type: 'build', buildingType: 'house', x: 9, y: 5, rot: 0, n: 7200 } });
+  await snap();
+  await snap({ cmdDone: [{ from: g.playerId, n: 7200, status: 'rejected',
+    reason: 'не хватает брёвен: нужно 10' }] });
+  const rejected = await stateOf(7200);
+  check(rejected.state === 'rejected' && /брёвен/.test(rejected.reason || ''),
+    'rejected доезжает с причиной: ' + JSON.stringify(rejected));
+
+  /* (h) buildLine: повтор с тем же n не создаёт серию дважды. */
+  const line = { type: 'buildLine', buildingType: 'house', variant: 'a',
+    rot: 0, x: 20, y: 20, x2: 26, y2: 20, n: 7300 };
+  const b1 = await postJSON('/api/command', { ...gA, command: line });
+  const b2 = await postJSON('/api/command', { ...gA, command: line });
+  check(b1.state === 'pending' && b2.duplicate === true,
+    'buildLine: повтор с тем же n — duplicate pending');
+  const snap5 = await snap();
+  check((snap5.commands || []).filter(c => c.n === 7300).length === 1,
+    'buildLine в снимке ровно один раз');
+  await snap({ cmdDone: [{ from: g.playerId, n: 7300, status: 'applied' }] });
+  check((await stateOf(7300)).state === 'applied', 'buildLine applied');
+  const b3 = await postJSON('/api/command', { ...gA, command: line });
+  check(b3.duplicate === true && b3.state === 'applied',
+    'повтор buildLine после результата не создаёт дубль');
+
+  /* (e) Просрочка: без снимков команда получает expired, а не молчание. */
+  await postJSON('/api/command', { ...gA, command: {
+    type: 'build', buildingType: 'house', x: 10, y: 5, rot: 0, n: 7400 } });
+  await sleep(15600);
+  const expired = await stateOf(7400);
+  check(expired.state === 'expired' && /просрочена/.test(expired.reason || ''),
+    'TTL 15 с → expired с причиной: ' + JSON.stringify(expired));
+  const snap6 = await snap();
+  check(!(snap6.commands || []).some(c => c.n === 7400),
+    'просроченная ушла из очереди, а не висит вечно');
+
+  /* Лимит очереди: вытеснение — тоже expired, а не молчаливый shift. */
+  const h2 = await postJSON('/api/lobby', { max: 2, name: 'Хост-лимита' });
+  const g2 = await postJSON('/api/join', { code: h2.code, name: 'Гость-лимита' });
+  const h2A = { code: h2.code, token: h2.token };
+  const g2A = { code: h2.code, token: g2.token };
+  await postJSON('/api/ready', { ...h2A, ready: true });
+  await postJSON('/api/ready', { ...g2A, ready: true });
+  await postJSON('/api/start', h2A);
+  let last = null;
+  for (let i = 0; i < 205; i++) {
+    last = await postJSON('/api/command', { ...g2A, command: {
+      type: 'build', buildingType: 'house', x: 1, y: 1, rot: 0, n: 8000 + i } });
+  }
+  check(last && last.pending === 200,
+    'очередь ограничена 200: последний pending=' + (last && last.pending));
+  const old = await getJSON(BASE + '/api/command-state?code=' +
+    encodeURIComponent(h2.code) + '&token=' + encodeURIComponent(g2.token) +
+    '&n=8000');
+  check(old.state === 'expired' && /вытеснена/.test(old.reason || ''),
+    'вытесненная команда получила expired: ' + JSON.stringify(old));
+
+  /* Дешёвые отказы протокола: без n и без концов линии. */
+  const noN = await fetch(BASE + '/api/command', { method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ...gA, command: { type: 'build',
+      buildingType: 'house', x: 1, y: 1 } }) });
+  check(noN.status === 400, 'команда без n отвергается 400');
+  const noEnds = await fetch(BASE + '/api/command', { method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ...gA, command: { type: 'buildLine',
+      buildingType: 'house', n: 7500 } }) });
+  check(noEnds.status === 400, 'buildLine без концов линии отвергается 400');
+
+  watch.close();
+}
+
 /* ------------------------- сжатие потока SSE -------------------------- *
  *
  * Заказчик 2026-10-25: «каждую игру игра лагает и у друзей огромный пинг».
@@ -403,6 +604,7 @@ process.on('SIGINT', () => { killAll(); process.exit(130); });
     try { await getJSON('http://127.0.0.1:' + PORT + '/game/'); break; } catch (e) { await sleep(100); }
   }
   await serverOnly();
+  await commandsTest();
   await transportTest();
   let tabs = [];
   for (let i = 0; i < 100; i++) {
