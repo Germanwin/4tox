@@ -942,7 +942,35 @@ process.on('SIGINT', () => { killAll(); process.exit(130); });
       JSON.stringify(movedHost) + ' / ' + JSON.stringify(movedClient));
 
   /* Поворот клиента — отдельная команда; после неё на клиенте должно быть
-     то же, что у хоста. */
+     то же, что у хоста.
+
+     С 2026-10-26 поворот проверяет место так же, как перенос: дом нельзя
+     развернуть в клетку жителя или так, чтобы запереть выход. Сценарий
+     проверяет ДОСТАВКУ команды, поэтому дом гостя заранее переносится (на
+     хосте) на место, где законны оба угла, а жители уводятся из пятна.
+     Правила расстановки сторожат regress.js/place.js, не эта приёмка. */
+  const rotSpot = await A.js(`(() => {
+    const P=window.__game.Play, B=window.Buildings, st=P.state;
+    const b=st.buildings.find(x=>(x.owner||0)===1 && B.typeOf(x)==='house');
+    if (!b) return null;
+    for (const v of st.villagers) {
+      if ((v.owner||0)!==1) continue;
+      v.x=Math.max(1.5, Math.min(st.world.width-2.5, b.x+20.5));
+      v.y=Math.max(1.5, Math.min(st.world.height-2.5, b.y+20.5));
+      v.path=null;
+    }
+    let spot=null;
+    for (let r=2;r<=14&&!spot;r++) for (let dy=-r;dy<=r&&!spot;dy++) for (let dx=-r;dx<=r;dx++) {
+      if (Math.max(Math.abs(dx),Math.abs(dy))!==r) continue;
+      const x=b.x+dx, y=b.y+dy;
+      const a=B.checkAt(st.world, st.buildings, b, {x:x,y:y,rot:b.rot});
+      const c=B.checkAt(st.world, st.buildings, b, {x:x,y:y,rot:(b.rot+90)%360});
+      if (a.ok && c.ok) { spot={x:x,y:y}; break; }
+    }
+    if (spot) { B.setSpot(st.world,b,spot); B.touch(st.world); P.renderer().setBuildings(st.buildings); }
+    return spot ? {id:b.id, x:spot.x, y:spot.y} : null;
+  })()`);
+  await sleep(700);
   const rotCmd = await B.js(`(() => {
     const P=window.__game.Play, B=window.Buildings;
     const b=P.state.buildings.find(x=>(x.owner||0)===1 && B.typeOf(x)==='house');
