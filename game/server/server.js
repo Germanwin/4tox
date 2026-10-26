@@ -265,6 +265,25 @@ const HOST_GRACE = 60000;
  * пока хост действительно пропал: через 15 с они уже не нужны. */
 const CMD_TTL = 15000;
 const CMD_MAX = 200;
+/* Сколько живёт РЕЗУЛЬТАТ команды. Клиент опрашивает его после 200 на
+   /api/command; 15 с TTL очереди + запас на опрос и на возврат в партию. */
+const CMD_RESULT_TTL = 60000;
+/* Команда, которую хост уже забрал, но ещё не подтвердил, ждёт дольше: он
+   мог задуматься на кадр/свернуть вкладку. 15 с — срок для НЕзабранной
+   команды; забранной даём минуту, иначе просрочка обгоняла бы ответ хоста и
+   клиент видел «expired» у уже построенного дома. */
+const CMD_DELIVERED_TTL = 60000;
+/* Потолок карты результатов на лобби: без него долгая партия копила бы
+   записи о каждой команде до перезапуска сервера. */
+const CMD_RESULT_MAX = 1000;
+/* Сколько результатов хост кладёт в один снимок и сколько сервер готов
+   принять: больше 20 хосту в кадр не влезает, но старый/новый хост может
+   прислать пачку — лишнее не теряем молча, а просто не читаем сверх лимита. */
+const CMD_DONE_MAX = 20;
+const CMD_DONE_ACCEPT = 64;
+/* Состояния результата. pending живёт только в очереди; карта результатов —
+   окончательные. */
+const CMD_FINAL = { applied: 1, rejected: 1, expired: 1 };
 
 function code() {
   const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -283,9 +302,19 @@ function makeLobby(max) {
     players: [], started: false, seed: null, size: 192, streams: new Map(),
     createdAt: now(), hostId: 0, nextId: 0, startPayload: null,
     hostGone: false, hostTimer: null, lastSnapAt: 0, lastSnapshot: null,
-    /* Команды, ждущие хоста: [{...cmd, from, owner, at}]. Хост забирает их
-       ответом на снимок (см. CMD_TTL), а не событием SSE. */
-    cmdQueue: []
+    /* Команды, ждущие хоста: [{...cmd, from, owner, sn, at}].
+       Хост забирает их ответом на снимок (см. CMD_TTL), а не событием SSE.
+       sn — порядковый номер ПРИЁМА в лобби: по нему хост выполняет команды
+       одного отправителя, даже если они приехали вразнобой. */
+    cmdQueue: [],
+    /* Какие команды уже отдавались хосту (from:n → время). Отдельная карта,
+       а не поле команды: хост не должен получать служебные поля, а ack
+       водяным знаком снимает только отданное. */
+    cmdDelivered: new Map(),
+    cmdSeq: 0,
+    /* Окончательные результаты: ключ from: n → {from,n,sn,state,reason,
+       at,decidedAt}. Отдаются GET /api/command-state, живут результат-TTL. */
+    cmdResults: new Map()
   };
   lobbies.set(c, lobby);
   return lobby;
@@ -522,26 +551,193 @@ function markOffline(lobby, p) {
   if (typeof p.timer.unref === 'function') p.timer.unref();
 }
 
-/* ------------------------------- старт -------------------------------- */
-/* Что хосту пора выполнить. Забирается в ответе на снимок: SSE для команд
-   больше не единственный путь (см. CMD_TTL). ack — карта «id игрока → номер
-   последней выполненной команды»; всё, что не больше ack, из очереди уходит.
-   Заодно выбрасываются просроченные: хост, который не присылал снимков
-   дольше CMD_TTL, эти клики уже не увидит, а копить их незачем. */
-function pendingCommands(lobby, ack) {
-  if (ack && typeof ack === 'object') {
-    lobby.cmdQueue = lobby.cmdQueue.filter(function (c) {
-      const done = ack[String(c.from)];
-      return !(done !== undefined && typeof c.n === 'number' && c.n <= done);
-    });
+/* --------------------------- команды: результаты ---------------------- *
+ *
+ * Очередь — только «ещё не решено». Как только хост сказал результат
+ * (`cmdDone` в снимке) или команда протухла/вытеснена, она уходит из очереди
+ * в карту результатов. Клиент узнаёт правду опросом `/api/command-state`, а
+ * не по HTTP 200 на приёме.
+ *
+ * Почему нельзя чистить очередь только по `cmdAck`: ack — ВОДЯНОЙ ЗНАК
+ * («всё до n решено»), а номера n у отправителя разрежены и приходят не в
+ * порядке приёма. Поздняя команда с меньшим n, принятая ПОСЛЕ более новой,
+ * при чисто арочном сравнении исчезла бы, ни разу не доехав до хоста.
+ * Поэтому ack снимает только уже отданные хосту команды (cmdDelivered), а
+ * точный результат приносит `cmdDone`.
+ * ---------------------------------------------------------------------- */
+
+function cmdKey(from, n) {
+  return String(from) + ':' + String(n);
+}
+
+/* Окончательный результат или null. Просроченные записи выкидываем лениво:
+ * отдельный таймер на каждое лобби не нужен, состояние и так трогают на
+ * каждом снимке и опросе. */
+function cmdResultOf(lobby, from, n) {
+  const key = cmdKey(from, n);
+  const r = lobby.cmdResults.get(key);
+  if (!r) return null;
+  if (r.decidedAt && now() - r.decidedAt > CMD_RESULT_TTL) {
+    lobby.cmdResults.delete(key);
+    return null;
   }
+  return r;
+}
+
+function findQueued(lobby, from, n) {
+  for (let i = 0; i < lobby.cmdQueue.length; i++) {
+    const c = lobby.cmdQueue[i];
+    if (c.from === from && c.n === n) return c;
+  }
+  return null;
+}
+
+function rememberCmdResult(lobby, from, n, state, reason, extra) {
+  if (!CMD_FINAL[state]) return null;
+  const key = cmdKey(from, n);
+  const prev = lobby.cmdResults.get(key);
+  /* Первое решение — окончательное: просрочка не должна переписать уже
+     доехавшее «applied», а повторный cmdDone — «rejected». */
+  if (prev && CMD_FINAL[prev.state]) return prev;
+  const rec = {
+    from: from, n: n,
+    sn: extra && typeof extra.sn === 'number' ? extra.sn : (prev && prev.sn) || 0,
+    state: state,
+    reason: reason ? String(reason).slice(0, 160) : '',
+    at: (extra && typeof extra.at === 'number') ? extra.at : (prev && prev.at) || now(),
+    decidedAt: now()
+  };
+  lobby.cmdResults.set(key, rec);
+  while (lobby.cmdResults.size > CMD_RESULT_MAX) {
+    const first = lobby.cmdResults.keys().next();
+    if (first.done) break;
+    lobby.cmdResults.delete(first.value);
+  }
+  return rec;
+}
+
+/* Результат уходит отправителю сразу, если его SSE жив. Это только ускорение
+ * для интерфейса: правду всё равно отдаёт /api/command-state, потому что SSE
+ * мог оборваться. */
+function notifyCmdResult(lobby, rec) {
+  const stream = lobby.streams.get(rec.from);
+  if (!stream) return;
+  streamWrite(stream, eventText('command-result', {
+    n: rec.n, sn: rec.sn, state: rec.state, reason: rec.reason
+  }));
+}
+
+function decideCmd(lobby, q, state, reason) {
+  const rec = rememberCmdResult(lobby, q.from, q.n, state, reason,
+    { sn: q.sn, at: q.at });
+  if (rec) notifyCmdResult(lobby, rec);
+  return rec;
+}
+
+function dropQueued(lobby, from, n) {
+  for (let i = 0; i < lobby.cmdQueue.length; i++) {
+    const c = lobby.cmdQueue[i];
+    if (c.from === from && c.n === n) {
+      lobby.cmdQueue.splice(i, 1);
+      return c;
+    }
+  }
+  return null;
+}
+
+/* Просрочка: команда, которую хост не забрал за CMD_TTL, получает expired и
+ * уходит из очереди. Это не «молчаливая потеря»: клиент видит результат
+ * опросом, даже если снимков не было вовсе. */
+function sweepCommands(lobby) {
+  if (!lobby.cmdQueue.length) return;
   const t = now();
-  lobby.cmdQueue = lobby.cmdQueue.filter(function (c) {
-    return t - (c.at || 0) <= CMD_TTL;
-  });
+  const keep = [];
+  for (const c of lobby.cmdQueue) {
+    const takenAt = lobby.cmdDelivered.get(cmdKey(c.from, c.n));
+    const delivered = typeof takenAt === 'number';
+    const age = t - (delivered ? takenAt : (c.at || 0));
+    const ttl = delivered ? CMD_DELIVERED_TTL : CMD_TTL;
+    if (age > ttl) {
+      decideCmd(lobby, c, 'expired', delivered
+        ? 'хост забрал, но не ответил за ' + Math.round(CMD_DELIVERED_TTL / 1000) + ' с'
+        : 'просрочена: хост не забрал за ' + Math.round(CMD_TTL / 1000) + ' с');
+    } else {
+      keep.push(c);
+    }
+  }
+  lobby.cmdQueue = keep;
+}
+
+/* Что хосту пора выполнить. Забирается в ответе на снимок.
+ *
+ * snapshot.cmdDone — точные результаты: [{from,n,state|status,reason}].
+ * snapshot.cmdAck — старое подтверждение водяным знаком; снимает ТОЛЬКО
+ * команды, которые уже отдавались хосту.
+ * Возвращает очередь в порядке sn (приёма) и помечает отданное. */
+function pendingCommands(lobby, snapshot) {
+  const snap = snapshot && typeof snapshot === 'object' ? snapshot : {};
+
+  /* 1. Точные результаты хоста. */
+  const done = Array.isArray(snap.cmdDone) ? snap.cmdDone : null;
+  if (done) {
+    const lim = Math.min(done.length, CMD_DONE_ACCEPT);
+    for (let i = 0; i < lim; i++) {
+      const d = done[i];
+      if (!d || typeof d !== 'object') continue;
+      const state = String(d.state || d.status || '');
+      if (!CMD_FINAL[state]) continue;
+      const from = d.from, n = d.n;
+      if (from === undefined || typeof n !== 'number') continue;
+      const q = dropQueued(lobby, from, n);
+      const rec = rememberCmdResult(lobby, from, n, state, d.reason,
+        { sn: (q && q.sn) || d.sn, at: q && q.at });
+      /* Повтор того же результата в соседних снимках не должен слать
+         command-result второй раз. */
+      if (rec && q) notifyCmdResult(lobby, rec);
+    }
+  }
+
+  /* 2. Старое подтверждение водяным знаком. Только для уже отданных команд:
+     иначе поздняя команда с меньшим n исчезла бы, не доехав. */
+  const ack = snap.cmdAck;
+  if (ack && typeof ack === 'object') {
+    const keep = [];
+    for (const c of lobby.cmdQueue) {
+      const sent = ack[String(c.from)];
+      const covered = sent !== undefined && typeof c.n === 'number' && c.n <= sent;
+      if (covered && lobby.cmdDelivered.has(cmdKey(c.from, c.n))) {
+        const rec = rememberCmdResult(lobby, c.from, c.n, 'applied',
+          'подтверждено хостом (cmdAck)', { sn: c.sn, at: c.at });
+        if (rec) notifyCmdResult(lobby, rec);
+      } else {
+        keep.push(c);
+      }
+    }
+    lobby.cmdQueue = keep;
+  }
+
+  /* 3. Просрочка — с результатом. */
+  sweepCommands(lobby);
+
+  /* 4. Отдаём в порядке приёма и запоминаем, что эти команды хост увидел. */
+  lobby.cmdQueue.sort(function (a, b) { return (a.sn || 0) - (b.sn || 0); });
+  const t = now();
+  const live = new Set();
+  for (const c of lobby.cmdQueue) {
+    const key = cmdKey(c.from, c.n);
+    live.add(key);
+    lobby.cmdDelivered.set(key, t);
+  }
+  /* Не копим отметки о командах, которых уже нет в очереди. */
+  if (lobby.cmdDelivered.size > lobby.cmdQueue.length) {
+    for (const key of lobby.cmdDelivered.keys()) {
+      if (!live.has(key)) lobby.cmdDelivered.delete(key);
+    }
+  }
   return lobby.cmdQueue;
 }
 
+/* ------------------------------- старт -------------------------------- */
 function chooseStart(lobby) {
   const n = lobby.players.length;
   for (let attempt = 0; attempt < 40; attempt++) {
@@ -598,6 +794,11 @@ function startLobby(lobby) {
        Нужно это для VPS-режима: там снимок идёт с домашнего интернета хоста
        на релей, и 5,2 КБ × 12,5 в секунду — те же 520 Кбит/с вверх. */
     snapGzip: true,
+    /* Протокол команд: 2 — есть sn, cmdDone и /api/command-state. Клиент по
+       этому флагу понимает, что 200 на /api/command — только «в очереди», и
+       ждёт конечный результат опросом. Старый сервер флага не шлёт. */
+    cmdProto: 2,
+    cmdTtl: CMD_TTL,
     players: lobby.players.map(function (p, i) {
       return { id: p.id, name: p.name, owner: i, color: p.color };
     })
@@ -926,8 +1127,9 @@ const server = http.createServer(function (req, res) {
       if (lobby.hostGone) hostBack(lobby, p);
       const seq = body.snapshot.seq;
       /* Команды отдаём и на «устаревшем» снимке: если хост после возврата
-         повторил номер, это не повод держать его очередь до следующего. */
-      const commands = pendingCommands(lobby, body.snapshot.cmdAck);
+         повторил номер, это не повод держать его очередь до следующего.
+         Заодно здесь применяются cmdDone/cmdAck и просрочка. */
+      const commands = pendingCommands(lobby, body.snapshot);
       /* Отставание потоков — ДО раскладки этого снимка: именно оно говорит
          хосту, успевают ли друзья. Ответ уходит раньше broadcast, поэтому
          число описывает уже отправленное, а не текущий кадр. */
@@ -935,7 +1137,8 @@ const server = http.createServer(function (req, res) {
       if (seq !== undefined) {
         if (seq <= (lobby.lastSnapSeq || 0)) {
           return json(res, 200, { ok: true, stale: true, commands: commands,
-            gzip: packed, queue: backlog.queue, streams: backlog.streams });
+            cmdSeq: lobby.cmdSeq, gzip: packed,
+            queue: backlog.queue, streams: backlog.streams });
         }
         lobby.lastSnapSeq = seq;
       }
@@ -945,8 +1148,8 @@ const server = http.createServer(function (req, res) {
       /* Сначала ответ хосту: его следующий кадр не должен ждать, пока мы
          разложим текущий по всем потокам. В ответе — команды, ждущие хоста:
          этот POST работает даже тогда, когда SSE у него оборван. */
-      json(res, 200, { ok: true, commands: commands, gzip: packed,
-        queue: backlog.queue, streams: backlog.streams });
+      json(res, 200, { ok: true, commands: commands, cmdSeq: lobby.cmdSeq,
+        gzip: packed, queue: backlog.queue, streams: backlog.streams });
       broadcast(lobby, 'snapshot', body.snapshot, p.id, { drop: true });
     });
   }
@@ -963,30 +1166,135 @@ const server = http.createServer(function (req, res) {
       if (!cmd || typeof cmd !== 'object') {
         return json(res, 400, { ok: false, reason: 'пустая команда' });
       }
-      cmd.from = p.id;                       // кто прислал — id лобби
-      cmd.owner = p.owner === undefined ? 0 : p.owner;   // чей это город
-      /* Повтор после обрыва несёт тот же n: второй раз в очередь не кладём,
-         иначе хост получил бы один клик дважды. Ищем именно в очереди, а не
-         в вечной карте «что уже видели»: команда, протухшая по CMD_TTL, не
-         должна запрещать повтор с тем же номером навсегда. Выполненную и
-         подтверждённую команду отсеет уже сам хост (netCmdLast). */
-      if (typeof cmd.n === 'number') {
-        for (let i = 0; i < lobby.cmdQueue.length; i++) {
-          const q = lobby.cmdQueue[i];
-          if (q.n === cmd.n && q.from === p.id) {
-            return json(res, 200, { ok: true, duplicate: true });
+      /* n — не «по желанию»: без него нельзя ни дедуплицировать повтор, ни
+         назвать результат на /api/command-state. */
+      if (typeof cmd.n !== 'number' || !isFinite(cmd.n) || cmd.n <= 0) {
+        return json(res, 400, { ok: false, reason: 'нет номера команды n' });
+      }
+      if (typeof cmd.type !== 'string' || !cmd.type) {
+        return json(res, 400, { ok: false, reason: 'нет типа команды' });
+      }
+      /* Форму команды проверяет хост: он один знает мир. Сервер отсекает
+         только то, что делает протокол неоднозначным. */
+      if (cmd.type === 'buildLine') {
+        const keys = ['x', 'y', 'x2', 'y2'];
+        for (let i = 0; i < keys.length; i++) {
+          if (typeof cmd[keys[i]] !== 'number' || !isFinite(cmd[keys[i]])) {
+            return json(res, 400, { ok: false, reason: 'у серии нет концов линии' });
           }
         }
+        if (typeof cmd.buildingType !== 'string') {
+          return json(res, 400, { ok: false, reason: 'у серии нет типа постройки' });
+        }
       }
+      if (Array.isArray(cmd.items) && cmd.items.length > CMD_DONE_MAX) {
+        /* Контракт возит концы линии, items — внутренний результат плана.
+           Если старая сборка всё же прислала список — серия не больше 20. */
+        return json(res, 400, { ok: false, reason: 'в серии больше 20 зданий' });
+      }
+      cmd.from = p.id;                       // кто прислал — id лобби
+      cmd.owner = p.owner === undefined ? 0 : p.owner;   // чей это город
+
+      /* Повтор после обрыва/потери ответа несёт тот же n: второй раз в
+         очередь не кладём. Если команда уже решена — отдаём её результат. */
+      const queued = findQueued(lobby, p.id, cmd.n);
+      if (queued) {
+        return json(res, 200, { ok: true, duplicate: true, n: queued.n,
+          sn: queued.sn, state: 'pending', pending: lobby.cmdQueue.length });
+      }
+      const known = cmdResultOf(lobby, p.id, cmd.n);
+      if (known) {
+        return json(res, 200, { ok: true, duplicate: true, n: known.n,
+          sn: known.sn, state: known.state, reason: known.reason || undefined });
+      }
+
+      /* Очередь переполнена — вытесняем САМУЮ СТАРУЮ по приёму и говорим ей
+         expired. Молчаливый shift оставлял клиента ждать вечно. */
+      if (lobby.cmdQueue.length >= CMD_MAX) {
+        /* Сначала вытесняем то, что хост ещё не видел: забранную команду
+           он, возможно, уже выполняет, и «expired» соврал бы. */
+        let oldest = -1;
+        for (let i = 0; i < lobby.cmdQueue.length; i++) {
+          const c = lobby.cmdQueue[i];
+          if (lobby.cmdDelivered.has(cmdKey(c.from, c.n))) continue;
+          if (oldest < 0 || (c.sn || 0) < (lobby.cmdQueue[oldest].sn || 0)) oldest = i;
+        }
+        if (oldest < 0) {
+          oldest = 0;
+          for (let i = 1; i < lobby.cmdQueue.length; i++) {
+            if ((lobby.cmdQueue[i].sn || 0) < (lobby.cmdQueue[oldest].sn || 0)) oldest = i;
+          }
+        }
+        const gone = lobby.cmdQueue.splice(oldest, 1)[0];
+        if (gone) decideCmd(lobby, gone, 'expired', 'вытеснена: очередь команд переполнена');
+      }
+
+      cmd.sn = ++lobby.cmdSeq;               // порядок ПРИЁМА в лобби
       cmd.at = now();
       lobby.cmdQueue.push(cmd);
-      if (lobby.cmdQueue.length > CMD_MAX) lobby.cmdQueue.shift();
-      json(res, 200, { ok: true, pending: lobby.cmdQueue.length });
-      /* Оставляем событие для старого хоста, который ещё не умеет забирать
-         команды из ответа снимка. Новый хост этот обработчик не слушает:
-         два пути выполнения одной команды разошлись бы по порядку. */
+      /* 200 значит только «принято в очередь». Выполнение подтвердит
+         cmdDone в снимке, а клиент узнает его через /api/command-state. */
+      json(res, 200, { ok: true, n: cmd.n, sn: cmd.sn, state: 'pending',
+        pending: lobby.cmdQueue.length });
+      /* Событие остаётся для старого хоста и как «толчок» новому: новый хост
+         по нему только шлёт снимок сразу, а выполняет команды из ответа на
+         снимок — путь выполнения один. */
       broadcast(lobby, 'command', cmd, p.id);
     });
+  }
+
+  /* Результат команды: pending | applied | rejected | expired. Клиент
+     опрашивает его после 200 на /api/command — HTTP 200 не значит «построено».
+     Без n отдаём последние результаты этого игрока и его очередь (для опроса
+     пачкой), с n — один результат. */
+  if (req.method === 'GET' && u.pathname === '/api/command-state') {
+    const lobby = lobbyForRequest({ code: u.searchParams.get('code') });
+    const p = playerByToken(lobby, u.searchParams.get('token'));
+    if (!lobby || !p) return json(res, 403, { ok: false, reason: 'нет доступа' });
+    touchPlayer(p);
+    sweepCommands(lobby);
+    const ns = [];
+    u.searchParams.getAll('n').forEach(function (raw) {
+      String(raw).split(',').forEach(function (part) {
+        const n = Number(part);
+        if (isFinite(n) && n > 0 && ns.indexOf(n) < 0) ns.push(n);
+      });
+    });
+    function ownState(n) {
+      const q = findQueued(lobby, p.id, n);
+      if (q) return { n: n, sn: q.sn, state: 'pending', at: q.at };
+      const r = cmdResultOf(lobby, p.id, n);
+      if (r) {
+        return { n: r.n, sn: r.sn, state: r.state, reason: r.reason,
+          at: r.at, decidedAt: r.decidedAt };
+      }
+      return { n: n, state: 'unknown' };
+    }
+    if (ns.length === 1) {
+      const one = ownState(ns[0]);
+      one.ok = true;
+      return json(res, 200, one);
+    }
+    if (ns.length > 1) {
+      return json(res, 200, { ok: true, now: now(),
+        results: ns.slice(0, 20).map(ownState) });
+    }
+    /* Пачка: своя очередь (pending) + последние окончательные результаты. */
+    const results = [];
+    for (const q of lobby.cmdQueue) {
+      if (q.from !== p.id) continue;
+      results.push({ n: q.n, sn: q.sn, state: 'pending', at: q.at });
+    }
+    const finals = [];
+    lobby.cmdResults.forEach(function (r) {
+      if (r.from !== p.id) return;
+      if (r.decidedAt && now() - r.decidedAt > CMD_RESULT_TTL) return;
+      finals.push({ n: r.n, sn: r.sn, state: r.state, reason: r.reason,
+        at: r.at, decidedAt: r.decidedAt });
+    });
+    finals.sort(function (a, b) { return (a.decidedAt || 0) - (b.decidedAt || 0); });
+    return json(res, 200, { ok: true, now: now(), pending: results.length,
+      results: results.concat(finals.slice(-20)) });
   }
 
   if (req.method === 'POST' && u.pathname === '/api/leave') {
