@@ -376,6 +376,10 @@
     state.netHostGone = false;
     state.netLastTick = 0;
     state.netCmdLast = {};
+    state.netCmdApplied = {};
+    state.netCmdAppliedN = 0;
+    state.netCmdDone = [];
+    state.netInbox = {};
     state.netRejects = [];
     state.netSeqSeen = {};
     state.netPing = 0;
@@ -406,10 +410,17 @@
     var notes = state.netRejects.map(function (n) {
       return { to: n.to, n: n.n, reason: n.reason };
     });
+    /* Результаты команд, которых клиент ещё не видел. Не больше 20 за кадр:
+       даже если хост был заморожен и накопилось сто отклонений, снимок не
+       вырастет молча. Успешные тоже едут: клиент ждёт конечного результата,
+       а не «HTTP 200». */
+    var cmdDone = (state.netCmdDone && state.netCmdDone.length)
+      ? state.netCmdDone.slice(0, 20) : null;
     var snap;
     try {
       snap = global.Serialize.world(state.world, state.buildings, state.villagers,
         { seq: seq, notes: notes, over: state.over, winner: state.winner });
+      if (cmdDone) snap.cmdDone = cmdDone;
     } catch (e) {
       /* Кривой объект в мире не должен останавливать игровой цикл: кадр
          пропускаем, следующий попробует снова. */
@@ -452,15 +463,19 @@
       state.netBusy = false;
       pace(res);
       /* Команды гостей пришли в ответе на наш снимок — тот же POST, которым
-         хост доказывает, что жив. Применяем по порядку, как их положил
-         сервер; повтор (n не больше уже выполненного) отсеет netCmdLast. */
+         хост доказывает, что жив. Это ОДИН из двух каналов; второй — SSE
+         (ingestCommands зовётся и оттуда). Порядок, дедупликацию и результаты
+         решает одна точка, а не каждый канал по-своему. */
       var cmds = res && res.commands;
       var applied = false;
       if (cmds && cmds.length) {
-        for (var ci = 0; ci < cmds.length; ci++) applyNetCommand(cmds[ci]);
+        var n = ingestCommands(cmds);
         state.netForce = true;
-        applied = true;
+        applied = n > 0;
       }
+      /* Результаты доехали — убираем ровно их, а не весь список: за время
+         POST могли появиться новые. */
+      if (cmdDone) state.netCmdDone.splice(0, cmdDone.length);
       /* Ответы на команды живут несколько снимков: если один кадр потерялся
          по дороге, отказ всё равно доедет. */
       for (var i = 0; i < state.netRejects.length; i++) state.netRejects[i].ttl--;
@@ -540,6 +555,10 @@
        забыл бы, что уже выполнил, и команда из серверной очереди легла бы
        второй раз (двойной дом, двойная трата брёвен). */
     state.netCmdLast = {};
+    state.netCmdApplied = {};
+    state.netCmdAppliedN = 0;
+    state.netCmdDone = [];
+    state.netInbox = {};
     if (snap.cmdAck && typeof snap.cmdAck === 'object') {
       for (var who in snap.cmdAck) {
         if (Object.prototype.hasOwnProperty.call(snap.cmdAck, who)) {
@@ -645,6 +664,10 @@
     state.netHostGone = false;
     state.netLastTick = 0;
     state.netCmdLast = {};
+    state.netCmdApplied = {};
+    state.netCmdAppliedN = 0;
+    state.netCmdDone = [];
+    state.netInbox = {};
     state.netRejects = [];
     state.netSeqSeen = {};
     state.netPing = 0;
@@ -990,44 +1013,78 @@
   /* Команда клиента на хосте. Всё проверяется теми же правилами, что и у
      хоста: чужой не может поставить дом в воду, построить без брёвен или
      тренировать в чужой казарме. */
+  /* Результат команды: applied | rejected. Координатор пишет его в снимок
+     (`cmdDone`), сервер хранит по паре (from,n), клиент опрашивает
+     `/api/command-state`. HTTP 200 на приём команды значит только «в
+     очереди»; построен дом или нет — отвечает этот результат. */
+  function cmdYes() { return { status: 'applied', reason: '' }; }
+  function cmdNo(reason) { return { status: 'rejected', reason: String(reason || 'не вышло') }; }
+
+  /* Команда клиента на хосте. Всё проверяется теми же правилами, что и у
+     хоста: чужой не может поставить дом в воду, построить без брёвен или
+     тренировать в чужой казарме.
+
+     ДЕДУПЛИКАЦИЯ. Ключ — пара (from, n), а не «n не больше последнего»:
+     два канала доставки (SSE и ответ снимка) могут принести команды не по
+     порядку, и водяной знак, двигаемый сразу, молча съел бы более раннюю
+     команду. `netCmdLast` остаётся ТОЛЬКО подтверждением для сервера
+     (`cmdAck`) и памятью после F5; решение «это повтор» принимает карта
+     выполненных (from,n). */
   function applyNetCommand(cmd) {
-    if (!cmd || state.netRole !== 'host' || state.over) return;
+    if (!cmd || state.netRole !== 'host' || state.over) {
+      return cmdNo('сейчас не партия');
+    }
     var B = global.Buildings, S = global.Session;
     /* owner — номер города в партии, from — id игрока в лобби. Это разные
        числа, как только кто-то выходил из комнаты до старта. */
     var who = cmd.owner === undefined ? cmd.from : cmd.owner;
-    /* Повтор после обрыва: тот же n — уже выполнено. */
+    var last = state.netCmdLast[cmd.from] || 0;
     if (cmd.n !== undefined && cmd.from !== undefined) {
-      var last = state.netCmdLast[cmd.from] || 0;
-      if (cmd.n <= last) return;
-      state.netCmdLast[cmd.from] = cmd.n;
+      state.netCmdApplied = state.netCmdApplied || {};
+      var key = cmd.from + ':' + cmd.n;
+      /* n не больше подтверждённого — это выполнено ДО этого захода (в том
+         числе до F5, см. restoreFromSnapshot). */
+      if (cmd.n <= last || state.netCmdApplied[key]) {
+        return { status: 'applied', reason: '', duplicate: true };
+      }
+      state.netCmdApplied[key] = 1;
+      state.netCmdAppliedN = (state.netCmdAppliedN || 0) + 1;
+      if (state.netCmdAppliedN > 400) {
+        for (var k in state.netCmdApplied) {
+          var m = /^(.*):(\d+)$/.exec(k);
+          if (m && +m[2] <= last) delete state.netCmdApplied[k];
+        }
+        state.netCmdAppliedN = Object.keys(state.netCmdApplied).length;
+      }
     }
     var town = state.world && state.world.towns && state.world.towns[who];
     if (!town || town.alive === false) {
-      netReject(cmd, 'ваша деревня больше не в игре');
-      return;
+      var gone = 'ваша деревня больше не в игре';
+      netReject(cmd, gone);
+      return cmdNo(gone);
     }
     if (cmd.type === 'order' && global.Army) {
       /* Команда действует только на СВОИХ: чужой id в списке — не приказ, а
          попытка увести чужую дружину. */
       var order = global.Army.order(state.world, ownWarriorIds(cmd.ids, who),
         state.villagers, cmd.x, cmd.y);
-      if (order && order.ok === false) netReject(cmd, order.reason);
       state.netForce = true;
-      return;
+      if (order && order.ok === false) { netReject(cmd, order.reason); return cmdNo(order.reason); }
+      return cmdYes();
     }
     if (cmd.type === 'stop' && global.Army) {
       var stopIds = cmd.ids ? ownWarriorIds(cmd.ids, who) : ownWarriorIds(null, who);
       global.Army.stop(stopIds, state.villagers);
       state.netForce = true;
-      return;
+      return cmdYes();
     }
     if (cmd.type === 'build') {
       var price = buildPrice(cmd.buildingType);
-      if (!price) { netReject(cmd, 'неизвестная постройка'); return; }
+      if (!price) { netReject(cmd, 'неизвестная постройка'); return cmdNo('неизвестная постройка'); }
       if ((town.logs || 0) < price) {
-        netReject(cmd, 'не хватает брёвен: нужно ' + price + ', у деревни ' + (town.logs || 0));
-        return;
+        var poor = 'не хватает брёвен: нужно ' + price + ', у деревни ' + (town.logs || 0);
+        netReject(cmd, poor);
+        return cmdNo(poor);
       }
       var made = B.make({
         type: cmd.buildingType, variant: cmd.variant || 'a', rot: cmd.rot || 0,
@@ -1035,7 +1092,7 @@
         id: 'p' + cmd.from + ':b' + (state.nextBuildId++)
       });
       var chk = B.canPlace(state.world, state.buildings, made, buildSiteOpts());
-      if (!chk.ok) { netReject(cmd, chk.reason); return; }
+      if (!chk.ok) { netReject(cmd, chk.reason); return cmdNo(chk.reason); }
       town.logs -= price;
       B.settle(state.world, made, { clear: false });
       B.touch(state.world);
@@ -1045,57 +1102,146 @@
       }
       renderer.setBuildings(state.buildings);
       state.netForce = true;
-      return;
+      return cmdYes();
+    }
+    if (cmd.type === 'buildLine') {
+      /* Атомарная серия: либо все дома, либо ни одного и ни одного бревна.
+         Повтор с тем же n отсеян выше, поэтому дубликатов не будет. */
+      if (!B.planLine) { netReject(cmd, 'серия не поддерживается'); return cmdNo('серия не поддерживается'); }
+      var plan = B.planLine(state.world, state.buildings, {
+        type: cmd.buildingType, variant: cmd.variant || 'a', rot: cmd.rot || 0,
+        from: { x: cmd.x, y: cmd.y }, to: { x: cmd.x2, y: cmd.y2 }
+      }, buildSiteOpts());
+      if (!plan.ok) { netReject(cmd, plan.reason); return cmdNo(plan.reason); }
+      var cost = plan.items.length * buildPrice(cmd.buildingType);
+      if ((town.logs || 0) < cost) {
+        var linePoor = 'не хватает брёвен на серию: нужно ' + cost + ', у деревни ' + (town.logs || 0);
+        netReject(cmd, linePoor);
+        return cmdNo(linePoor);
+      }
+      town.logs -= cost;
+      for (var li = 0; li < plan.items.length; li++) {
+        var it = plan.items[li];
+        var lb = B.make({
+          type: cmd.buildingType, variant: cmd.variant || 'a', rot: cmd.rot || 0,
+          x: it.x, y: it.y, owner: who, town: who,
+          id: 'p' + cmd.from + ':b' + (state.nextBuildId++)
+        });
+        B.settle(state.world, lb, { clear: false });
+        state.buildings.push(lb);
+      }
+      B.touch(state.world);
+      if (cmd.buildingType === 'warcamp' && S.rebalanceGarrison) {
+        S.rebalanceGarrison(state.world, state.buildings, state.villagers);
+      }
+      renderer.setBuildings(state.buildings);
+      state.netForce = true;
+      return cmdYes();
     }
     if (cmd.type === 'edit') {
       var b = buildingById(cmd.id);
       if (!b || (b.owner === undefined ? 0 : b.owner) !== who) {
         netReject(cmd, 'это не ваша постройка');
-        return;
+        return cmdNo('это не ваша постройка');
       }
       if (cmd.action === 'rotate') {
         var can = B.canEdit(b, 'rotate');
-        if (!can.ok) { netReject(cmd, can.reason); return; }
-        /* Поворот ОБЯЗАН пройти ту же проверку места, что и перенос:
-           прямоугольное пятно при повороте может налезть на соседний дом или
-           на жителя. Раньше здесь стоял setSpot без проверки — у клиента
-           поворот проходил, а у хоста создавал перекрытие. */
-        var cand = B.checkAt(state.world, state.buildings, b, { rot: b.rot + 90 });
-        if (!cand.ok) { netReject(cmd, cand.reason); return; }
+        if (!can.ok) { netReject(cmd, can.reason); return cmdNo(can.reason); }
+        var rots = B.checkAt(state.world, state.buildings, b, { rot: b.rot + 90 });
+        if (!rots.ok) { netReject(cmd, rots.reason); return cmdNo(rots.reason); }
         B.setSpot(state.world, b, { rot: b.rot + 90 });
         renderer.setBuildings(state.buildings);
         state.netForce = true;
+        return cmdYes();
       } else if (cmd.action === 'delete') {
         var res = B.remove(state.world, state.buildings, b, { villagers: state.villagers });
-        if (!res.ok) { netReject(cmd, res.reason); return; }
+        if (!res.ok) { netReject(cmd, res.reason); return cmdNo(res.reason); }
         B.touch(state.world);
         renderer.setBuildings(state.buildings);
         state.netForce = true;
+        return cmdYes();
       } else if (cmd.action === 'move') {
-        var at = B.checkAt(state.world, state.buildings, b, { x: cmd.x, y: cmd.y }, BUILD_SITE);
-        if (!at.ok) { netReject(cmd, at.reason); return; }
+        var at = B.checkAt(state.world, state.buildings, b, { x: cmd.x, y: cmd.y });
+        if (!at.ok) { netReject(cmd, at.reason); return cmdNo(at.reason); }
         B.setSpot(state.world, b, { x: cmd.x, y: cmd.y });
         B.touch(state.world);
         renderer.setBuildings(state.buildings);
         state.netForce = true;
+        return cmdYes();
       }
-      return;
+      return cmdNo('неизвестная правка: ' + cmd.action);
     }
     if (cmd.type === 'train' || cmd.type === 'hire' || cmd.type === 'fire') {
       var camp = buildingById(cmd.campId), v = villagerById(cmd.villagerId);
-      if (!camp || !v) { netReject(cmd, 'нет такой постройки или жителя'); return; }
+      if (!camp || !v) { netReject(cmd, 'нет такой постройки или жителя'); return cmdNo('нет такой постройки или жителя'); }
       if ((camp.owner === undefined ? 0 : camp.owner) !== who) {
-        netReject(cmd, 'это чужая постройка'); return;
+        netReject(cmd, 'это чужая постройка'); return cmdNo('это чужая постройка');
       }
       if ((v.owner === undefined ? 0 : v.owner) !== who) {
-        netReject(cmd, 'это чужой житель'); return;
+        netReject(cmd, 'это чужой житель'); return cmdNo('это чужой житель');
       }
       var answer = cmd.type === 'train'
         ? S.train(camp, v, state.villagers, state.buildings)
         : (cmd.type === 'fire' ? S.fire(camp, v) : S.hire(camp, v, state.villagers));
-      if (answer && answer.ok === false) netReject(cmd, answer.reason);
       state.netForce = true;
-      return;
+      if (answer && answer.ok === false) { netReject(cmd, answer.reason); return cmdNo(answer.reason); }
+      return cmdYes();
+    }
+    return cmdNo('неизвестная команда: ' + cmd.type);
+  }
+
+  /* ЕДИНАЯ точка выполнения команд: сюда приходят оба канала — событие SSE и
+     массив `commands` в ответе на снимок. Порядок внутри отправителя —
+     по серверному номеру приёма (`sn`/`msn`), который сервер ставит при
+     получении; это и есть порядок, в котором клиент нажимал кнопки.
+     Дедупликация — в applyNetCommand по паре (from,n). Результат каждой
+     команды откладывается в `cmdDone` и уедет следующим снимком. */
+  function ingestCommands(list) {
+    if (!list || !list.length || state.netRole !== 'host') return 0;
+    var bank = state.netInbox || (state.netInbox = {});
+    var i, cmd, key;
+    for (i = 0; i < list.length; i++) {
+      cmd = list[i];
+      if (!cmd || typeof cmd !== 'object' || cmd.from === undefined) continue;
+      key = cmd.from + '|' + (cmd.sn !== undefined ? 's' + cmd.sn : 'n' + cmd.n);
+      bank[key] = cmd;
+    }
+    var arr = [];
+    for (key in bank) if (Object.prototype.hasOwnProperty.call(bank, key)) arr.push(bank[key]);
+    arr.sort(function (a, b) {
+      var fa = String(a.from), fb = String(b.from);
+      if (fa !== fb) return fa < fb ? -1 : 1;
+      var ka = a.msn !== undefined ? a.msn : (a.sn !== undefined ? a.sn : 0);
+      var kb = b.msn !== undefined ? b.msn : (b.sn !== undefined ? b.sn : 0);
+      if (ka !== kb) return ka - kb;
+      var na = a.n === undefined ? 0 : a.n, nb = b.n === undefined ? 0 : b.n;
+      return na - nb;
+    });
+    var n = 0;
+    for (i = 0; i < arr.length; i++) {
+      cmd = arr[i];
+      key = cmd.from + '|' + (cmd.sn !== undefined ? 's' + cmd.sn : 'n' + cmd.n);
+      delete bank[key];
+      var res = applyNetCommand(cmd);
+      recordCommandResult(cmd, res);
+      n++;
+    }
+    return n;
+  }
+
+  function recordCommandResult(cmd, res) {
+    if (!cmd || cmd.from === undefined || cmd.n === undefined) return;
+    state.netCmdDone = state.netCmdDone || [];
+    state.netCmdDone.push({
+      from: cmd.from, n: cmd.n,
+      status: res && res.status ? res.status : 'applied',
+      reason: (res && res.reason) || ''
+    });
+    if (state.netCmdDone.length > 60) {
+      state.netCmdDone.splice(0, state.netCmdDone.length - 60);
+    }
+    if (res && res.status === 'rejected' && global.Events) {
+      global.Events.refuse(state.world, state.playerOwner, 'command-rejected', res.reason || '');
     }
   }
 
@@ -1670,6 +1816,61 @@
      только от мыши, но и от камеры: игрок уехал стрелками — под неподвижным
      курсором уже другая клетка, и рамка обязана переехать вместе с картой. */
   var lastPointer = null;
+
+  /* --------------------------- пальцы и жест ----------------------------- *
+   *
+   * До 2026-10-26 здесь жил ОДИН объект drag. Для мыши этого хватает, для
+   * телефона — нет: второй палец затирал первый, pinch-to-zoom отсутствовал,
+   * а отпускание после жеста ставило дом или отдавало приказ. Теперь пальцы
+   * считаются по pointerId, а «был ли это жест» решается отдельно.
+   *
+   * Правила жеста:
+   *   • один палец — камера/выбор/призрак, как мышь;
+   *   • два пальца — зум вокруг СЕРЕДИНЫ жеста и панорама по её сдвигу;
+   *   • отпускание после многопальцевого жеста не ставит дом, не отдаёт
+   *     приказ и не открывает правку;
+   *   • pointercancel и смена ориентации жест закрывают, но НЕ подтверждают
+   *     случайное действие.
+   *
+   * Пальцы считаются в координатах полотна (clientX − rect), как и всё
+   * остальное в файле: масштаб Windows/DPR сюда не вмешивается. */
+  var pointers = Object.create(null);
+  var multi = null;          // {d, cx, cy} — состояние жеста двумя пальцами
+  var suppressTap = false;   // жест был многопальцевым: отпускание не кликает
+
+  function pointerCount() {
+    var n = 0;
+    for (var k in pointers) if (Object.prototype.hasOwnProperty.call(pointers, k)) n++;
+    return n;
+  }
+
+  function beginPinch() {
+    var ids = Object.keys(pointers);
+    if (ids.length < 2) { multi = null; return; }
+    var a = pointers[ids[0]], b = pointers[ids[1]];
+    multi = {
+      d: Math.max(1, Math.hypot(b.cx - a.cx, b.cy - a.cy)),
+      cx: (a.cx + b.cx) / 2, cy: (a.cy + b.cy) / 2
+    };
+    suppressTap = true;
+  }
+
+  /* Телефон/планшет: постановка не подтверждается касанием карты — для неё
+     есть отдельная кнопка «Построить». `(pointer: coarse)` — правило CSS,
+     `state.touchUI` выставляется первым касанием (на гибридных ноутбуках). */
+  function touchPreferred() {
+    if (state.touchUI) return true;
+    try {
+      if (global.matchMedia && global.matchMedia('(pointer: coarse)').matches) return true;
+    } catch (e) { /* старый браузер */ }
+    return false;
+  }
+
+  function resetPointers() {
+    pointers = Object.create(null);
+    multi = null;
+    suppressTap = false;
+  }
 
   function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
   /* Что стоит в клетке и что об этом написать. Про саму клетку знает движок
@@ -2583,13 +2784,34 @@
     actions = actions || {};
 
     view.addEventListener('pointerdown', function (e) {
-      view.setPointerCapture(e.pointerId);
+      var p0 = pointerAt(e);
+      state.touchUI = e.pointerType === 'touch' ? true : state.touchUI;
+      pointers[e.pointerId] = {
+        x: p0.x, y: p0.y, cx: e.clientX, cy: e.clientY,
+        x0: p0.x, y0: p0.y, type: e.pointerType || 'mouse'
+      };
+      try { view.setPointerCapture(e.pointerId); } catch (err) { /* старый браузер */ }
+      /* Второй палец — это ЖЕСТ, а не второй клик. Нажатие при уже начатом
+         ведении дома не ставит дом: ведение закрывается, камера переходит в
+         pinch. Иначе первое касание поставило бы дом в случайное место. */
+      if (pointerCount() >= 2) {
+        suppressTap = true;
+        holdCancel();
+        drag = null;
+        view.classList.remove('dragging');
+        /* Дом не ставим и правку не закрываем: человек мог свести пальцы,
+           чтобы РАССМОТРЕТЬ место. Ведение просто останавливается — дом стоит
+           там, где его оставили, и «Применить»/«Отменить» остаются на экране. */
+        beginPinch();
+        return;
+      }
+      suppressTap = false;
       view.classList.add('dragging');
       /* Точка нажатия запоминается отдельно (x0/y0): по ней меряется дрожь —
          вернул руку на место, и это снова клик, а не панорама. */
       drag = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, moved: 0 };
       if (arrival) arrival = null;      // игрок взял камеру — полёт отменён
-      var p = pointerAt(e);
+      var p = p0;
       // Клетка считается и на нажатии: клик без движения мыши — тоже клик по
       // клетке, а подсветки до него могло не быть вовсе.
       lastPointer = p;
@@ -2612,6 +2834,36 @@
 
     view.addEventListener('pointermove', function (e) {
       var p = pointerAt(e);
+      var rec = pointers[e.pointerId];
+      if (rec) { rec.x = p.x; rec.y = p.y; rec.cx = e.clientX; rec.cy = e.clientY; }
+
+      /* Два пальца — зум вокруг СЕРЕДИНЫ жеста и панорама по её сдвигу.
+         Порядок «сначала сдвиг, потом масштаб» — чтобы середина, вокруг
+         которой зумим, была уже новой: иначе карта уезжает под пальцами. */
+      if (pointerCount() >= 2) {
+        if (!multi) beginPinch();
+        else if (renderer) {
+          var ids = Object.keys(pointers);
+          var a = pointers[ids[0]], b = pointers[ids[1]];
+          var dx0 = b.cx - a.cx, dy0 = b.cy - a.cy;
+          var dist = Math.max(1, Math.hypot(dx0, dy0));
+          var mx = (a.cx + b.cx) / 2, my = (a.cy + b.cy) / 2;
+          var rect = view.getBoundingClientRect();
+          if (Math.abs(mx - multi.cx) + Math.abs(my - multi.cy) > 0.5) {
+            renderer.panScreen(mx - multi.cx, my - multi.cy);
+          }
+          var k = dist / multi.d;
+          if (Math.abs(k - 1) > 0.002) {
+            renderer.zoomAt(mx - rect.left - rect.width / 2,
+              my - rect.top - rect.height / 2, k);
+          }
+          multi.d = dist; multi.cx = mx; multi.cy = my;
+        }
+        suppressTap = true;
+        lastPointer = p;
+        return;
+      }
+
       /* Здание ведут за курсором: курсор двигает ПОСТРОЙКУ, а не камеру.
          Панорама в этот момент выключена намеренно — иначе дом уезжал бы
          вместе с картой и встать точно было бы нельзя. */
@@ -2646,12 +2898,28 @@
     });
 
     view.addEventListener('pointerup', function (e) {
+      delete pointers[e.pointerId];
+      /* Палец ушёл, но жест ещё живёт: отпускание после pinch НИЧЕГО не
+         подтверждает — ни постановку, ни приказ, ни правку. */
+      if (pointerCount() >= 1 && multi) {
+        suppressTap = true;
+        holdCancel();
+        if (pointerCount() >= 2) { beginPinch(); return; }
+        var leftId = Object.keys(pointers)[0], left = pointers[leftId];
+        drag = { x: left.cx, y: left.cy, x0: left.cx, y0: left.cy, moved: PAN_SLOP + 1 };
+        view.classList.add('dragging');
+        return;
+      }
+      var wasMulti = suppressTap || !!multi;
+      multi = null;
+      suppressTap = false;
       holdCancel();
       view.classList.remove('dragging');
       // Клик отличается от перетаскивания расстоянием от точки нажатия:
       // панорама тоже начинается с нажатия, и без порога выбор срабатывал бы в
       // конце каждого сдвига камеры.
       var wasDrag = !!(drag && drag.moved > CLICK_SLOP);
+      if (wasMulti) { drag = null; return; }
       // У постановки свой, более щедрый порог: 10–15 px дрожания — это
       // прицеливание, а не панорама (см. PLACE_SLOP).
       var wasPlaceDrag = !!(drag && drag.moved > PLACE_SLOP);
@@ -2679,6 +2947,12 @@
       if (state.build) {
         if (e.button === 2) { cancelBuild(); return; }
         if (e.button !== 0 || wasPlaceDrag || !isPlaying()) return;
+        /* На телефоне касание карты только ДВИГАЕТ призрак: подтверждение —
+           отдельная кнопка «Построить». Мышь ставит сразу, как и раньше. */
+        if (touchPreferred() && (e.pointerType === 'touch' || state.touchUI)) {
+          emitBuild();
+          return;
+        }
         placeBuild();
         return;
       }
@@ -2718,12 +2992,21 @@
     /* Правая кнопка в партии — отмена постановки, а не меню браузера. */
     view.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 
-    view.addEventListener('pointercancel', function () {
+    view.addEventListener('pointercancel', function (e) {
+      delete pointers[e.pointerId];
+      if (pointerCount() >= 1) {
+        if (pointerCount() >= 2) { beginPinch(); return; }
+        return;
+      }
       holdCancel();
       view.classList.remove('dragging');
       drag = null;
-      // Касание отменили посреди ведения — дом не должен остаться «в руке».
-      if (state.edit && state.edit.mode === 'move') editAction('place');
+      multi = null;
+      suppressTap = false;
+      /* Отменённое касание НЕ подтверждает действие: правка возвращается на
+         место, дом остаётся в руке, приказ не отдаётся. Это правило задания
+         (4.10), а не осторожность. */
+      if (state.edit && state.edit.mode === 'move') editAction('cancel');
     });
 
     /* Двойной клик по СВОЕЙ постройке — второй, привычный всем вход в правку:
@@ -2747,10 +3030,13 @@
        мыши и «возьмёт» дом. Гасим и удержание, и ведение. */
     function dropPointer() {
       holdCancel();
+      resetPointers();
       drag = null;
       view.classList.remove('dragging');
       if (state.edit && state.edit.mode === 'move' && isPlaying()) editAction('place');
     }
+    /* Потеря окна/жеста: отпускание не доедет. Ведение дома закрываем
+       постановкой — это уже выбранное человеком место, а не случайное. */
     global.addEventListener('blur', dropPointer);
     global.addEventListener('pagehide', dropPointer);
     if (global.document) {
@@ -2758,6 +3044,21 @@
         if (global.document.hidden) dropPointer();
       });
     }
+    /* Смена ориентации/размер окна посреди касания — не подтверждение: жест
+       гасим, правку ОТМЕНЯЕМ, дом в руке оставляем. */
+    function dropGesture() {
+      holdCancel();
+      resetPointers();
+      drag = null;
+      view.classList.remove('dragging');
+      if (state.edit && state.edit.mode === 'move') editAction('cancel');
+    }
+    global.addEventListener('orientationchange', dropGesture);
+    try {
+      if (global.screen && global.screen.orientation && global.screen.orientation.addEventListener) {
+        global.screen.orientation.addEventListener('change', dropGesture);
+      }
+    } catch (err) { /* нет Orientation API — хватает orientationchange */ }
 
     view.addEventListener('wheel', function (e) {
       e.preventDefault();
@@ -2984,6 +3285,7 @@
        что число одно на всю игру: по нему срабатывает удержание, о нём говорит
        подсказка, и им же меряет приёмка. */
     EDIT_HOLD_MS: EDIT_HOLD_MS,
+    touchPreferred: touchPreferred,
     editAction: editAction,
     /* «Править» из таблички выбранного здания: тот же режим, что у удержания и
        двойного клика, но одним нажатием (js/hud.js). */
