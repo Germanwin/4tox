@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
+<meta name="4tox-build" content="patch-2026-10-26-final">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>4tox — остров</title>
@@ -67,9 +68,11 @@
             <i id="buildSize">4 × 3 клетки</i>
             <span class="score" id="buildCell">клетка 24, 40</span>
           </span>
-          <!-- Третий вход в правку, кроме удержания ЛКМ и двойного клика: тот,
-               кто про жест не знает, всё равно найдёт кнопку. Правила и причина
-               отказа — движковые (Play.editSelected → Buildings.EDIT). -->
+          <!-- Намеренный вход в правку рядом с удержанием ЛКМ: тот, кто про
+               жест не знает, всё равно найдёт кнопку. Двойной клик правку не
+               открывает — им нельзя доказать, что оба клика были по одному
+               зданию (правило INPUT-01). Правила и причина отказа — движковые
+               (Play.editSelected → Buildings.EDIT). -->
           <button id="btnEdit" class="wood-btn plaque-edit" type="button"
                   title="Править: подвинуть, повернуть, снести">Править</button>
         </div>
@@ -256,7 +259,7 @@
         <span><b>тянуть</b> — панорама</span>
         <span><b>колесо</b> — зум</span>
         <span><b>клик</b> — выбрать постройку или жителя</span>
-        <span><b>удержать</b> или <b>двойной клик</b> — правка постройки</span>
+        <span><b>удержать</b> (или <b>«Править»</b>) — правка постройки</span>
         <span><b>H</b> — к выбранному жителю</span>
         <span><b>C</b> — следить за ним</span>
         <span><b>T</b> — сведения о деревне</span>
@@ -561,6 +564,8 @@
 
 <script src="js/net.js"></script>
 <script src="js/lobby.js"></script>
+<!-- Ожидающие действия гостя (UX-01) — до play.js: он их только спрашивает. -->
+<script src="js/pending.js"></script>
 <script src="js/play.js"></script>
 <script src="js/hud.js"></script>
 <script src="js/menu.js"></script>

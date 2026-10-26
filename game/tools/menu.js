@@ -1676,7 +1676,7 @@ const getJSON = (u) => new Promise((res, rej) => {
   })()`);
 
   const holdMs = await js(`window.__game.Play.EDIT_HOLD_MS`);
-  check('сколько держать ЛКМ — одно число на оба жеста', holdMs === 500, holdMs + ' мс');
+  check('сколько держать ЛКМ — одно число на жест', holdMs === 500, holdMs + ' мс');
   const hint = await js(`document.getElementById('hintBar').textContent`);
   check('в подсказках есть удержание', hint.indexOf('удержать') >= 0);
   const revStart = await js(`window.__game.Play.state.world._buildRev || 0`);
@@ -2887,8 +2887,9 @@ const getJSON = (u) => new Promise((res, rej) => {
    *      клик по карте под подсказками и табличками уходил в пустоту. На
    *      ноутбуке с масштабом Windows это до трети экрана.
    *
-   * Плюс две новые дороги в правку, чтобы она не зависела от знания жеста:
-   * двойной клик и кнопка «Править» в табличке выбранного здания. */
+   * Плюс кнопка «Править» в табличке выбранного здания — намеренный вход,
+   * не зависящий от знания жеста. Двойной клик правку НЕ открывает: им нельзя
+   * доказать, что оба клика были по одному зданию (INPUT-01). */
   console.log('\nввод без привязки к платформе:');
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   await sleep(300);
@@ -3002,11 +3003,20 @@ const getJSON = (u) => new Promise((res, rej) => {
   await js(`(() => { try { window.__game.Play.editAction('cancel'); } catch (e) {} return 1; })()`);
   await sleep(200);
 
-  /* 3. Двойной клик по своей постройке — второй вход в правку.
-        Оба нажатия уходят одной пачкой: браузер считает двойным клик, только
-        если второй пришёл в пределах своего порога, а ожидание ответа на
-        каждое событие в занятом браузере этот порог пробивало. */
-  await js(`window.__game.Play.selectBuilding(null); 1`);
+  /* 3. INPUT-01: правка открывается ТОЛЬКО намеренным удержанием (или
+        кнопкой «Править»). Двойной клик, два быстрых клика по одному и по
+        разным зданиям, панорама, отмена жеста, потеря захвата и уход окна —
+        ничто из этого не должно открывать редактор.
+        Раньше dblclick звал editOpen напрямую, и вся карта — один canvas:
+        доказать, что оба клика были по одному дому, было нечем. */
+  const editNow = () => js(`!!window.__game.Play.state.edit`);
+  const clearInput = () => js(`(() => { const P = window.__game.Play;
+    try { P.cancelOrder(); } catch (e) {}
+    try { P.cancelBuild(); } catch (e) {}
+    try { P.editAction('cancel'); } catch (e) {}
+    P.setFocus(null); P.selectBuilding(null); P.state.follow = false; return 1; })()`);
+
+  await clearInput();
   await inputMove(platformPt.x, platformPt.y);
   await Promise.all([
     inputPress(platformPt.x, platformPt.y, 1),
@@ -3015,13 +3025,118 @@ const getJSON = (u) => new Promise((res, rej) => {
     inputRelease(platformPt.x, platformPt.y, 2)
   ]);
   await sleep(300);
-  check('двойной клик открывает правку',
-    await js(`!!window.__game.Play.state.edit`));
-  /* Дом после двойного клика не должен ехать за курсором: кнопка мыши уже
-     отпущена, а «ведение» включается только удержанием или кнопкой «Двигать». */
-  const dblMode = await js(`(() => { const e = window.__game.Play.state.edit;
-    return e ? e.mode : null; })()`);
-  check('двойной клик не берёт дом в руки, а открывает полосу', dblMode === 'idle', dblMode);
+  check('двойной клик постройку НЕ открывает в правку', (await editNow()) === false);
+  const dblTrace = await js(`(() => {
+    const t = (window.__game.Play.state.diagTrace || []);
+    return { ignored: t.some(e => e.kind === 'dblclick-ignored'),
+             opened: t.some(e => e.kind === 'edit-open' && e.data &&
+               (e.data.source === 'dblclick')) };
+  })()`);
+  check('двойной клик записан как проигнорированный',
+    dblTrace.ignored === true && dblTrace.opened === false, JSON.stringify(dblTrace));
+
+  /* Два быстрых ОДИНОЧНЫХ клика: тот же жест с точки зрения таймера — каждый
+     нажимается короче удержания. Правки нет и после второго. */
+  await clearInput();
+  await inputMove(platformPt.x, platformPt.y);
+  await inputPress(platformPt.x, platformPt.y, 1);
+  await sleep(80);
+  await inputRelease(platformPt.x, platformPt.y, 1);
+  await sleep(60);
+  await inputPress(platformPt.x, platformPt.y, 1);
+  await sleep(80);
+  await inputRelease(platformPt.x, platformPt.y, 1);
+  await sleep(300);
+  check('два быстрых клика по одной постройке правку не открывают',
+    (await editNow()) === false);
+
+  /* Два быстрых клика по РАЗНЫМ постройкам — ровно тот случай, который
+     dblclick не мог различить. */
+  const inputThAt = await js(`(() => { const B = window.Buildings;
+    const b = window.__game.Play.state.buildings.find(x => B.typeOf(x) === 'townhall');
+    return b ? { x: b.x, y: b.y } : null; })()`);
+  if (inputThAt) {
+    await clearInput();
+    const housePt2 = await cellPoint(platformHouse.x + 1, platformHouse.y);
+    const thPt = await cellPoint(inputThAt.x + 1, inputThAt.y);
+    await inputPress(housePt2.x, housePt2.y, 1);
+    await sleep(70);
+    await inputRelease(housePt2.x, housePt2.y, 1);
+    await sleep(40);
+    await inputPress(thPt.x, thPt.y, 1);
+    await sleep(70);
+    await inputRelease(thPt.x, thPt.y, 1);
+    await sleep(300);
+    check('два быстрых клика по разным постройкам правку не открывают',
+      (await editNow()) === false);
+  } else {
+    check('два быстрых клика по разным постройкам правку не открывают', false,
+      'ратуша не найдена — проверка невозможна');
+  }
+
+  /* Панорама: сдвиг больше HOLD_SLOP гасит удержание. */
+  await clearInput();
+  await inputMove(platformPt.x, platformPt.y);
+  await inputPress(platformPt.x, platformPt.y, 1);
+  await inputMove(platformPt.x + 40, platformPt.y + 12, true);
+  await sleep(650);
+  const dragEdit = await editNow();
+  const dragInfo = await js(`(() => {
+    const P = window.__game.Play;
+    const t = (P.state.diagTrace || []).filter(x =>
+      x.kind === 'edit-open' || x.kind === 'edit-hold' || x.kind === 'hold-cancelled');
+    return { edit: !!P.state.edit,
+      source: P.state.editSource, trace: t.slice(-4) };
+  })()`);
+  await inputRelease(platformPt.x + 40, platformPt.y + 12);
+  await sleep(200);
+  check('панорама на 40 px не открывает правку', dragEdit === false,
+    JSON.stringify(dragInfo));
+  await clearInput();
+
+  /* Отмена жеста (pointercancel), потеря захвата и уход окна: таймер уже
+     поставлен, но принадлежности активному жесту больше нет. */
+  const cancelBy = async (code, label) => {
+    await clearInput();
+    await inputMove(platformPt.x, platformPt.y);
+    await inputPress(platformPt.x, platformPt.y, 1);
+    await sleep(120);
+    await js(code);
+    await sleep(650);
+    const opened = await editNow();
+    await inputRelease(platformPt.x, platformPt.y);
+    await sleep(150);
+    await clearInput();
+    check(label, opened === false);
+  };
+  await cancelBy(`(() => { const v = document.getElementById('view');
+    v.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 1, bubbles: true }));
+    return 1; })()`, 'pointercancel не открывает правку');
+  await cancelBy(`(() => { const v = document.getElementById('view');
+    v.dispatchEvent(new PointerEvent('lostpointercapture', { pointerId: 1, bubbles: true }));
+    return 1; })()`, 'потеря захвата не открывает правку');
+  await cancelBy(`(() => { window.dispatchEvent(new Event('blur')); return 1; })()`,
+    'уход окна не открывает правку');
+
+  /* Загруженный главный поток: кадр не идёт 700 мс, кнопка ВСЁ ЕЩЁ нажата.
+     Таймер сработает позже, но принадлежность жесту проверяется по-настоящему,
+     а не по «прошло 500 мс» — правка открывается, и в журнале причина hold. */
+  await clearInput();
+  await inputMove(platformPt.x, platformPt.y);
+  await inputPress(platformPt.x, platformPt.y, 1);
+  await js(`(() => { const t = Date.now(); while (Date.now() - t < 700) {} return 1; })()`);
+  const busyOpened = await waitFor(`!!window.__game.Play.state.edit`, 4000);
+  const busySource = await js(`(() => {
+    const t = (window.__game.Play.state.diagTrace || []);
+    const e = t.filter(x => x.kind === 'edit-open').pop();
+    return { source: e && e.data && e.data.source, edit: !!window.__game.Play.state.edit };
+  })()`);
+  await inputRelease(platformPt.x, platformPt.y);
+  await sleep(200);
+  check('загруженный главный поток: удержание доведено до правки',
+    busyOpened && busySource.edit === true, JSON.stringify(busySource));
+  check('источник правки записан как hold', busySource.source === 'hold',
+    JSON.stringify(busySource));
   await js(`(() => { try { window.__game.Play.editAction('cancel'); } catch (e) {} return 1; })()`);
   await sleep(200);
 

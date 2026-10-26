@@ -358,6 +358,15 @@
         /* Своя ратуша пала, но партия идёт: наблюдаем без команд. Это не
            экран итога — итог придёт отдельным событием `defeat`. */
         Hud.setSpectator(!!ev.on);
+      } else if (ev.type === 'fault') {
+        if (ev.fatal !== false) showFault(ev.fault);
+        else Hud.toast('внутренняя ошибка записана в диагностику', 4200);
+      } else if (ev.type === 'fault-recovered') {
+        hideFault();
+        Hud.toast('мир продолжен с контрольной точки', 4200);
+      } else if (ev.type === 'pending') {
+        /* Ожидание гостя: значок на карте уже есть. Экран лобби/панель не
+           трогаем — это правило «в сети всплывашек нет». */
       }
       // Ратуша пала. В главном меню партия уже брошена: экран итога поверх
       // меню был бы вестью о мире, который игрок оставил.
@@ -368,6 +377,34 @@
 
     global.addEventListener('resize', function () { Play.resize(); });
 
+    /* LOOP-01: исключение и необработанный отказ промиса не должны исчезать
+       молча. Исключение останавливает мир (fatal), отказ промиса пишется в
+       диагностику и не гасит партию: он может быть сетевым. */
+    installFaultScreen();
+    global.addEventListener('error', function (e) {
+      var err = e && e.error ? e.error : new Error((e && e.message) || 'ошибка');
+      if (global.Play && Play.noteFault) Play.noteFault(err, 'window');
+    });
+    global.addEventListener('unhandledrejection', function (e) {
+      var r = e && e.reason;
+      var err = r instanceof Error ? r : new Error(String(r));
+      if (global.Play && Play.noteFault) {
+        Play.noteFault(err, 'promise', { fatal: false });
+      }
+    });
+    /* Версия сборки: сервер отдаёт свою, если он новый. Ошибка запроса не
+       мешает игре — это только строка в диагностике. */
+    global.__4toxBuild = (function () {
+      var m = document.querySelector && document.querySelector('meta[name="4tox-build"]');
+      return m ? m.getAttribute('content') : 'dev';
+    })();
+    if (global.Net && global.Net.serverInfo) {
+      try {
+        global.Net.serverInfo().then(function (j) { global.__4toxServer = j; },
+          function () { /* старого сервера нет — не беда */ });
+      } catch (e) { /* нет сети — не беда */ }
+    }
+
     loadTextures(function (tex) {
       Play.setTextures(tex);
       progress('размечаем землю…');
@@ -375,6 +412,82 @@
         begin();
       });
     });
+  }
+
+  /* --------------------------- экран ошибки ----------------------------- *
+   *
+   * Мир остановлен явно, интерфейс жив. Здесь только DOM: ни движка, ни
+   * отрисовки — экран обязан работать даже тогда, когда draw и Hud падают.
+   * Кнопки: выгрузить диагностику (без токенов), продолжить с последней
+   * ЦЕЛОЙ контрольной точки, уйти в меню. */
+  function installFaultScreen() {
+    if (document.getElementById('faultScreen')) return;
+    var el = document.createElement('div');
+    el.id = 'faultScreen';
+    el.style.cssText = 'position:fixed;inset:0;z-index:9999;display:none;' +
+      'align-items:center;justify-content:center;background:rgba(10,16,22,.84);' +
+      'font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;color:#eaf2f8';
+    el.innerHTML = '<div style="max-width:760px;width:calc(100% - 48px);' +
+      'background:#16222c;border:1px solid #3a5160;border-radius:14px;' +
+      'padding:20px 22px;box-shadow:0 20px 60px rgba(0,0,0,.5)">' +
+      '<h2 style="margin:0 0 8px;font-size:19px">Мир остановлен</h2>' +
+      '<p id="faultMsg" style="margin:0 0 10px;color:#f0b7ae"></p>' +
+      '<pre id="faultStack" style="max-height:180px;overflow:auto;' +
+      'background:#0d161d;border:1px solid #2a3d49;border-radius:8px;' +
+      'padding:10px;font-size:11px;color:#a9c2d2;white-space:pre-wrap"></pre>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">' +
+      '<button id="faultDiag" style="padding:8px 12px;border-radius:8px;' +
+      'border:1px solid #4a6577;background:#223543;color:#eaf2f8;cursor:pointer">' +
+      'Выгрузить диагностику</button>' +
+      '<button id="faultResume" style="padding:8px 12px;border-radius:8px;' +
+      'border:1px solid #4a6577;background:#2c4a3a;color:#eaf2f8;cursor:pointer">' +
+      'Продолжить с контрольной точки</button>' +
+      '<button id="faultMenu" style="padding:8px 12px;border-radius:8px;' +
+      'border:1px solid #4a6577;background:#223543;color:#eaf2f8;cursor:pointer">' +
+      'В главное меню</button></div>' +
+      '<p id="faultNote" style="margin:10px 0 0;color:#a9c2d2;font-size:12px">' +
+      'Мир не считает время, чтобы не продолжать полутранзакцию. ' +
+      'Мир можно продолжить с последней целой контрольной точки.</p></div>';
+    document.body.appendChild(el);
+    var diag = document.getElementById('faultDiag');
+    if (diag) diag.addEventListener('click', function () {
+      if (global.Play && Play.downloadDiagnostics) Play.downloadDiagnostics();
+    });
+    var resume = document.getElementById('faultResume');
+    if (resume) resume.addEventListener('click', function () {
+      var note = document.getElementById('faultNote');
+      if (Play.state.netRole === 'client') {
+        if (note) note.textContent = 'Авторитетный мир у хоста: гость не восстанавливает его сам.';
+        return;
+      }
+      var r = Play.recoverFromCheckpoint();
+      if (r && r.ok) hideFault();
+      else if (note) note.textContent = 'Не удалось: ' + ((r && r.reason) || 'нет контрольной точки');
+    });
+    var menu = document.getElementById('faultMenu');
+    if (menu) menu.addEventListener('click', function () {
+      hideFault();
+      toMenu();
+    });
+  }
+
+  function showFault(fault) {
+    installFaultScreen();
+    var el = document.getElementById('faultScreen');
+    if (!el) return;
+    var msg = document.getElementById('faultMsg');
+    var stack = document.getElementById('faultStack');
+    if (msg) msg.textContent = (fault && fault.phase ? '[' + fault.phase + '] ' : '') +
+      ((fault && fault.message) || 'неизвестная ошибка');
+    if (stack) stack.textContent = (fault && fault.stack) || '';
+    var resume = document.getElementById('faultResume');
+    if (resume) resume.style.display = Play.state.netRole === 'client' ? 'none' : '';
+    el.style.display = 'flex';
+  }
+
+  function hideFault() {
+    var el = document.getElementById('faultScreen');
+    if (el) el.style.display = 'none';
   }
 
   /* ------------------------------- часы мира ---------------------------- */
@@ -435,6 +548,9 @@
 
     var P = global.Play;
     if (!P || !P.state || !P.state.world) { simDebt = 0; return 0; }
+    /* Мир остановлен диагностической границей: долг не копим, иначе после
+       восстановления мы «догнали» бы время, в котором мир не считался. */
+    if (P.state.faulted) { simDebt = 0; return 0; }
 
     /* Клиент не считает мир: его время приходит снимками. Один тик нужен
        только для сглаживания позиций — и один большой dt честнее тысячи
@@ -565,28 +681,60 @@
 
   /* ------------------------------- цикл -------------------------------- */
 
+  /* Один кадр. Каждая подсистема — за своей границей: ошибка отрисовки не
+     должна отменять шаг мира, а ошибка шага — рисование и интерфейс. Граница
+     не глотает ошибку: Play.noteFault записывает стек/фазу/сущность и явно
+     останавливает авторитетный мир (LOOP-01). */
+  function guardFrame(label, fn) {
+    try { return fn(); } catch (e) {
+      if (global.Play && global.Play.noteFault) {
+        global.Play.noteFault(e, label);
+      } else {
+        console.error('4tox: кадр (' + label + ')', e);
+      }
+      return null;
+    }
+  }
+
   function loop(t) {
+    /* Следующий кадр ставится ПЕРВЫМ: раньше он стоял последним, и одно
+       исключение в advance/draw/Hud.tick обрывало цепочку НАВСЕГДА —
+       «полуживой мир», в котором не двигается даже интерфейс. */
+    global.requestAnimationFrame(loop);
+    try {
+      frame(t);
+    } catch (e) {
+      if (global.Play && global.Play.noteFault) global.Play.noteFault(e, 'frame');
+      else console.error('4tox: кадр', e);
+    }
+  }
+
+  function frame(t) {
     var M = global.Metrics;
     var frameStart = (M && M.frame) ? wallNow() : 0;
     var dt = Math.min(0.05, (t - last) / 1000) || 0;
     last = t;
     lastFrameAt = simNow();
+    var P = global.Play;
 
-    if (Play.stepKeys(dt)) { /* камера поехала от клавиш */ }
+    guardFrame('keys', function () { Play.stepKeys(dt); });
     /* Мир идёт по стенным часам: кадр может опоздать на секунды — вкладка
        была скрыта, окно свёрнуто, машина спала, — и отрезок догоняется
        порциями по бюджету (advance). renderer получает время кадра, ему
        нужны волны и анимация. */
-    advance(simNow());
-    Play.draw(t / 1000);
-    Hud.tick(dt);
+    if (!(P && P.state && P.state.faulted)) {
+      guardFrame('advance', function () { advance(simNow()); });
+      guardFrame('draw', function () { Play.draw(t / 1000); });
+    }
+    /* Интерфейс живёт всегда: по нему игрок выгружает диагностику и
+       восстанавливается. Он не считает мир, поэтому стоящий мир ему не
+       мешает. */
+    guardFrame('hud', function () { Hud.tick(dt); });
 
     /* Полный кадр — для встроенных счётчиков (Metrics.frame). Если агент 2
        ещё не завёл функцию, ничего не выдумываем: поле frameMaxMs в
        metrics.js есть, но API кадра — его зона. */
     if (frameStart && M && M.frame) M.frame(wallNow() - frameStart);
-
-    global.requestAnimationFrame(loop);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);

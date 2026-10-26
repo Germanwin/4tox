@@ -78,6 +78,10 @@
      уже не отличить от клика (клик по постройке её выбирает), поэтому 0.5 —
      нижняя граница, на которой жест ещё намеренный. */
   var EDIT_HOLD_MS = 500;
+  /* Как часто снимается контрольная точка мира для восстановления после
+     ошибки подсистемы (LOOP-01). Это компромисс: потерять не больше двух
+     секунд мира, но не платить сериализацией каждый шаг. */
+  var CHECKPOINT_MS = 2000;
 
   /* Меню построек: что можно купить за брёвна. Цена — правило ИГРЫ, а не
      движка: движок не знает про казну деревни, он умеет только сажать
@@ -185,7 +189,16 @@
        сервер: команды приходят только SSE (запасной путь, см. startNet). */
     netPull: false,
     netPing: 0, netPingAt: 0, netPingBusy: false,
-    nextBuildId: 1000   // id новых построек: сквозной, не зависит от списка
+    nextBuildId: 1000,  // id новых построек: сквозной, не зависит от списка
+    /* Диагностическая граница (LOOP-01). `fault` — последняя записанная
+       ошибка с ограниченным стеком и сущностью; `faulted` — авторитетный мир
+       ОСТАНОВЛЕН явно, а не продолжает полутранзакции молча. `checkpoint` —
+       последний целый снимок мира для поддерживаемого восстановления. */
+    fault: null, faulted: false, faultCount: 0,
+    checkpoint: null, checkpointAt: 0,
+    tickPhase: '', tickStartedAt: 0,
+    lastCommands: [], lastSnapAt: 0,
+    pointerTrace: [], editSource: ''
   };
 
   var arrival = null;   // подлёт камеры: {t, dur, from, to}
@@ -383,6 +396,7 @@
     state.netBusy = false;
     state.netForce = false;
     state.netSeq = 0;
+    resetPending();
     state.netAcc = 0;
     state.netEvery = NET_INTERVAL;
     state.netQueue = 0;
@@ -478,6 +492,7 @@
     }
     var p = global.Net.snapshot(snap).then(function (res) {
       state.netBusy = false;
+      state.lastSnapAt = nowMs();
       pace(res);
       /* Команды гостей пришли в ответе на наш снимок — тот же POST, которым
          хост доказывает, что жив. Это ОДИН из двух каналов; второй — SSE
@@ -504,9 +519,13 @@
          убирает команду из очереди, а гость видит результат. */
       if (applied) netSend(true);
       return true;
-    }, function () {
+    }, function (e) {
       state.netBusy = false;
       pace(null);
+      /* Таймаут/обрыв снимка — не доказанный отказ мира: кадр просто не ушёл.
+         Пишем вид ошибки (timeout/http/network) в след для разбора. */
+      traceDiag('snapshot-error', { seq: seq, kind: e && e.kind,
+        message: e && e.message });
       return false;
     });
     return p;
@@ -553,6 +572,16 @@
     });
     state.buildings = res.buildings;
     state.villagers = res.villagers;
+    /* Ожидающие согласуются с авторитетным миром ЗДЕСЬ, до отрисовки кадра:
+       либо ожидание заменяется настоящей постройкой, либо остаётся. Пустого
+       кадра «призрак → пусто → дом» быть не может: новое здание уже стоит. */
+    if (global.Pending) {
+      var settled = global.Pending.reconcile({
+        seq: snap.seq === undefined ? state.netSeq : snap.seq,
+        buildings: state.buildings
+      });
+      if (settled) syncPending();
+    }
     state.seconds = w.time || 0;
     state.over = !!snap.over;
     state.winner = snap.winner === undefined ? null : snap.winner;
@@ -670,8 +699,22 @@
       }
     }
     state.netPlayers = payload.players;
+    state.serverInfo = {
+      build: payload.build || null, protocol: payload.protocol || null,
+      cmdProto: payload.cmdProto || null,
+      warning: payload.protocolWarning || null
+    };
+    if (payload.protocolWarning) {
+      /* Версии клиента и сервера разошлись: это предупреждение, а не отказ
+         (сервер по-прежнему принимает старт). Правило «в сети без всплывашек»
+         не отменяет необходимости сказать это словами. */
+      emit({ type: 'net-note', text: 'версия клиента: ' + payload.protocolWarning });
+    }
     state.netCentered = false;
     state.nextBuildId = 1000;
+    /* Новая партия — новая нумерация команд: старые ожидания к ней не
+       относятся и не оживают. */
+    resetPending();
     state.result = null;
     state.over = false;
     state.winner = null;
@@ -1040,6 +1083,7 @@
       if (snap.seq <= state.netSeq) return;          // запоздавший кадр
       state.netSeq = snap.seq;
     }
+    state.lastSnapAt = nowMs();
     /* Пока клиент был offline, хост мог вернуться: снимок — доказательство,
        что он снова здесь, даже если событие host-back не доехало. */
     if (state.netHostGone) onHostBack();
@@ -1174,18 +1218,210 @@
   /* Команда клиента на хосте. Всё проверяется теми же правилами, что и у
      хоста: чужой не может поставить дом в воду, построить без брёвен или
      тренировать в чужой казарме. */
+  /* ----------------------- диагностическая граница ---------------------- *
+   *
+   * Исключение одной подсистемы не должно оставлять полуживой мир: следующий
+   * requestAnimationFrame стоял после шага мира, и ошибка обрывала ВСЮ цепочку
+   * кадров — игра замирала без объяснения (LOOP-01). Здесь ошибка:
+   *   * записывается с ограниченным стеком, фазой тика, сущностью и временем;
+   *   * явно останавливает авторитетный мир (state.faulted), а не продолжает
+   *     молча частично применённую транзакцию;
+   *   * показывает экран ошибки (boot.js) с выгрузкой диагностики;
+   *   * оставляет поддерживаемое восстановление из последней ЦЕЛОЙ контрольной
+   *     точки — груз, обучение и приказы в ней сохранены.
+   * Catch-and-ignore и переспавн всех жителей запрещены: они маскируют
+   * причину. */
+  var FAULT_STACK_MAX = 4000;
+  function faultRecord(err, phase, extra) {
+    var msg = err && err.message ? err.message : String(err || 'неизвестная ошибка');
+    var stack = err && err.stack ? String(err.stack) : msg;
+    /* Жителя, на котором оборвался шаг, ставит Session.stepVillagers: без него
+       стек говорит «где», но не «кто». */
+    var tag = err && err.__4tox ? err.__4tox : null;
+    return {
+      at: Date.now(),
+      phase: (tag && tag.phase) || phase || state.tickPhase || '?',
+      message: msg.slice(0, 500),
+      stack: stack.slice(0, FAULT_STACK_MAX),
+      worldTime: state.world ? +((state.world.time || 0).toFixed(3)) : null,
+      seconds: +(state.seconds || 0).toFixed(3),
+      netRole: state.netRole,
+      owner: state.playerOwner,
+      entity: (tag && tag.entity) || (extra && extra.entity) || null,
+      extra: extra && extra.extra ? extra.extra : null,
+      checkpointAgeMs: state.checkpoint
+        ? Math.round(nowMs() - (state.checkpointAt || 0)) : null
+    };
+  }
+
+  function noteFault(err, phase, extra) {
+    var rec = faultRecord(err, phase, extra);
+    /* Ошибка авторитетного шага останавливает мир (fatal). Ошибка промиса,
+       которую никто не поймал, может быть и сетевой: её ЗАПИСЫВАЕМ, но мир
+       из-за неё не стоим — иначе один отклонённый fetch гасил бы партию. */
+    var fatal = !(extra && extra.fatal === false);
+    state.faultCount = (state.faultCount || 0) + 1;
+    if (fatal || !state.fault) state.fault = rec;
+    if (fatal) state.faulted = true;
+    if (global.Metrics && global.Metrics.counters) {
+      global.Metrics.counters.faults = (global.Metrics.counters.faults || 0) + 1;
+    }
+    traceDiag('fault', { phase: rec.phase, message: rec.message,
+      entity: rec.entity, fatal: fatal });
+    emit({ type: 'fault', fault: rec, fatal: fatal });
+    return rec;
+  }
+
+  /* Ограниченный след последних событий: его читает выгрузка диагностики.
+     Кольцо фиксированного размера — «включил и забыл», без роста. */
+  var TRACE_MAX = 80;
+  function traceDiag(kind, data) {
+    state.diagTrace = state.diagTrace || [];
+    state.diagTrace.push({ t: Math.round(nowMs()), kind: kind, data: data || null });
+    if (state.diagTrace.length > TRACE_MAX) state.diagTrace.shift();
+  }
+
+  /* Контрольная точка — ЦЕЛЫЙ мир, а не половина кадра. Снимается не каждый
+     шаг: это сериализация построек и жителей (единицы миллисекунд), и на 200
+     существах раз в 2 с она дешевле, чем потеря партии после падения. */
+  function captureCheckpoint() {
+    if (!state.world || !global.Serialize || state.faulted) return null;
+    try {
+      var snap = global.Serialize.world(state.world, state.buildings,
+        state.villagers, {
+          seq: state.netSeq, over: state.over, winner: state.winner
+        });
+      snap.cmdAck = state.netCmdLast || {};
+      state.checkpoint = { at: Date.now(), snap: snap };
+      state.checkpointAt = nowMs();
+      return state.checkpoint;
+    } catch (e) {
+      /* Сама контрольная точка не имеет права ронять партию: если мир уже
+         битый, это поймает диагностическая граница шага. */
+      traceDiag('checkpoint-error', { message: e && e.message });
+      return null;
+    }
+  }
+
+  /* Восстановление ИЗ КОНТРОЛЬНОЙ ТОЧКИ. Это не «продолжить сломанное»:
+     последние до CHECKPOINT_MS секунд мира теряются, зато груз, обучение и
+     приказы в точке целы, а полутранзакция не повторяется. */
+  function recoverFromCheckpoint() {
+    if (!state.world || !state.checkpoint || !state.checkpoint.snap) {
+      return { ok: false, reason: 'контрольной точки нет' };
+    }
+    try {
+      restoreFromSnapshot(state.world, state.checkpoint.snap);
+      state.fault = null;
+      state.faulted = false;
+      state.running = true;
+      state.tickPhase = '';
+      state.birth = global.Session.birthClock();
+      state.seconds = state.world.time || 0;
+      emit({ type: 'fault-recovered' });
+      traceDiag('recovered', { at: state.checkpoint.at });
+      return { ok: true, reason: '' };
+    } catch (e) {
+      noteFault(e, 'recover', { extra: { from: 'checkpoint' } });
+      return { ok: false, reason: (e && e.message) || 'восстановление не удалось' };
+    }
+  }
+
+  /* Выгрузка диагностики: только то, что нужно разобрать инцидент. Токены и
+     секреты НЕ включаются — ни net-сессия, ни ссылки с токеном. */
+  function exportDiagnostics() {
+    var M = global.Metrics;
+    var out = {
+      app: '4tox', at: new Date().toISOString(),
+      build: global.__4toxBuild || null,
+      url: global.location ? String(global.location.href).split('?')[0] : '',
+      userAgent: global.navigator ? global.navigator.userAgent : '',
+      state: {
+        mode: state.mode, running: state.running, faulted: !!state.faulted,
+        netRole: state.netRole, owner: state.playerOwner,
+        seconds: +(state.seconds || 0).toFixed(2),
+        simDropped: +(state.simDropped || 0).toFixed(2),
+        netSeq: state.netSeq, netQueue: state.netQueue, netPing: state.netPing,
+        logs: state.logs, buildings: (state.buildings || []).length,
+        villagers: (state.villagers || []).length,
+        lastSnapAgeMs: state.lastSnapAt ? Math.round(nowMs() - state.lastSnapAt) : null,
+        tickPhase: state.tickPhase,
+        editSource: state.editSource
+      },
+      fault: state.fault,
+      metrics: M && M.snapshot ? M.snapshot() : null,
+      pending: global.Pending ? global.Pending.exportState() : null,
+      trace: (state.diagTrace || []).slice(-TRACE_MAX),
+      commands: (state.lastCommands || []).slice(-20),
+      server: state.serverInfo || null,
+      pointers: (state.pointerTrace || []).slice(-24),
+      events: state.world && state.world.events ? state.world.events.slice(-20) : [],
+      checkpoint: state.checkpoint ? {
+        at: state.checkpoint.at,
+        t: state.checkpoint.snap.t,
+        buildings: (state.checkpoint.snap.buildings || []).length,
+        villagers: (state.checkpoint.snap.villagers || []).length
+      } : null
+    };
+    /* Полный checkpoint — по требованию: он большой, но это единственный
+       способ разобрать «мир остановился именно так». */
+    if (state.checkpoint) out.checkpointSnap = state.checkpoint.snap;
+    return out;
+  }
+
+  function downloadDiagnostics() {
+    var data = exportDiagnostics();
+    try {
+      var text = JSON.stringify(data, null, 1);
+      if (global.Blob && global.URL && global.document) {
+        var blob = new global.Blob([text], { type: 'application/json' });
+        var a = global.document.createElement('a');
+        a.href = global.URL.createObjectURL(blob);
+        a.download = '4tox-diagnostics-' + Date.now() + '.json';
+        global.document.body.appendChild(a);
+        a.click();
+        global.URL.revokeObjectURL(a.href);
+        a.remove();
+      }
+      return data;
+    } catch (e) {
+      return data;
+    }
+  }
+
   /* Команда хосту с явным результатом. В сети всплывашек нет (правило
      2026-10-24), поэтому отказ/просрочка идут в журнал событий и в
      состояние — игрок видит правду, а не «нажал и тишина». Успех не шумит:
      он виден по миру. Промис отдаётся вызывающему, если ему нужен. */
-  function sendCommand(cmd, label) {
+  function sendCommand(cmd, label, onSent) {
     if (!global.Net || typeof global.Net.command !== 'function') return null;
     var p = global.Net.command(cmd);
     if (!p || typeof p.then !== 'function') return p;
+    /* Номер команды создан ДО отправки (Net.command выдаёт n синхронно, а POST
+       уходит из очереди промисов). Ожидание получает тот же id: по нему
+       сопоставляются результат и снимок. */
+    var commandId = p.n;
+    state.lastCommands = state.lastCommands || [];
+    state.lastCommands.push({ n: commandId, label: label || '', at: Date.now(),
+      snapSeq: state.netSeq });
+    if (state.lastCommands.length > 20) state.lastCommands.shift();
+    traceDiag('cmd-sent', { n: commandId, label: label || '',
+      snapSeq: state.netSeq });
+    if (onSent && commandId !== undefined) {
+      try { onSent(commandId); } catch (e) { /* ожидание не должно ронять ввод */ }
+      syncPending();
+    }
     p.then(function (res) {
       var st = res && res.state ? res.state : 'applied';
       state.netCmdState = st;
       state.netCmdStateAt = nowMs();
+      if (global.Pending && commandId !== undefined) {
+        global.Pending.result(commandId, res);
+        syncPending();
+      }
+      traceDiag('cmd-result', { n: commandId, state: st,
+        ids: (res && res.ids) || [], appliedSeq: res && res.appliedSeq,
+        snapSeq: state.netSeq });
       if (st === 'applied' || st === 'pending') return;
       var why = (res && res.reason) || (st === 'expired'
         ? 'истекло время ожидания' : 'отклонено');
@@ -1196,65 +1432,120 @@
       emit({ type: 'command-result', state: st, text: text, n: res && res.n });
     }, function (e) {
       state.netCmdState = 'failed';
+      /* Таймаут сети — НЕ доказанный отказ: ожидание остаётся со статусом
+         «результат уточняется», а команду заново не шлём (иначе второй дом). */
+      if (global.Pending && commandId !== undefined) {
+        global.Pending.result(commandId, {
+          state: 'unknown',
+          reason: 'результат уточняется: ' + ((e && e.message) || 'нет ответа')
+        });
+        syncPending();
+      }
+      traceDiag('cmd-result', { n: commandId, state: 'unknown',
+        reason: (e && e.message) || 'нет ответа' });
       var text = (label ? label + ': ' : '') + ((e && e.message) || 'команда не ушла');
       if (global.Events && state.world) {
         global.Events.refuse(state.world, state.playerOwner, 'command-rejected', text, null, null);
       }
-      emit({ type: 'command-result', state: 'failed', text: text });
+      emit({ type: 'command-result', state: 'unknown', text: text });
     });
     return p;
   }
 
-  /* Результат команды: applied | rejected. Координатор пишет его в снимок
+  /* Результат команды: applied | rejected. Хост пишет его в снимок
      (`cmdDone`), сервер хранит по паре (from,n), клиент опрашивает
      `/api/command-state`. HTTP 200 на приём команды значит только «в
-     очереди»; построен дом или нет — отвечает этот результат. */
-  function cmdYes() { return { status: 'applied', reason: '' }; }
+     очереди»; построен дом или нет — отвечает этот результат.
+
+     `extra` несёт ids созданных построек и версию мира на момент применения:
+     без них гость не может атомарно заменить своё ожидание настоящим
+     объектом (UX-01), а снесённая до снимка постройка ждалась бы вечно. */
+  function cmdYes(extra) {
+    var out = { status: 'applied', reason: '', appliedSeq: state.netSeq || 0 };
+    if (extra) {
+      for (var k in extra) {
+        if (Object.prototype.hasOwnProperty.call(extra, k)) out[k] = extra[k];
+      }
+    }
+    return out;
+  }
   function cmdNo(reason) { return { status: 'rejected', reason: String(reason || 'не вышло') }; }
 
-  /* Команда клиента на хосте. Всё проверяется теми же правилами, что и у
-     хоста: чужой не может поставить дом в воду, построить без брёвен или
-     тренировать в чужой казарме.
+  /* Ограниченная история решений: идемпотентность нужна, память кончиться не
+     должна. Старые пары вытесняются, но живые (в пределах водяного знака)
+     остаются: повтор из SSE после pull не должен выполниться второй раз. */
+  function trimCmdHistory() {
+    var keys = Object.keys(state.netCmdResult || {});
+    while (keys.length > 400) {
+      var k = keys.shift();
+      delete state.netCmdResult[k];
+      delete state.netCmdApplied[k];
+    }
+    var akeys = Object.keys(state.netCmdApplied || {});
+    while (akeys.length > 800) delete state.netCmdApplied[akeys.shift()];
+    state.netCmdAppliedN = keys.length;
+  }
 
-     ДЕДУПЛИКАЦИЯ. Ключ — пара (from, n), а не «n не больше последнего»:
-     два канала доставки (SSE и ответ снимка) могут принести команды не по
-     порядку, и водяной знак, двигаемый сразу, молча съел бы более раннюю
-     команду. `netCmdLast` остаётся ТОЛЬКО подтверждением для сервера
-     (`cmdAck`) и памятью после F5; решение «это повтор» принимает карта
-     выполненных (from,n). */
+  /* ЕДИНАЯ точка выполнения команды гостя на хосте. ДЕДУПЛИКАЦИЯ — пара
+     (from, n), а не «n не больше последнего»: два канала доставки (SSE и ответ
+     снимка) могут принести команды не по порядку, и водяной знак, двигаемый
+     сразу, молча съел бы более раннюю команду. `netCmdLast` остаётся ТОЛЬКО
+     подтверждением для сервера (`cmdAck`) и памятью после F5.
+
+     Отметка «выполнено» ставится ПОСЛЕ бизнес-действия, а не до: раньше
+     исключение внутри действия оставляло пару (from,n) помеченной, и повтор
+     получал ложное applied. Теперь при исключении отметки нет, ответ —
+     `unknown` (не «отказ» и не «применено»), а мир останавливается
+     диагностической границей, чтобы не повторять полутранзакцию. */
   function applyNetCommand(cmd) {
     if (!cmd || (state.netRole && state.netRole !== 'host') || state.over) {
       return cmdNo('сейчас не партия');
     }
+    state.netCmdApplied = state.netCmdApplied || {};
+    state.netCmdResult = state.netCmdResult || {};
+    var key = null, restored = 0, last = 0;
+    if (cmd.n !== undefined && cmd.from !== undefined) {
+      key = cmd.from + ':' + cmd.n;
+      restored = state.netCmdRestoredFrom
+        ? (state.netCmdRestoredFrom[cmd.from] || 0) : 0;
+      last = state.netCmdLast[cmd.from] || 0;
+      if (state.netCmdApplied[key] || (restored && cmd.n <= restored)) {
+        var prev = state.netCmdResult[key];
+        if (prev) {
+          return { status: prev.status, reason: prev.reason, duplicate: true,
+            ids: (prev.ids || []).slice(), appliedSeq: prev.appliedSeq || 0 };
+        }
+        return { status: 'applied', reason: '', duplicate: true };
+      }
+    }
+    try {
+      var res = applyNetCommandNow(cmd);
+      if (key) {
+        state.netCmdApplied[key] = 1;
+        state.netCmdResult[key] = {
+          status: res.status, reason: res.reason || '',
+          ids: (res.ids || []).slice(), appliedSeq: res.appliedSeq || 0
+        };
+        state.netCmdAppliedN = (state.netCmdAppliedN || 0) + 1;
+        if (state.netCmdAppliedN > 400) trimCmdHistory();
+      }
+      return res;
+    } catch (e) {
+      /* Исключение — не отказ мира и не «применено». Отметки нет, значит
+         повтор с тем же n возможен; но мир останавливается (LOOP-01), и
+         повторить полутранзакцию молча уже нельзя. */
+      noteFault(e, 'command', { type: cmd && cmd.type, n: cmd && cmd.n,
+        from: cmd && cmd.from });
+      return { status: 'unknown', interrupted: true,
+        reason: 'выполнение прервано: ' + ((e && e.message) || 'ошибка') };
+    }
+  }
+
+  function applyNetCommandNow(cmd) {
     var B = global.Buildings, S = global.Session;
     /* owner — номер города в партии, from — id игрока в лобби. Это разные
        числа, как только кто-то выходил из комнаты до старта. */
     var who = cmd.owner === undefined ? cmd.from : cmd.owner;
-    /* `netCmdLast` — ТОЛЬКО подтверждение серверу (`cmdAck`), оно двигается
-       после решения команды. Повтором считается либо уже решённая пара
-       (from,n), либо номер не больше ВОССТАНОВЛЕННОГО при F5 водяного знака.
-       Сравнивать с живым `netCmdLast` нельзя: сервер отдаёт пачку по порядку
-       приёма, и команда 7101 может прийти после 7102; тогда 7101 была бы
-       молча съедена как «повтор», хотя не выполнялась. */
-    if (cmd.n !== undefined && cmd.from !== undefined) {
-      state.netCmdApplied = state.netCmdApplied || {};
-      var key = cmd.from + ':' + cmd.n;
-      var restored = state.netCmdRestoredFrom
-        ? (state.netCmdRestoredFrom[cmd.from] || 0) : 0;
-      var last = state.netCmdLast[cmd.from] || 0;
-      if (state.netCmdApplied[key] || (restored && cmd.n <= restored)) {
-        return { status: 'applied', reason: '', duplicate: true };
-      }
-      state.netCmdApplied[key] = 1;
-      state.netCmdAppliedN = (state.netCmdAppliedN || 0) + 1;
-      if (state.netCmdAppliedN > 400) {
-        for (var k in state.netCmdApplied) {
-          var m = /^(.*):(\d+)$/.exec(k);
-          if (m && +m[2] <= (restored || last)) delete state.netCmdApplied[k];
-        }
-        state.netCmdAppliedN = Object.keys(state.netCmdApplied).length;
-      }
-    }
     var town = state.world && state.world.towns && state.world.towns[who];
     if (!town || town.alive === false) {
       var gone = 'ваша деревня больше не в игре';
@@ -1300,7 +1591,9 @@
       }
       renderer.setBuildings(state.buildings);
       state.netForce = true;
-      return cmdYes();
+      /* id созданной постройки и версия мира: гость заменит своё ожидание
+         именно ими, а не догадкой по координатам (UX-01). */
+      return cmdYes({ ids: [made.id] });
     }
     if (cmd.type === 'buildLine') {
       /* Атомарная серия: либо все дома, либо ни одного и ни одного бревна.
@@ -1339,7 +1632,7 @@
       }
       renderer.setBuildings(state.buildings);
       state.netForce = true;
-      return cmdYes();
+      return cmdYes({ ids: builtLine.map(function (x) { return x.id; }) });
     }
     if (cmd.type === 'edit') {
       var b = buildingById(cmd.id);
@@ -1427,8 +1720,13 @@
       key = cmd.from + '|' + (cmd.sn !== undefined ? 's' + cmd.sn : 'n' + cmd.n);
       delete bank[key];
       /* Команда, пролежавшая в буфере дольше срока сервера, уже не актуальна:
-       * её результат — expired, а не «выполнить через минуту». */
-      if (cmd.at && now - cmd.at > 20000) {
+       * её результат — expired, а не «выполнить через минуту». Возраст берём
+       * СЕРВЕРНЫЙ (`ageMs`), а не разницу `Date.now` хоста и `cmd.at`: часы
+       * двух машин расходятся, и команда с верными часами умирала бы как
+       * «старая», а с отставшими жила бы вечно. */
+      var age = typeof cmd.ageMs === 'number' ? cmd.ageMs
+        : (cmd.at ? now - cmd.at : 0);
+      if (age > 20000) {
         recordCommandResult(cmd, { status: 'expired', reason: 'команда устарела' });
         continue;
       }
@@ -1452,7 +1750,11 @@
     state.netCmdDone.push({
       from: cmd.from, n: cmd.n,
       status: res && res.status ? res.status : 'applied',
-      reason: (res && res.reason) || ''
+      reason: (res && res.reason) || '',
+      /* Гостю нужны id и версия применения, чтобы согласовать ожидание с
+         миром (UX-01). Секретов здесь нет — только id своих построек. */
+      ids: (res && res.ids) ? res.ids.slice() : [],
+      appliedSeq: (res && res.appliedSeq) || 0
     });
     if (state.netCmdDone.length > 60) {
       state.netCmdDone.splice(0, state.netCmdDone.length - 60);
@@ -1485,6 +1787,7 @@
        показывали пустоту (2026-10-24). */
     state.playerOwner = 0;
     state.netPlayers = [];
+    resetPending();
     if (global.Combat && global.Combat.init) {
       global.Combat.init(st.world, st.buildings, state.villagers);
     }
@@ -1647,11 +1950,22 @@
     /* Стоит только до первой партии и после боя. Экран «Меню» и главное меню
        сюда не относятся: в них время идёт. */
     if (!state.running) return;
+    /* Мир остановлен диагностической границей: кадры и интерфейс живы,
+       очередь сети и heartbeat идут, но авторитетное время стоит ЯВНО.
+       Продолжать полутранзакцию молча нельзя (LOOP-01). */
+    if (state.faulted) return;
     state.seconds += dt;
+
+    /* Последний целый мир — для поддерживаемого восстановления. */
+    if (!state.checkpoint ||
+        nowMs() - (state.checkpointAt || 0) > CHECKPOINT_MS) {
+      captureCheckpoint();
+    }
 
     /* Бронь клеток подхода живёт один кадр: воины выбирают места в одном
        тике, и без сброса бронь копилась бы между кадрами. */
     state.world._combatCells = null;
+    state.tickPhase = 'combat';
     /* Бой — до шага жителей: Combat выставляет v.target/v.combatMode и наносит
        урон, а Villagers.update ведёт воина к цели. Два модуля не пишут одно
        поле: движение остаётся за villager.js. */
@@ -1678,7 +1992,9 @@
         { clock: state.birth, seconds: state.seconds });
     }
 
+    state.tickPhase = 'villagers';
     global.Session.stepVillagers(state.villagers, state.world, renderer, dt, state.buildings);
+    state.tickPhase = 'after';
     /* Срубленное считаем по СВОЕЙ деревне, а не суммой v.felled по всем
        жителям: в бою и в сети чужие рубки — не наши. Заодно после F5 у
        восстановленных жителей поле было undefined, и сумма давала NaN. */
@@ -1750,6 +2066,42 @@
   function villageLogs() {
     var v = playerTown();
     return v && typeof v.logs === 'number' ? v.logs : 0;
+  }
+
+  /* --- ожидающие действия гостя (UX-01) -------------------------------- *
+   *
+   * Казна снимка — это казна ДО наших отправленных, но ещё не отражённых
+   * покупок. Резерв считается отдельно от неё, а не вычитанием из town.logs:
+   * иначе следующий снимок «вернул» бы деньги, и игрок купил бы дважды.
+   * available = казна − резерв; подтверждение освобождает резерв ровно раз. */
+  function pendingBuildings() {
+    return (global.Pending && state.netRole === 'client')
+      ? global.Pending.buildings() : [];
+  }
+  /* Список для проверки места: настоящие + ожидающие. Ожидающие не входят в
+     мир и в симуляцию — только в этот выбор, чтобы не отправить заведомо
+     пересекающуюся постройку. */
+  function placeList() {
+    var p = pendingBuildings();
+    return p.length ? state.buildings.concat(p) : state.buildings;
+  }
+  function reservedLogs() {
+    return global.Pending ? global.Pending.reserved(state.playerOwner) : 0;
+  }
+  function availableLogs() {
+    return Math.max(0, villageLogs() - reservedLogs());
+  }
+  function pendingStatus() {
+    return global.Pending ? global.Pending.status() : null;
+  }
+  /* Перерисовать ожидание: список один и на экран, и на экспорт кадра. */
+  function syncPending() {
+    if (renderer && global.Pending) renderer.setPending(global.Pending.buildings());
+    emit({ type: 'pending', info: pendingStatus() });
+  }
+  function resetPending() {
+    if (global.Pending) global.Pending.reset(state.playerOwner);
+    if (renderer) renderer.setPending([]);
   }
 
   function villageDeliveries() {
@@ -2215,6 +2567,16 @@
     var cell = cellAt(vx, vy);
     var b = renderer.buildingAt(cell.x, cell.y);
     if (b) { setFocus(null); return selectBuilding(b); }
+    /* Ожидающая постройка ещё не в мире: править и сносить её нельзя, отправить
+       команду с её id — тем более. Говорим это словами, а не молчим. */
+    if (global.Pending && state.netRole === 'client') {
+      var pend = global.Pending.pendingAt(cell);
+      if (pend) {
+        emit({ type: 'build-note',
+          text: 'постройка ещё не подтверждена хостом: дождитесь снимка' });
+        return null;
+      }
+    }
     var v = villagerAt(vx, vy);
     if (v) { selectBuilding(null); return setFocus(v); }
     if (!renderer.selected && !state.focus) return null;
@@ -2243,7 +2605,13 @@
    * сквозь переставленный дом. */
   var editCheck = null;           // последняя проверка: { ok, reason, blocked, yard }
   var editGrab = { x: 0, y: 0 };  // за какой угол пятна взялись при ведении
-  var editHold = null;            // удержание ЛКМ: { timer }
+  /* Удержание ЛКМ: { timer, id, pid, building, grab, at }.
+     Поколение `id` — чтобы callback старого жеста не открыл правку после
+     отпускания, второго пальца или потери захвата. Таймер сам по себе НЕ
+     доказывает, что кнопка ещё нажата (INPUT-01): проверяем принадлежность
+     активному жесту и непрерывность нажатия. */
+  var editHold = null;
+  var editHoldSeq = 0;
 
   /* Готовое описание правки для экрана и для приёмки: одна сборка на событие
      шины, чтобы панель, отчёт и подсказка не собирали его каждая по-своему. */
@@ -2317,8 +2685,8 @@
   }
 
   /* Почему правку открыть нельзя — словами для экрана. Пустая строка значит
-     «можно». Одна проверка на удержание, двойной клик и кнопку «Править»:
-     раньше отказ в каждом входе был свой и молчал по-разному. */
+     «можно». Одна проверка на удержание и кнопку «Править»: раньше отказ в
+     каждом входе был свой и молчал по-разному. */
   function editReject(b) {
     if (!renderer || !state.world) return 'мир ещё не готов';
     if (!isPlaying()) return 'сейчас не партия';
@@ -2337,18 +2705,24 @@
     return '';
   }
 
-  function editOpen(b) {
+  function editOpen(b, source) {
     var why = editReject(b);
-    if (why) return null;
+    if (why) {
+      traceDiag('edit-refused', { source: source || '?', reason: why });
+      return null;
+    }
     var B = global.Buildings;
     if (state.edit) {
       if (state.edit.building !== b) editNote('сначала примените или отмените правку');
       return null;
     }
+    state.editSource = source || 'hold';
     state.edit = {
       building: b, orig: B.snapshot(b),
       mode: 'idle', changed: false, valid: true, reason: ''
     };
+    traceDiag('edit-open', { source: state.editSource, id: b.id,
+      x: b.x, y: b.y, type: B.typeOf(b) });
     renderer.editing = b;
     renderer.ghost = null;
     /* Табличка выбранного здания и панель найма закрываются: пока идёт правка,
@@ -2361,8 +2735,8 @@
   }
 
   /* «Править» из таблички выбранного здания. Тот же вход в режим, что у
-     удержания и двойного клика, но доступный одним нажатием: игрок, который не
-     знает про удержание, всё равно найдёт правку. Ведение при этом НЕ
+     удержания, но доступный одним нажатием: игрок, который не знает про
+     удержание, всё равно найдёт правку. Ведение при этом НЕ
      начинается — постройка поедет только по кнопке «Двигать» или повторному
      удержанию, иначе она ходила бы за курсором без нажатой кнопки. */
   function editSelected() {
@@ -2372,7 +2746,7 @@
     if (state.edit) return { ok: true, reason: '' };    // полоса уже открыта
     var why = editReject(b);
     if (why) return { ok: false, reason: why };
-    if (!editOpen(b)) return { ok: false, reason: 'правка не открылась' };
+    if (!editOpen(b, 'button')) return { ok: false, reason: 'правка не открылась' };
     return { ok: true, reason: '' };
   }
 
@@ -2554,31 +2928,83 @@
      дрожит на 5–12 px (на Windows-мыши это норма), поэтому к моменту срабатывания
      захват пересчитывается по ТЕКУЩЕЙ клетке: дом остаётся там, где стоял, а не
      прыгает под курсор на величину дрожи. */
-  function holdStart(b, grab) {
+  function holdStart(b, grab, pid) {
     holdCancel();
+    var id = ++editHoldSeq;
     var take = grab || { x: 0, y: 0 };
-    editHold = { timer: global.setTimeout(function () {
-      editHold = null;
-      if (!isPlaying() || !drag || drag.moved > HOLD_SLOP) return;
-      /* Захват — по клетке под курсором СЕЙЧАС. Ограничивать её пятном
-         постройки нельзя: именно ограничение и давало прыжок на клетку, когда
-         за полсекунды рука дрогнула за кромку. Без ограничения `editFollow`
-         ставит дом ровно туда, где он стоит (cell − grab = b.x), — игрок просил
-         «взять», а не «сдвинуть». */
+    var at = nowMs();
+    /* Две ступени, а не один таймер. Первая — «прошло 500 мс». Вторая — ещё
+       одна задача перед открытием: pointermove, уже стоящий в очереди событий
+       (главный поток был занят кадром), обязан успеть обновить `drag.moved` и
+       `lastPointer`. Иначе дрогнувшая рука открывала правку, хотя жест уже был
+       панорамой — ровно то, на что жалуются при загруженном главном потоке
+       (INPUT-01). Между ступенями отпускание/cancel/blur успевают её погасить. */
+    function arm() {
+      if (!editHold || editHold.id !== id) return;
+      editHold.timer = global.setTimeout(function () { openHold(); }, 0);
+    }
+
+    function openHold() {
+      if (!editHold || editHold.id !== id) return;
+      /* Отпущенная кнопка, второй палец и смена жеста снимают право. */
+      if (editHold.pid !== undefined && !pointers[editHold.pid]) {
+        finishHold('нет нажатия');
+        return;
+      }
+      if (!isPlaying() || !drag || drag.moved > HOLD_SLOP) {
+        finishHold('панорама или не партия');
+        return;
+      }
+      /* Под курсором всё ещё ТА ЖЕ постройка: удержание не открывается ни по
+         карте вообще, ни по другой постройке в частности. */
       if (lastPointer) {
         var cell = cellAt(lastPointer.x, lastPointer.y);
+        if (renderer.buildingAt(cell.x, cell.y) !== b) {
+          finishHold('под курсором другая клетка');
+          return;
+        }
+        /* Захват — по клетке под курсором СЕЙЧАС. Ограничивать её пятном
+           постройки нельзя: именно ограничение давало прыжок на клетку, когда
+           за полсекунды рука дрогнула за кромку. Без ограничения `editFollow`
+           ставит дом ровно туда, где он стоит (cell − grab = b.x). */
         take = { x: cell.x - b.x, y: cell.y - b.y };
       }
+      editHold = null;
+      traceDiag('edit-hold', { source: 'hold', id: b.id, pid: pid,
+        ms: Math.round(nowMs() - at),
+        moved: drag ? +drag.moved.toFixed(1) : null });
       if (state.edit) {
-        if (state.edit.building !== b) { editNote('сначала примените или отмените правку'); return; }
+        if (state.edit.building !== b) {
+          editNote('сначала примените или отмените правку');
+          traceDiag('edit-refused', { source: 'hold', reason: 'открыта другая правка' });
+          return;
+        }
         if (state.edit.mode !== 'move') editMove(take);
         return;
       }
-      if (editOpen(b)) editMove(take);
-    }, EDIT_HOLD_MS) };
+      if (editOpen(b, 'hold')) editMove(take);
+    }
+
+    editHold = {
+      id: id, pid: pid,
+      building: b,
+      grab: take,
+      at: at,
+      timer: global.setTimeout(arm, EDIT_HOLD_MS)
+    };
+  }
+
+  /* Записать причину, по которой удержание не стало правкой: без этого
+     «кликнул и ничего» не отличить от «не попал по зданию». */
+  function finishHold(why) {
+    if (editHold) traceDiag('hold-cancelled', { reason: why, pid: editHold.pid });
+    holdCancel();
   }
 
   function holdCancel() {
+    /* Поколение двигается и на отмене: callback, уже поставленный в очередь
+       таймеров, увидит чужой id и ничего не сделает. */
+    editHoldSeq++;
     if (!editHold) return;
     if (editHold.timer) global.clearTimeout(editHold.timer);
     editHold = null;
@@ -2614,7 +3040,8 @@
 
   function buildOptions() {
     var B = global.Buildings;
-    var logs = villageLogs();
+    /* В меню — СВОБОДНЫЕ брёвна: резерв ожидающих покупок уже обещан. */
+    var logs = availableLogs();
     var out = [];
     for (var i = 0; i < BUILD_MENU.length; i++) {
       var o = BUILD_MENU[i];
@@ -2656,7 +3083,9 @@
     return {
       type: e.type, variant: e.variant, name: info.name || e.type,
       price: e.price, rot: e.rot, x: e.x, y: e.y, w: fp.w, h: fp.h,
-      ok: !!e.ok, reason: e.reason || '', logs: villageLogs()
+      ok: !!e.ok, reason: e.reason || '', logs: availableLogs(),
+      available: availableLogs(), reserved: reservedLogs(),
+      pending: pendingStatus()
     };
   }
 
@@ -2688,7 +3117,9 @@
     var cand = global.Buildings.make({
       type: e.type, variant: e.variant, rot: e.rot, x: e.x, y: e.y
     });
-    var chk = global.Buildings.canPlace(state.world, state.buildings, cand, buildSiteOpts());
+    /* Ожидающие постройки — помеха для НОВОГО места (UX-01), хотя в мир они
+       не входят: иначе два быстрых клика отправили бы два дома в одну клетку. */
+    var chk = global.Buildings.canPlace(state.world, placeList(), cand, buildSiteOpts());
     e.ok = !!chk.ok;
     e.reason = chk.ok ? '' : chk.reason;
     renderer.ghost = {
@@ -2712,9 +3143,9 @@
     if (!renderer || !renderer.spritesFor(type)) {
       return { ok: false, reason: 'атлас постройки не загрузился' };
     }
-    var have = villageLogs();
+    var have = availableLogs();
     if (have < opt.price) {
-      return { ok: false, reason: 'не хватает брёвен: нужно ' + opt.price + ', у деревни ' + have };
+      return { ok: false, reason: 'не хватает брёвен: нужно ' + opt.price + ', свободно ' + have };
     }
     var c = buildStartCell();
     state.build = {
@@ -2789,16 +3220,16 @@
     if (cell) e.to = { x: cell.x, y: cell.y };
     var B = global.Buildings;
     var plan = B.planLine
-      ? B.planLine(state.world, state.buildings, lineSpec(), buildSiteOpts())
+      ? B.planLine(state.world, placeList(), lineSpec(), buildSiteOpts())
       : { ok: false, reason: 'серия не поддерживается', items: [] };
     var items = plan.items || [];
     e.items = items;
     e.count = items.length;
     e.cost = items.length * e.price;
-    e.afford = villageLogs() >= e.cost;
+    e.afford = availableLogs() >= e.cost;
     e.ok = plan.ok !== false && items.length > 0;
     e.reason = e.ok ? (e.afford ? '' : 'не хватает брёвен: нужно ' +
-      e.cost + ', у деревни ' + villageLogs()) : (plan.reason || 'нет места');
+      e.cost + ', свободно ' + availableLogs()) : (plan.reason || 'нет места');
     /* Негодная серия показывает ОДИН призрак в конце — чтобы было видно, во
        что она упирается; годная — все клетки через lineGhost. */
     if (!e.ok) {
@@ -2830,10 +3261,10 @@
     if (!renderer || !renderer.spritesFor(type)) {
       return { ok: false, reason: 'атлас постройки не загрузился' };
     }
-    var have = villageLogs();
+    var have = availableLogs();
     if (have < opt.price) {
       return { ok: false, reason: 'не хватает брёвен: нужно ' + opt.price +
-        ', у деревни ' + have };
+        ', свободно ' + have };
     }
     if (state.build) cancelBuild();
     if (state.line) lineCancel();
@@ -2890,8 +3321,23 @@
       x: e.from.x, y: e.from.y, x2: e.to.x, y2: e.to.y
     };
     if (state.netRole === 'client' && global.Net) {
-      sendCommand(spec, 'серия');
+      /* Серия — тоже ожидание: все дома встают сразу и одной пачкой, по id
+         результата они же и согласуются с миром. */
+      var items = (state.line.items || []).map(function (it) {
+        return { type: e.type, variant: e.variant, rot: e.rot, x: it.x, y: it.y };
+      });
+      var cost = e.cost;
+      var count = e.count;
+      sendCommand(spec, 'серия', function (n) {
+        if (global.Pending) {
+          global.Pending.addLine({
+            commandId: n, n: n, owner: state.playerOwner, items: items,
+            cost: cost, sentSeq: state.netSeq, label: 'серия ' + count
+          });
+        }
+      });
       lineCancel();
+      syncPending();
       return { ok: true, reason: '', pending: true };
     }
     spec.owner = state.playerOwner;
@@ -2947,20 +3393,33 @@
        место, цену и пришлёт снапшот; до него дом не появится. Цену сверяем и
        здесь: если у своей деревни заведомо не хватает брёвен, незачем гонять
        команду по кругу и ждать отказа. */
-    var have = villageLogs();
+    var have = availableLogs();
     if (have < e.price) {
-      var poor = 'не хватает брёвен: нужно ' + e.price + ', у деревни ' + have;
+      var poor = 'не хватает брёвен: нужно ' + e.price + ', свободно ' + have;
       buildNote(poor);
       return { ok: false, reason: poor };
     }
     if (state.netRole === 'client' && global.Net) {
+      /* Ожидание живёт в своём слое: дом стоит на месте уже в следующем кадре
+         (Pending → renderer.setPending) и не исчезает до снимка или отказа.
+         В state.buildings его НЕТ: мир и симуляция о нём не знают. */
+      var want = { type: e.type, variant: e.variant, rot: e.rot, x: e.x, y: e.y };
+      var price = e.price;
       sendCommand({
         type: 'build', buildingType: e.type, variant: e.variant,
         rot: e.rot, x: e.x, y: e.y
-      }, 'постройка');
+      }, 'постройка', function (n) {
+        if (global.Pending) {
+          global.Pending.addBuild({
+            commandId: n, n: n, owner: state.playerOwner, spec: want,
+            cost: price, sentSeq: state.netSeq, label: 'постройка'
+          });
+        }
+      });
       state.build = null;
       renderer.ghost = null;
       view.classList.remove('placing');
+      syncPending();
       emitBuild();
       return { ok: true, reason: '', pending: true };
     }
@@ -3210,6 +3669,11 @@
 
     view.addEventListener('pointerdown', function (e) {
       var p0 = pointerAt(e);
+      state.pointerTrace = state.pointerTrace || [];
+      state.pointerTrace.push({ at: Date.now(), type: 'down', id: e.pointerId,
+        x: Math.round(p0.x), y: Math.round(p0.y), button: e.button,
+        ptr: e.pointerType || 'mouse' });
+      if (state.pointerTrace.length > 24) state.pointerTrace.shift();
       state.touchUI = e.pointerType === 'touch' ? true : state.touchUI;
       pointers[e.pointerId] = {
         x: p0.x, y: p0.y, cx: e.clientX, cy: e.clientY,
@@ -3277,7 +3741,7 @@
       var cell = cellAt(p.x, p.y);
       var b = renderer.buildingAt(cell.x, cell.y);
       if (b && global.Buildings.isBuilding(b)) {
-        holdStart(b, { x: cell.x - b.x, y: cell.y - b.y });
+        holdStart(b, { x: cell.x - b.x, y: cell.y - b.y }, e.pointerId);
       }
     });
 
@@ -3461,6 +3925,13 @@
     /* Правая кнопка в партии — отмена постановки, а не меню браузера. */
     view.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 
+    /* Потеря захвата — тоже конец удержания. Это же событие приходит после
+       обычного pointerup, поэтому правку/ведение здесь НЕ подтверждаем и НЕ
+       отменяем: отпускание уже сделало своё дело выше. */
+    view.addEventListener('lostpointercapture', function (e) {
+      if (editHold && editHold.pid === e.pointerId) finishHold('потерян захват');
+    });
+
     view.addEventListener('pointercancel', function (e) {
       delete pointers[e.pointerId];
       if (pointerCount() >= 1) {
@@ -3479,20 +3950,15 @@
       if (state.edit && state.edit.mode === 'move') editAction('cancel');
     });
 
-    /* Двойной клик по СВОЕЙ постройке — второй, привычный всем вход в правку:
-       первый — удержание, третий — кнопка «Править» в табличке. Открывает
-       полосу правки, но НЕ берёт дом в руки: после двойного клика кнопка мыши
-       отпущена, и «ведение» поехало бы за курсором само. Дальше — «Двигать» или
-       удержание. */
+    /* ДВОЙНОЙ КЛИК ПРАВКУ НЕ ОТКРЫВАЕТ (INPUT-01). Вся карта — один canvas,
+       и dblclick не говорит, по какому зданию были оба клика: два быстрых
+       щелчка по разным домам или дребезг мыши открывали редактор случайно.
+       Осталось намеренное удержание (EDIT_HOLD_MS) и кнопка «Править» в
+       табличке. Слушатель не удалён из кода совсем — он должен явно
+       существовать, чтобы старые сборки/приёмки не искали его впустую, но
+       ничего не делает. */
     view.addEventListener('dblclick', function (e) {
-      if (!isPlaying() || state.build || state.order || state.edit) return;
-      var p = pointerAt(e);
-      var cell = cellAt(p.x, p.y);
-      var b = renderer && renderer.buildingAt(cell.x, cell.y);
-      if (!b) return;
-      var why = editReject(b);
-      if (why) { editNote(why); return; }
-      editOpen(b);
+      traceDiag('dblclick-ignored', { x: e.clientX, y: e.clientY });
     });
 
     /* Потеря фокуса окна (Alt+Tab, меню «Пуск», уход на другую вкладку) —
@@ -3802,6 +4268,13 @@
     noteSimDropped: noteSimDropped,
     goToEvent: goToEvent,
     applyNetCommand: applyNetCommand,
+    /* Диагностическая граница и выгрузка (LOOP-01/OBS-01). */
+    noteFault: noteFault,
+    exportDiagnostics: exportDiagnostics,
+    downloadDiagnostics: downloadDiagnostics,
+    captureCheckpoint: captureCheckpoint,
+    recoverFromCheckpoint: recoverFromCheckpoint,
+    traceDiag: traceDiag,
     applySnapshot: applySnapshot,
     tick: tick,
     draw: draw,

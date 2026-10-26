@@ -164,6 +164,11 @@
     this.villagerSprites = null;           // атлас жителя
     this.knightSprites = null;             // атлас рыцаря (armored_villager)
     this.ghost = null;                     // призрак размещения: {b, ok, reason, blocked}
+    /* Ожидающие подтверждения постройки сетевого клиента (UX-01). Это НЕ мир:
+       они не входят в state.buildings, не считаются симуляцией, работой и
+       проходимостью. Но рисуются тем же путём, что настоящие (eachSprite),
+       чтобы отклик на действие был в следующем кадре, а не после снимка. */
+    this.pending = [];
     this.lineGhost = null;                 // предпросмотр всей серии: {items, rot, type, ok}
     this.editing = null;                   // что правим: постройка или null (ведёт игра)
     this.textures = {};
@@ -268,6 +273,12 @@
     this.buildings = list || [];
     this.invalidateOrder();
     if (this.cache && (!opts || opts.minimap !== false)) this.buildMinimap();
+  };
+
+  /* Ожидающие постройки клиента. Список ведёт game/js/pending.js; рендер
+     только рисует. Пустой список — обычный кадр, без веток в горячем пути. */
+  Renderer.prototype.setPending = function (list) {
+    this.pending = list || [];
   };
 
   /* Сбросить только порядок отрисовки — без миникарты.
@@ -1497,6 +1508,15 @@
       for (var i = 0; i < this.buildings.length; i++) {
         if (this.buildings[i]) this.paintPlot(ctx, this.buildings[i], st);
       }
+      /* Ожидающие: участок под ними уже виден, но помечен «ещё не мир».
+         Тот же paintPlot, другой цвет — второй реализации участка нет. */
+      if (this.pending && this.pending.length) {
+        for (var pi = 0; pi < this.pending.length; pi++) {
+          if (this.pending[pi]) {
+            this.paintPlot(ctx, this.pending[pi], st, { ok: true, pending: true });
+          }
+        }
+      }
     }
     /* Призрак под курсором: тот же участок, только полупрозрачный и цветной.
        Зелёный — место годится, красный — нет. Цвета те же, что у пятна
@@ -1687,7 +1707,8 @@
     ctx.fillStyle = st.pattern || rgb([126, 178, 96]);
     ctx.fill();
     ctx.globalAlpha = 1;
-    ctx.fillStyle = ghost.ok ? 'rgba(126,232,164,0.30)' : 'rgba(240,104,86,0.34)';
+    ctx.fillStyle = ghost.pending ? 'rgba(126,190,232,0.22)'
+      : (ghost.ok ? 'rgba(126,232,164,0.30)' : 'rgba(240,104,86,0.34)');
     ctx.fill();
     ctx.restore();
   };
@@ -2143,6 +2164,11 @@
     if (!B || !w || !B.coverCells) return null;
     var out = {}, i, j, cells, c;
     var list = (this.buildings || []).slice();
+    // Ожидающая постройка закрывает мелочь так же, как настоящая: куст под
+    // ещё не подтверждённым домом читался бы как «внутри дома» (UX-01).
+    if (this.pending && this.pending.length) {
+      for (i = 0; i < this.pending.length; i++) list.push(this.pending[i]);
+    }
     // Призрак — та же постройка, только ещё не вставшая: спрашивается тем же
     // правилом, а не своим (иначе «что закроется» и «что закрыто» разошлись бы).
     if (this.ghost && this.ghost.b) list.push(this.ghost.b);
@@ -2174,6 +2200,19 @@
     var objs = w.objects;
     var mask = this.coverMask();
     var blds = this.showBuildings ? this.buildingOrder() : [];
+    /* Ожидающие — в тот же обход и ту же сортировку по глубине. Отдельный
+       проход после настоящих рисовал бы их поверх домов, которые ближе к
+       камере. Ключ чуть больше настоящего при равной клетке: настоящая
+       постройка важнее ожидающей. */
+    if (this.pending && this.pending.length && this.showBuildings) {
+      blds = blds.slice();
+      for (var pi = 0; pi < this.pending.length; pi++) {
+        var pb = this.pending[pi];
+        if (!pb) continue;
+        blds.push({ b: pb, key: (B ? B.depth(pb) : (pb.x + pb.y)) + 0.0001 });
+      }
+      blds.sort(function (a, c) { return a.key - c.key; });
+    }
     var vils = (onWalker && this.showVillagers) ? this.villagerOrder() : [];
     var i = 0, j = 0, k = 0, o, b, v;
     while (i < objs.length || j < blds.length || k < vils.length) {
@@ -2251,7 +2290,10 @@
       ctx.drawImage(spr.img, spr.sx, spr.sy, spr.sw, spr.sh,
         px - dw * spr.ax, py - dh * spr.ay, dw, dh);
     }, function (b) {
-      self.drawBuilding(ctx, b, z, 1);
+      /* Ожидающая постройка — та же модель, но приглушённая: игрок видит, что
+         действие принято, и что мир ещё не подтвердил его. Без второго слоя
+         «призрак → пусто → дом» давал пустой кадр (UX-01). */
+      self.drawBuilding(ctx, b, z, b.pending ? 0.62 : 1);
     }, function (v) {
       if (v.x < box.x0 || v.x > box.x1 || v.y < box.y0 || v.y > box.y1) return;
       /* Растворённый в казарме не рисуется вовсе; растворение и проявление

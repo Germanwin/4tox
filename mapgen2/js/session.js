@@ -1961,8 +1961,26 @@
     if (global.Villagers.beginFrame) global.Villagers.beginFrame(world);
     var felled = 0;
     for (var i = 0; i < villagers.length; i++) {
-      global.Villagers.update(villagers[i], world, renderer.villagerSprites, dt, opts);
-      felled += villagers[i].felled;
+      /* Граница на ОДНОМ жителе (LOOP-01): ошибка на элементе i не должна
+         оставлять дальнейших без шага в тишине. Сущность запоминается (id,
+         место, состояние, работа), ошибка НЕ глотается: она поднимается в
+         диагностическую границу кадра, которая явно остановит мир. Частично
+         применённый шаг этого жителя не повторяется молча. */
+      try {
+        global.Villagers.update(villagers[i], world, renderer.villagerSprites, dt, opts);
+        felled += villagers[i].felled;
+      } catch (e) {
+        var bad = villagers[i];
+        var info = bad ? {
+          id: bad.id, owner: bad.owner, index: i, state: bad.state,
+          x: bad.x, y: bad.y, warrior: !!bad.warrior, trainee: !!bad.trainee,
+          job: bad.job, employer: bad.employer && bad.employer.id,
+          target: bad.target && bad.target.id
+        } : { index: i };
+        world._faultEntity = info;
+        if (e && typeof e === 'object') e.__4tox = { phase: 'villagers', entity: info };
+        throw e;
+      }
     }
     /* Нет леса/пути — состояние мира, а не панели: событие пишется здесь. */
     watchWork(world, buildings, villagers, dt);
