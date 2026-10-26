@@ -1054,9 +1054,21 @@
     return 'здесь работает';
   }
 
+  /* Свободный гражданский — ОДИН предикат на наём, пакет, панель и проверки.
+     Воин и ученик свободными для работы НЕ считаются, хотя employer у них нет:
+     ровно это отклоняет canHire, и ровно это должен показывать интерфейс. */
+  function freeCivilian(v, owner) {
+    if (!v || v.dead) return false;
+    if (v.employer || v.warrior || v.trainee) return false;
+    if (owner === undefined || owner === null) return true;
+    return ownerId(v) === owner;
+  }
+
   function hireGroup(camp, v) {
     if (!v) return 'other';
     if (v.employer === camp) return 'here';
+    if (v.warrior) return 'warrior';
+    if (v.trainee) return 'trainee';
     if (!v.employer) return 'free';
     return 'other';
   }
@@ -1064,49 +1076,37 @@
   function hireGroupLabel(camp, group) {
     if (group === 'here') return 'работают здесь';
     if (group === 'free') return 'свободны';
+    if (group === 'warrior') return 'воины';
+    if (group === 'trainee') return 'учатся';
     return 'заняты';
   }
 
   /* ПОРЯДОК СПИСКА НАЙМА — одно правило на все интерфейсы найма.
-   *
-   * Три группы: нанятые в этой постройке, свободные, все остальные (занятые в
-   * другом месте — например, на другой работе). Внутри группы — по номеру
-   * жителя, стабильно. Если нанятых здесь нет, список начинается со
-   * свободных: пустой группы и заголовка не будет.
-   *
-   * Сортирует ДВИЖОК, а HUD только рисует этот список. Второго порядка в
-   * интерфейсе нет: иначе панель и пакетные кнопки разошлись бы на первой же
-   * правке.
-   *
-   * Чужие сюда не попадают вовсе: в «против деревни» и в сети список партии
-   * общий, но нанимать можно только своих, и canHire всё равно ответил бы
-   * «чужая постройка». Показывать такого человека в панели незачем.
-   */
+     Пять групп: нанятые здесь, свободные гражданские, воины, ученики, все
+     остальные (занятые в другом месте). Внутри группы — по номеру жителя.
+     Сортирует ДВИЖОК, а HUD только рисует этот список: второй порядок в
+     панели разошёлся бы с пакетными кнопками.
+
+     Чужие сюда не попадают вовсе: нанимать можно только своих, canHire всё
+     равно ответил бы «чужая постройка». */
   function hireOrder(camp, villagers) {
-    var here = [], free = [], other = [];
-    var list = villagers || [];
-    for (var i = 0; i < list.length; i++) {
+    var buckets = { here: [], free: [], warrior: [], trainee: [], other: [] };
+    var list = villagers || [], i;
+    for (i = 0; i < list.length; i++) {
       var v = list[i];
       if (!v || ownerId(v) !== ownerId(camp)) continue;
-      var item = { v: v, i: i };
-      var g = hireGroup(camp, v);
-      if (g === 'here') here.push(item);
-      else if (g === 'free') free.push(item);
-      else other.push(item);
+      buckets[hireGroup(camp, v)].push({ v: v, i: i });
     }
     function order(a, b) {
       var ia = typeof a.v.id === 'number' ? a.v.id : Infinity;
       var ib = typeof b.v.id === 'number' ? b.v.id : Infinity;
       return (ia - ib) || (a.i - b.i);
     }
-    here.sort(order);
-    free.sort(order);
-    other.sort(order);
     var out = [];
-    for (var g = 0; g < 3; g++) {
-      var part = g === 0 ? here : (g === 1 ? free : other);
-      for (var k = 0; k < part.length; k++) out.push(part[k].v);
-    }
+    ['here', 'free', 'warrior', 'trainee', 'other'].forEach(function (g) {
+      buckets[g].sort(order);
+      for (var k = 0; k < buckets[g].length; k++) out.push(buckets[g][k].v);
+    });
     return out;
   }
 
@@ -1123,6 +1123,7 @@
     var B = global.Buildings;
     if (!camp) return { ok: false, reason: 'нет постройки' };
     if (!v) return { ok: false, reason: 'нет жителя' };
+    if (v.dead) return { ok: false, reason: 'его уже нет' };
     if (ownerId(camp) !== ownerId(v)) {
       return { ok: false, reason: 'чужая постройка' };
     }
@@ -1383,9 +1384,10 @@
     return global.Buildings.trainingSlots(camp);
   }
 
-  /* Свободен ли житель для тренировки: не работает, не учится и не воин. */
+  /* Свободен ли житель для тренировки: не работает, не учится, не воин.
+     Тот же предикат, что freeCivilian, — одно правило на наём и тренировку. */
   function freeForTraining(v) {
-    return !!(v && !v.employer && !v.trainee && !v.warrior);
+    return freeCivilian(v);
   }
 
   /* Можно ли отправить этого жителя учиться в эту казарму. Причина отказа —
@@ -1599,59 +1601,179 @@
   /* ------------------------- пакетные действия --------------------------- *
    *
    * «Нанять свободных» и «Распустить всех» — те же canHire/hire/fire, только
-   * в цикле по порядку списка. Своих правил у пакета нет: сколько мест, кто
-   * свободен и почему нельзя — отвечает движок.
+   * в цикле. Своих правил у пакета нет: сколько мест, кто свободен и почему
+   * нельзя — отвечает движок.
    *
-   * batchInfo — сухой ответ для кнопок: сколько наймётся/распустится и почему
-   * нельзя, если нельзя. hireAll/fireAll делают то же самое по-настоящему.
+   * hireStatus — сухой ответ для панели и проверок: места, свободные
+   * гражданские, кто идёт, кто стоит и почему (нет леса/нет пути). Числа
+   * считает движок, HUD их только рисует.
+   *
+   * hireRank — порядок «Заполнить вакансии»: свои свободные гражданские,
+   * сначала достижимые, по ДЛИНЕ ПУТИ до двора лагеря, при равенстве — по
+   * номеру жителя. A* зовётся только по явному действию (нажатие), не в кадре;
+   * limit/max ограничивают работу. Недостижимый остаётся в списке с ok:false.
+   *
+   * batchInfo — прежняя форма ответа для кнопок и старых тестов: hire.free,
+   * hire.room, hire.count, hire.reason; fire.count/reason.
    * ---------------------------------------------------------------------- */
-  function batchInfo(camp, villagers) {
+  function hireStatus(camp, villagers) {
+    var B = global.Buildings;
     var out = {
-      hire: { ok: false, count: 0, free: 0, room: 0, reason: '' },
-      fire: { ok: false, count: 0, reason: '' }
+      ok: false, reason: '', status: '', text: '', note: '',
+      slots: 0, workers: 0, vacancies: 0, free: 0, count: 0,
+      working: 0, coming: 0, standing: 0, noPath: 0, noForest: 0
     };
-    if (!camp) {
-      out.hire.reason = 'нет постройки';
-      out.fire.reason = 'нет постройки';
+    if (!camp) { out.reason = 'нет постройки'; out.status = 'не место работы'; return out; }
+    if (isBarracks(camp)) {
+      out.reason = 'в казарме тренируют, а не нанимают';
+      out.status = 'не место работы';
+      out.slots = B.workSlots(camp);
       return out;
     }
+    if (!isWorkplace(camp)) {
+      out.reason = 'работать можно только в лагере лесоруба';
+      out.status = 'не место работы';
+      return out;
+    }
+    var owner = ownerId(camp), i, v;
+    out.slots = B.workSlots(camp);
+    var workers = workersOf(camp, villagers);
+    out.workers = workers.length;
+    out.vacancies = Math.max(0, out.slots - workers.length);
+    for (i = 0; i < (villagers || []).length; i++) {
+      if (freeCivilian(villagers[i], owner)) out.free++;
+    }
+    out.count = Math.min(out.free, out.vacancies);
+    for (i = 0; i < workers.length; i++) {
+      v = workers[i];
+      /* Причина простоя: агент 6 может отдать точное слово v.jobWhy;
+         до этого — по числу деревьев, которые видел последний поиск. */
+      var why = v.jobWhy === 'no-forest' || v.jobWhy === 'no-path'
+        ? v.jobWhy
+        : (typeof v.treesSeen === 'number' && v.treesSeen === 0 ? 'no-forest' : 'no-path');
+      if (v.state === 'toCamp' || v.state === 'take') out.coming++;
+      else if (v.state === 'stand') {
+        out.standing++;
+        if (why === 'no-forest') out.noForest++;
+        else out.noPath++;
+      } else if (v.state === 'toTree' || v.state === 'chop' ||
+                 v.state === 'carry' || v.state === 'drop') out.working++;
+    }
+    if (!out.workers) out.status = 'нет работников';
+    else if (out.standing === out.workers && out.noForest === out.standing) out.status = 'нет леса';
+    else if (out.standing === out.workers && out.noPath === out.standing) out.status = 'нет пути';
+    else if (out.coming > 0) out.status = 'идут';
+    else if (out.vacancies > 0) out.status = 'вакансии';
+    else out.status = 'занято';
+
+    if (out.vacancies <= 0) out.reason = slotReason(camp);
+    else if (!out.free) out.reason = 'нет свободных жителей';
+    else out.ok = true;
+
+    /* text — та же строка, что панель показывала раньше («работники 2 / 3»),
+       чтобы числа не разъезжались с HUD; всё остальное — отдельной заметкой. */
+    out.text = 'работники ' + out.workers + ' / ' + out.slots;
+    var notes = [];
+    if (out.coming) notes.push('идут ' + out.coming);
+    if (out.status === 'нет леса') notes.push('нет леса');
+    else if (out.status === 'нет пути') notes.push('нет пути');
+    else if (out.standing) notes.push('стоят ' + out.standing);
+    else if (!out.workers) notes.push('нет работников');
+    if (out.vacancies > 0 && out.status !== 'нет леса' && out.status !== 'нет пути') {
+      notes.push('вакансии ' + out.vacancies);
+    }
+    out.note = notes.join(' · ');
+    return out;
+  }
+
+  function hireRank(camp, villagers, opts) {
+    opts = opts || {};
+    var out = [], list = villagers || [], i, v;
+    var owner = ownerId(camp);
+    for (i = 0; i < list.length; i++) {
+      v = list[i];
+      if (!freeCivilian(v, owner)) continue;
+      out.push({ v: v, ok: true, len: Infinity });
+    }
+    function byId(a, b) {
+      var ia = typeof a.v.id === 'number' ? a.v.id : Infinity;
+      var ib = typeof b.v.id === 'number' ? b.v.id : Infinity;
+      return (ia - ib) || 0;
+    }
+    var world = opts.world || (camp && camp.world) || null;
+    for (i = 0; i < list.length && !world; i++) {
+      if (list[i] && list[i].world) world = list[i].world;
+    }
+    var V = global.Villagers, B = global.Buildings;
+    if (!world || opts.path === false || !V || !V.findPath) {
+      for (i = 0; i < out.length; i++) out[i].len = 0;
+      out.sort(byId);
+      return out;
+    }
+    var buildings = opts.buildings || world._buildings || [];
+    var solid = V.blockedMap(world, buildings);
+    var limit = opts.limit > 0 ? opts.limit : 6000;
+    var budget = Math.min(out.length, opts.max > 0 ? opts.max : 32);
+    for (i = 0; i < out.length; i++) {
+      var item = out[i], vv = item.v;
+      if (i >= budget) { item.ok = false; continue; }
+      var spot = B.workSpot ? B.workSpot(camp, { x: vv.x, y: vv.y }) : null;
+      var ap = (spot && V.approachCellOf) ? V.approachCellOf(camp, spot) : null;
+      if (!ap) { item.ok = false; continue; }
+      var sx = Math.floor(vv.x), sy = Math.floor(vv.y);
+      if (sx === ap.x && sy === ap.y) { item.ok = true; item.len = 0; continue; }
+      var p = V.findPath(world, solid, sx, sy, ap.x, ap.y,
+        { limit: limit, ignoreBudget: true });
+      if (p) { item.ok = true; item.len = p.length; }
+      else item.ok = false;
+    }
+    out.sort(function (a, b) {
+      if (a.ok !== b.ok) return a.ok ? -1 : 1;
+      if (a.ok && a.len !== b.len) return a.len - b.len;
+      return byId(a, b);
+    });
+    return out;
+  }
+
+  function batchInfo(camp, villagers) {
+    var info = hireStatus(camp, villagers);
+    var out = {
+      hire: { ok: info.ok, count: info.count, free: info.free,
+        room: info.vacancies, reason: info.reason },
+      fire: { ok: false, count: 0, reason: '' }
+    };
+    if (!camp) { out.fire.reason = 'нет постройки'; return out; }
     if (isBarracks(camp)) {
-      out.hire.reason = 'в казарме тренируют, а не нанимают';
       out.fire.reason = 'в казарме тренируют, а не нанимают';
       return out;
     }
-    var slots = global.Buildings.workSlots(camp);
     var workers = workersOf(camp, villagers);
-    var order = hireOrder(camp, villagers), free = [], i;
-    for (i = 0; i < order.length; i++) if (!order[i].employer) free.push(order[i]);
-    out.hire.free = free.length;
-    out.hire.room = Math.max(0, slots - workers.length);
-    out.hire.count = Math.min(free.length, out.hire.room);
-    if (!isWorkplace(camp)) out.hire.reason = 'работать можно только в лагере лесоруба';
-    else if (!free.length) out.hire.reason = 'нет свободных жителей';
-    else if (out.hire.room <= 0) out.hire.reason = slotReason(camp);
-    else out.hire.ok = true;
-
     out.fire.count = workers.length;
     if (!workers.length) out.fire.reason = noFireReason(camp);
     else out.fire.ok = true;
     return out;
   }
 
-  /* Нанять свободных, сколько помещается. Порядок — как в списке: свободные
-     по номеру жителя. Возвращает, сколько нанято; отказ — причиной движка. */
-  function hireAll(camp, villagers) {
-    var info = batchInfo(camp, villagers);
-    if (!info.hire.ok || info.hire.count <= 0) {
-      return { ok: false, reason: info.hire.reason || 'нанимать некого', hired: 0, count: 0 };
+  /* Нанять свободных, сколько помещается. Порядок — hireRank (по длине пути;
+     без мира/по явному запрету — по номеру жителя). Занятых не трогает. */
+  function hireAll(camp, villagers, opts) {
+    var info = hireStatus(camp, villagers);
+    if (!info.ok || info.count <= 0) {
+      return { ok: false, reason: info.reason || 'нанимать некого', hired: 0, count: 0 };
     }
-    var order = hireOrder(camp, villagers), hired = 0, i, res;
-    for (i = 0; i < order.length && hired < info.hire.count; i++) {
-      if (order[i].employer) continue;
-      res = hire(camp, order[i], villagers);
+    var rank = hireRank(camp, villagers, opts), hired = 0, i, res;
+    for (i = 0; i < rank.length && hired < info.count; i++) {
+      if (!rank[i].ok) continue;
+      res = hire(camp, rank[i].v, villagers);
       if (res.ok) hired++;
     }
-    if (!hired) return { ok: false, reason: info.hire.reason || 'нанимать некого', hired: 0, count: 0 };
+    if (!hired) {
+      var noWay = false;
+      for (i = 0; i < rank.length; i++) if (!rank[i].ok) { noWay = true; break; }
+      return { ok: false,
+        reason: noWay ? 'нет пути к лагерю' : (info.reason || 'нанимать некого'),
+        hired: 0, count: 0 };
+    }
     return { ok: true, reason: '', hired: hired, count: hired };
   }
 
@@ -1851,12 +1973,15 @@
     worksAt: worksAt,
     workWord: workWord,
     workMark: workMark,
+    freeCivilian: freeCivilian,
     hireGroup: hireGroup,
     hireGroupLabel: hireGroupLabel,
     hireOrder: hireOrder,
     canHire: canHire,
     hire: hire,
     fire: fire,
+    hireStatus: hireStatus,
+    hireRank: hireRank,
     batchInfo: batchInfo,
     hireAll: hireAll,
     fireAll: fireAll,
