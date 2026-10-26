@@ -44,7 +44,7 @@ const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
 const zlib = require('zlib');
-const { spawn } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
 const UPnP = require('./upnp');
 const Tunnel = require('./tunnel');
 
@@ -72,6 +72,48 @@ const PUBLIC_URL = typeof PUBLIC_URL_OPT === 'string' && PUBLIC_URL_OPT
 const HOST_OPT = opt('host', null);
 const HOST = typeof HOST_OPT === 'string' && HOST_OPT
   ? HOST_OPT : (LOCAL ? '127.0.0.1' : '0.0.0.0');
+
+/* ---- сборка и протокол (OBS-01) --------------------------------------- *
+ *
+ * По этим числам координатор и приёмка понимают, ЧТО запущено и совместимо
+ * ли оно: `build` — короткий git-хеш (без git — 'dev'), `protocol` — номер
+ * формата. `cmdProto` в стартовом пакете остаётся 2: контракт команд
+ * (sn, cmdDone, /api/command-state) не менялся, новые поля только добавлены
+ * (ageMs). Поэтому старый клиент не ломается, а новый видит номер протокола
+ * в /api/build и в старте. */
+const PROTOCOL = 3;
+const CMD_PROTO = 2;
+const STARTED_AT_MS = Date.now();
+let buildCache = null;
+function buildId() {
+  if (buildCache) return buildCache;
+  try {
+    const out = execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
+      cwd: ROOT, encoding: 'utf8', timeout: 1500,
+      stdio: ['ignore', 'pipe', 'ignore']
+    });
+    buildCache = String(out || '').trim().slice(0, 16) || 'dev';
+  } catch (e) {
+    buildCache = 'dev';
+  }
+  return buildCache;
+}
+function buildInfo() {
+  return {
+    ok: true, build: buildId(), protocol: PROTOCOL,
+    cmdProto: CMD_PROTO,
+    node: process.version, pid: process.pid,
+    uptimeMs: Math.round(process.uptime() * 1000),
+    startedAt: new Date(STARTED_AT_MS).toISOString()
+  };
+}
+function memInfo() {
+  const m = process.memoryUsage();
+  return {
+    heapUsed: m.heapUsed, heapTotal: m.heapTotal,
+    rss: m.rss, external: m.external
+  };
+}
 
 /* ------------------------------ движок -------------------------------- *
  * worldgen нужен, чтобы выбрать сид, на котором есть n площадок под деревни.
@@ -160,6 +202,108 @@ const net = {
 let publicIp = null;
 let tunnel = null;
 
+/* ---- кольцо журнала и задержка event loop (OBS-01) -------------------- *
+ *
+ * Журнал нужен не «на всякий случай», а чтобы после жалобы «лагало» было
+ * чем ответить без гаданий: когда открылся поток, когда ушёл снимок, что
+ * лежало в очередях gzip/сокета, сколько снимков склеилось, на каком этапе
+ * команда, почему хост объявлен потерянным, сколько занято heap/RSS.
+ *
+ * Размер фиксирован (200 записей на лобби и 200 на сервер). Токены и
+ * секреты в журнал не попадают: ключи с такими именами выбрасываются, а
+ * значения обрезаются. Иначе диагностика сама стала бы утечкой.
+ * ---------------------------------------------------------------------- */
+const RING_MAX = 200;
+const SERVER_LOG = [];
+const loopInfo = {
+  resolutionMs: 50, lastMs: 0, maxMs: 0, avgMs: 0, p95Ms: 0,
+  samples: 0, timer: null, hist: []
+};
+function cleanLogValue(v, depth) {
+  if (v === null || typeof v === 'number' || typeof v === 'boolean') return v;
+  if (typeof v === 'string') return v.length > 160 ? v.slice(0, 160) + '…' : v;
+  if (depth > 2) return '…';
+  if (Array.isArray(v)) {
+    return v.slice(0, 8).map(function (x) { return cleanLogValue(x, depth + 1); });
+  }
+  if (typeof v === 'object') {
+    const out = {};
+    Object.keys(v).slice(0, 24).forEach(function (k) {
+      if (/token|secret|authorization|password|cookie/i.test(k)) return;
+      out[k] = cleanLogValue(v[k], depth + 1);
+    });
+    return out;
+  }
+  return String(v);
+}
+function ringPush(arr, rec) {
+  arr.push(rec);
+  if (arr.length > RING_MAX) arr.splice(0, arr.length - RING_MAX);
+}
+function makeLogRec(room, kind, data) {
+  const rec = { t: now(), kind: String(kind || 'event') };
+  if (room) rec.room = room;
+  if (data && typeof data === 'object') {
+    Object.keys(data).slice(0, 24).forEach(function (k) {
+      if (/token|secret|authorization|cookie/i.test(k)) return;
+      rec[k] = cleanLogValue(data[k], 0);
+    });
+  }
+  return rec;
+}
+function lobbyLog(lobby, kind, data) {
+  if (!lobby) return;
+  if (!lobby.log) lobby.log = [];
+  ringPush(lobby.log, makeLogRec(lobby.code, kind, data));
+}
+function serverLog(kind, data) {
+  ringPush(SERVER_LOG, makeLogRec(null, kind, data));
+}
+function startLoopMonitor() {
+  if (loopInfo.timer) return;
+  let prev = Date.now();
+  loopInfo.timer = setInterval(function () {
+    const t = Date.now();
+    const lag = Math.max(0, t - prev - loopInfo.resolutionMs);
+    prev = t;
+    loopInfo.lastMs = lag;
+    if (lag > loopInfo.maxMs) loopInfo.maxMs = lag;
+    loopInfo.hist.push(lag);
+    if (loopInfo.hist.length > 120) loopInfo.hist.shift();
+    loopInfo.samples++;
+  }, loopInfo.resolutionMs);
+  if (typeof loopInfo.timer.unref === 'function') loopInfo.timer.unref();
+}
+function loopSnapshot() {
+  const h = loopInfo.hist.slice().sort(function (a, b) { return a - b; });
+  const sum = h.reduce(function (a, b) { return a + b; }, 0);
+  return {
+    resolutionMs: loopInfo.resolutionMs,
+    lastMs: loopInfo.lastMs,
+    maxMs: loopInfo.maxMs,
+    avgMs: h.length ? +(sum / h.length).toFixed(2) : 0,
+    p95Ms: h.length ? h[Math.min(h.length - 1, Math.floor(h.length * 0.95))] : 0,
+    samples: loopInfo.samples
+  };
+}
+
+/* Периодический снимок heap/event-loop в кольцо сервера: без него журнал
+   показывал бы только события, а «память росла» или «event loop встал» —
+   нет. Раз в 10 секунд, фиксированный размер кольца. */
+let diagTimer = null;
+function startDiagSampler() {
+  if (diagTimer) return;
+  diagTimer = setInterval(function () {
+    const m = memInfo();
+    serverLog('sample', {
+      heapUsed: m.heapUsed, heapTotal: m.heapTotal, rss: m.rss,
+      loopLastMs: loopInfo.lastMs, loopMaxMs: loopInfo.maxMs,
+      lobbies: lobbies.size
+    });
+  }, 10000);
+  if (typeof diagTimer.unref === 'function') diagTimer.unref();
+}
+
 function discoverPublicIp(done) {
   if (typeof fetch !== 'function') return done();
   const ctrl = new AbortController();
@@ -226,6 +370,7 @@ function serverView() {
     publicUrl: PUBLIC_URL,
     tunnel: tunnel && tunnel.url() ? tunnel.url() : null,
     tunnelState: tunnel ? tunnel.status() : 'off',
+    build: buildId(), protocol: PROTOCOL,
     net: netView
   };
 }
@@ -274,8 +419,15 @@ const CMD_RESULT_TTL = 60000;
    клиент видел «expired» у уже построенного дома. */
 const CMD_DELIVERED_TTL = 60000;
 /* Потолок карты результатов на лобби: без него долгая партия копила бы
-   записи о каждой команде до перезапуска сервера. */
-const CMD_RESULT_MAX = 1000;
+   записи о каждой команде до перезапуска сервера.
+   История ОТВЕТОВ (с причиной) — 2000: при 12 снимках в секунду и десятках
+   команд это часы игры. Вытесненные ответы не исчезают бесследно: их ключи и
+   состояние уходят в компактные «надгробия» cmdSeen (8192 на лобби), поэтому
+   повтор старой команды после >1000 действий всё ещё распознаётся как
+   повтор. Обе карты ограничены — память не растёт с длиной партии. */
+const CMD_RESULT_MAX = 2000;
+const CMD_SEEN_MAX = 8192;
+const CMD_SEEN_TTL = 5 * 60 * 1000;
 /* Сколько результатов хост кладёт в один снимок и сколько сервер готов
    принять: больше 20 хосту в кадр не влезает, но старый/новый хост может
    прислать пачку — лишнее не теряем молча, а просто не читаем сверх лимита. */
@@ -314,10 +466,41 @@ function makeLobby(max) {
     cmdSeq: 0,
     /* Окончательные результаты: ключ from: n → {from,n,sn,state,reason,
        at,decidedAt}. Отдаются GET /api/command-state, живут результат-TTL. */
-    cmdResults: new Map()
+    cmdResults: new Map(),
+    /* Компактные «надгробия» вытесненных результатов: ключ from: n →
+       {state,sn,at,decidedAt}. Нужны, чтобы повтор давно решённой команды
+       после вытеснения из cmdResults не выполнился второй раз. Размер
+       ограничен отдельно, поэтому идемпотентность живёт дольше истории
+       ответов, но остаётся ограниченной по памяти. */
+    cmdSeen: new Map(),
+    /* Кольцо журнала лобби и сводка закрытых потоков. */
+    log: [],
+    totals: {
+      streamsOpened: 0, streamsClosed: 0,
+      rawBytes: 0, gzipBytes: 0, wireBytes: 0,
+      dropped: 0, coalesced: 0, droppedControls: 0, errors: 0
+    },
+    lastSseAt: 0,
+    hostGoneReason: null,
+    /* Не чаще раза в секунду: иначе 12 снимков/с вытеснят из кольца всё
+       остальное (команды, ошибки, потерю хоста). */
+    lastSnapLogAt: 0
   };
   lobbies.set(c, lobby);
   return lobby;
+}
+
+/* Предупреждение о другой версии клиента. Это ТОЛЬКО поле: старт не
+   отказывает — иначе игрок с чуть более старым кэшем не смог бы играть
+   вовсе. Клиент показывает строку и продолжает. */
+function protocolWarning(lobby) {
+  const wrong = lobby.players.filter(function (p) {
+    return p.proto && p.proto !== PROTOCOL;
+  });
+  if (!wrong.length) return null;
+  return 'другая версия клиента: ' + wrong.map(function (p) {
+    return p.name + ' (протокол ' + p.proto + ')';
+  }).join(', ') + '; сервер ' + PROTOCOL + ' (' + buildId() + ')';
 }
 
 function lobbyView(lobby) {
@@ -326,6 +509,8 @@ function lobbyView(lobby) {
     code: lobby.code, max: lobby.max, started: lobby.started,
     seed: lobby.seed, size: lobby.size, hostId: lobby.hostId,
     hostGone: !!lobby.hostGone,
+    protocol: PROTOCOL, build: buildId(),
+    protocolWarning: protocolWarning(lobby),
     canStart: !lobby.started && !startBlock(lobby),
     players: lobby.players.map(function (p) {
       return { id: p.id, name: p.name, ready: p.ready, host: p.id === lobby.hostId,
@@ -339,7 +524,7 @@ function eventText(type, data) {
   return 'event: ' + type + '\ndata: ' + JSON.stringify(data) + '\n\n';
 }
 
-/* ---- поток клиента: SSE и его сжатие ---------------------------------- *
+/* ---- поток клиента: SSE, сжатие и backpressure ----------------------- *
  *
  * Заказчик 2026-10-25: «каждую игру игра лагает и у друзей огромный пинг».
  * Замер показал, что один снимок мира — 5,2 КБ JSON, 12,5 кадров в секунду,
@@ -359,8 +544,256 @@ function eventText(type, data) {
  * сжатие почти как у 9-го (606 против 658 байт), а стоит копейки.
  *
  * Клиент без gzip (старый прокси, curl) получает обычный текст: формат SSE
- * от этого не меняется. */
-function openEventStream(req, res) {
+ * от этого не меняется.
+ *
+ * ЧЕГО НЕ ХВАТАЛО ДО ПАТЧА (NET-01). Цепочка была
+ * `broadcast → gz.write → gz 'data' → res.write`, и её результат нигде не
+ * проверялся: `gz.write` мог вернуть false, `res.write` мог вернуть false, а
+ * ограничитель смотрел только на `res.writableLength`. Воспроизведение из
+ * ТЗ: 500 снимков по 24 000 символов синхронным burst при нечитающем
+ * клиенте — `queue: 0`, `gz.writableLength: 12 017 500`, `needDrain: true`.
+ * То есть 12 МБ лежали в zlib, а хост считал, что друзья успевают.
+ *
+ * Теперь у КАЖДОГО потока свой ограниченный конвейер:
+ *   • `gz.writableLength + gz.readableLength + res.writableLength` — один
+ *     видимый лимит; выше него в gzip не пишем;
+ *   • `gz.write()`/`res.write()` == false останавливает конвейер до 'drain'
+ *     соответствующего звена; при заполненном сокете gzip ставится на паузу;
+ *   • снимки не копятся: в очереди живёт ОДИН последний, более свежий
+ *     заменяет старый ДО сжатия (удалять байты из gzip нельзя — только целые
+ *     события); замены считаются dropped/coalesced;
+ *   • контрольные события (hello/start/lobby/command/command-result/host-*)
+ *     идут отдельной ограниченной очередью и снимками не вытесняются;
+ *   • 'error' у gz/res и 'close'/'abort' освобождают zlib, сокет, таймер и
+ *     запись в lobby.streams; медленный поток не задерживает быстрый.
+ * ---------------------------------------------------------------------- */
+const STREAM_SOCKET_HIGH = 64 * 1024;    // предел res.writableLength
+const STREAM_GZIP_HIGH = 64 * 1024;      // предел writable+readable у gzip
+const STREAM_CONTROL_MAX = 64;           // событий в контрольной очереди
+const STREAM_CONTROL_BYTES = 128 * 1024; // байт в контрольной очереди
+const STREAM_ERROR_MAX = 8;
+
+function byteLen(text) { return Buffer.byteLength(String(text), 'utf8'); }
+
+function streamSocketQueued(st) {
+  var res = st.res;
+  if (res && typeof res.writableLength === 'number') return res.writableLength;
+  return st.socketFallback || 0;
+}
+function streamGzipQueued(st) {
+  if (!st.gz) return 0;
+  return (st.gz.writableLength || 0) + (st.gz.readableLength || 0);
+}
+function streamPendingQueued(st) {
+  return (st.controlBytes || 0) + (st.pendingSnapshot ? st.pendingSnapshot.bytes : 0);
+}
+function streamQueueBytes(st) {
+  return streamSocketQueued(st) + streamGzipQueued(st) + streamPendingQueued(st);
+}
+/* Оценка того, сколько ещё байт ПРОВОДА ждёт: несжатый хвост gzip оцениваем
+   по уже сложившемуся коэффициенту сжатия этого потока. Это для диагностики;
+   queue для хоста — полная сумма стадий (см. streamQueueBytes), чтобы
+   12 МБ в gzip не показывались нулём. */
+function streamWireQueued(st) {
+  var socket = streamSocketQueued(st);
+  var gz = 0;
+  if (st.gz) {
+    var ratio = st.rawBytes > 0 ? Math.min(1, st.gzipBytes / st.rawBytes) : 0.25;
+    gz = (st.gz.readableLength || 0) +
+      Math.round((st.gz.writableLength || 0) * ratio);
+  }
+  return socket + gz + streamPendingQueued(st);
+}
+function streamCanWrite(st) {
+  if (!st.res || st.res.destroyed || st.res.writableEnded) return false;
+  if (streamSocketQueued(st) >= STREAM_SOCKET_HIGH) return false;
+  if (st.gz && streamGzipQueued(st) >= STREAM_GZIP_HIGH) return false;
+  return true;
+}
+function streamError(st, where, e) {
+  var msg = (e && e.message) ? e.message : String(e || 'ошибка');
+  st.errors.push({ t: now(), where: where, message: String(msg).slice(0, 160) });
+  if (st.errors.length > STREAM_ERROR_MAX) st.errors.shift();
+  if (st.lobby && st.lobby.totals) st.lobby.totals.errors++;
+  lobbyLog(st.lobby, 'stream-error', {
+    playerId: st.playerId, where: where, message: msg
+  });
+}
+
+/* Один шаг конвейера: контрольная очередь важнее снимков. Снимок в очереди
+   всегда последний — старые уже заменены при pushSnapshot. */
+function nextStreamJob(st) {
+  if (st.control.length) {
+    var c = st.control.shift();
+    st.controlBytes -= c.bytes;
+    return c;
+  }
+  if (st.pendingSnapshot) {
+    var s = st.pendingSnapshot;
+    st.pendingSnapshot = null;
+    return {
+      kind: 'snapshot', text: s.text, bytes: s.bytes,
+      seq: s.seq, at: s.at
+    };
+  }
+  return null;
+}
+
+function writeStreamJob(st, job) {
+  st.rawBytes += job.bytes;
+  st.lastWriteAt = now();
+  if (job.kind === 'snapshot') {
+    st.snapshotsSent++;
+    st.lastSnapshotAt = st.lastWriteAt;
+    st.lastSnapshotSeq = job.seq;
+    st.snapPushedAt = job.at || st.lastWriteAt;
+  } else {
+    st.controlsSent++;
+  }
+  if (st.gz) {
+    var gok = true;
+    try { gok = st.gz.write(job.text); }
+    catch (e) {
+      streamError(st, 'gzip-write', e);
+      onStreamClosed(st.lobby, st.player, st, 'gzip-write');
+      return;
+    }
+    if (gok === false) st.gzipBlocked = true;
+    return;
+  }
+  if (!st.res || st.res.destroyed || st.res.writableEnded) {
+    onStreamClosed(st.lobby, st.player, st, 'write-closed');
+    return;
+  }
+  var wok = true;
+  try { wok = st.res.write(job.text); }
+  catch (e) {
+    streamError(st, 'socket-write', e);
+    onStreamClosed(st.lobby, st.player, st, 'socket-write');
+    return;
+  }
+  st.wireBytes += job.bytes;
+  st.socketFallback += job.bytes;
+  if (wok === false) st.socketBlocked = true;
+}
+
+function pumpStream(st) {
+  if (st.closed || st.pumping) return;
+  st.pumping = true;
+  try {
+    while (!st.closed) {
+      if (st.socketBlocked || st.gzipBlocked) break;
+      if (!streamCanWrite(st)) break;
+      var job = nextStreamJob(st);
+      if (!job) break;
+      writeStreamJob(st, job);
+    }
+  } finally {
+    st.pumping = false;
+    if (st.pumpAgain && !st.closed) {
+      st.pumpAgain = false;
+      requestStreamPump(st, false);
+    }
+  }
+}
+function requestStreamPump(st, immediate) {
+  if (st.closed) return;
+  if (st.pumping) { st.pumpAgain = true; return; }
+  if (immediate) { pumpStream(st); return; }
+  if (st.pumpScheduled) return;
+  st.pumpScheduled = true;
+  setImmediate(function () {
+    st.pumpScheduled = false;
+    pumpStream(st);
+  });
+}
+
+/* Управляющее событие. Очередь ограничена; при переполнении выбрасываем
+   САМОЕ СТАРОЕ (свежие hello/start/command-result важнее) и честно считаем
+   это. Снимки сюда не попадают и вытеснить управление не могут. */
+function pushControl(st, text, type, meta) {
+  if (st.closed || !text) return false;
+  var bytes = byteLen(text);
+  if (st.control.length >= STREAM_CONTROL_MAX ||
+      st.controlBytes + bytes > STREAM_CONTROL_BYTES) {
+    var old = st.control.shift();
+    if (old) st.controlBytes -= old.bytes;
+    st.droppedControls++;
+    st.dropped++;
+    streamError(st, 'control-overflow', 'очередь управления переполнена');
+  }
+  st.control.push({
+    kind: 'control', text: text, bytes: bytes,
+    type: type || 'event', at: now(), meta: meta || null
+  });
+  st.controlBytes += bytes;
+  requestStreamPump(st, true);
+  return true;
+}
+
+/* Снимок — отдельный слот «последний». Пока предыдущий не записан в gzip,
+   новый заменяет его целиком: удалять часть сжатого потока нельзя, а
+   показывать друга устаревший кадр, когда есть свежий, незачем. */
+function pushSnapshot(st, text, seq, at) {
+  if (st.closed || !text) return false;
+  var bytes = byteLen(text);
+  if (st.pendingSnapshot) {
+    /* Счётчики видны в /api/stream-stats и /api/diag; в кольцо журнала
+       каждый такой кадр НЕ пишем: при 12 снимках/с и медленном друге это
+       вытеснило бы команды и потерю хоста. */
+    st.coalesced++;
+    st.dropped++;
+  }
+  st.pendingSnapshot = {
+    text: text, bytes: bytes,
+    seq: seq === undefined ? null : seq,
+    at: at || now()
+  };
+  requestStreamPump(st, true);
+  return true;
+}
+
+function streamStats(st) {
+  var socketQueued = streamSocketQueued(st);
+  var gzipQueued = streamGzipQueued(st);
+  var pending = streamPendingQueued(st);
+  var queue = socketQueued + gzipQueued + pending;
+  var ageMs = 0;
+  if (st.pendingSnapshot) {
+    ageMs = now() - st.pendingSnapshot.at;
+  } else if (queue > 0 && st.snapPushedAt) {
+    ageMs = now() - st.snapPushedAt;
+  }
+  return {
+    playerId: st.playerId,
+    name: st.name,
+    gzip: !!st.gz,
+    rawBytes: st.rawBytes,
+    gzipBytes: st.gz ? st.gzipBytes : 0,
+    wireBytes: st.wireBytes,
+    socketQueued: socketQueued,
+    gzipQueued: gzipQueued,
+    gzipWritable: st.gz ? (st.gz.writableLength || 0) : 0,
+    gzipReadable: st.gz ? (st.gz.readableLength || 0) : 0,
+    pending: pending,
+    controlPending: st.controlBytes || 0,
+    pendingSnapshotBytes: st.pendingSnapshot ? st.pendingSnapshot.bytes : 0,
+    dropped: st.dropped,
+    coalesced: st.coalesced,
+    droppedControls: st.droppedControls,
+    queue: queue,
+    wireQueue: streamWireQueued(st),
+    ageMs: Math.max(0, ageMs),
+    snapshotsSent: st.snapshotsSent,
+    controlsSent: st.controlsSent,
+    heartbeats: st.heartbeats || 0,
+    lastSnapshotSeq: st.lastSnapshotSeq === undefined ? null : st.lastSnapshotSeq,
+    errors: st.errors.slice(-STREAM_ERROR_MAX),
+    openedAt: st.openedAt
+  };
+}
+
+function openEventStream(req, res, lobby, p) {
   var gzip = /\bgzip\b/i.test(String(req.headers['accept-encoding'] || ''));
   var headers = {
     'Content-Type': 'text/event-stream; charset=utf-8',
@@ -374,57 +807,215 @@ function openEventStream(req, res) {
   /* Мелкие события не должны ждать 40 мс на Nagle — это заметно на каждом
      «готов» и команде. */
   try { if (res.socket) res.socket.setNoDelay(true); } catch (e) {}
+
+  var st = {
+    lobby: lobby, player: p, playerId: p.id, name: p.name,
+    req: req, res: res, gz: null,
+    openedAt: now(), closed: false, closedReason: null,
+    rawBytes: 0, gzipBytes: 0, wireBytes: 0,
+    control: [], controlBytes: 0, pendingSnapshot: null,
+    dropped: 0, coalesced: 0, droppedControls: 0,
+    snapshotsSent: 0, controlsSent: 0, heartbeats: 0,
+    errors: [], pumping: false, pumpAgain: false, pumpScheduled: false,
+    socketBlocked: false, gzipBlocked: false, socketFallback: 0,
+    lastWriteAt: 0, lastDrainAt: 0, lastSnapshotAt: 0,
+    lastSnapshotSeq: null, snapPushedAt: 0, heartbeat: null,
+    onResClose: null, onResError: null, onDrain: null
+  };
+  res.__stream = st;
+
   if (gzip) {
     var gz = zlib.createGzip({ level: 1, flush: zlib.constants.Z_SYNC_FLUSH });
-    gz.on('data', function (chunk) { try { res.write(chunk); } catch (e) {} });
-    gz.on('end', function () { try { res.end(); } catch (e) {} });
-    /* Ответ закрылся (вкладка ушла, прокси оборвал) — закрываем и zlib,
-       иначе он останется висеть вместе с буфером последнего кадра. */
-    res.on('close', function () { try { gz.end(); } catch (e) {} });
-    res.__gz = gz;
-    res.__write = function (text) { try { gz.write(text); } catch (e) {} };
-  } else {
-    res.__write = function (text) { try { res.write(text); } catch (e) {} };
+    st.gz = gz;
+    gz.on('data', function (chunk) {
+      if (st.closed) return;
+      st.gzipBytes += chunk.length;
+      st.wireBytes += chunk.length;
+      var ok = true;
+      try { ok = res.write(chunk); }
+      catch (e) {
+        streamError(st, 'gzip-data', e);
+        onStreamClosed(lobby, p, st, 'gzip-data');
+        return;
+      }
+      if (ok === false) {
+        st.socketBlocked = true;
+        /* Сокет не принимает — останавливаем и источник, иначе zlib будет
+           копить сжатое в readable-буфере. */
+        try { if (typeof gz.pause === 'function') gz.pause(); } catch (e) {}
+      } else {
+        requestStreamPump(st, false);
+      }
+    });
+    gz.on('drain', function () {
+      st.gzipBlocked = false;
+      requestStreamPump(st, false);
+    });
+    gz.on('end', function () {
+      if (st.closed) return;
+      try { res.end(); } catch (e) {}
+    });
+    gz.on('error', function (e) {
+      streamError(st, 'gzip', e);
+      onStreamClosed(lobby, p, st, 'gzip-error');
+    });
   }
-  if (res.flushHeaders) res.flushHeaders();
-  return res;
+
+  st.onDrain = function () {
+    st.socketBlocked = false;
+    st.socketFallback = 0;
+    st.lastDrainAt = now();
+    if (st.gz && st.gz.isPaused && st.gz.isPaused()) {
+      try { st.gz.resume(); } catch (e) {}
+    }
+    requestStreamPump(st, false);
+  };
+  st.onResClose = function () { onStreamClosed(lobby, p, st, 'res-close'); };
+  st.onResError = function (e) {
+    streamError(st, 'res', e);
+    onStreamClosed(lobby, p, st, 'res-error');
+  };
+  res.on('drain', st.onDrain);
+  res.on('close', st.onResClose);
+  res.on('error', st.onResError);
+  req.on('close', function () { onStreamClosed(lobby, p, st, 'req-close'); });
+
+  /* Heartbeat — тоже через общий конвейер: сырой res.write в обход
+     ограничителя вернул бы ту самую ошибку, из-за которой очередь врала. */
+  st.heartbeat = setInterval(function () {
+    st.heartbeats++;
+    pushControl(st, ': ping\n\n', 'heartbeat');
+  }, 15000);
+  if (typeof st.heartbeat.unref === 'function') st.heartbeat.unref();
+
+  lobby.lastSseAt = now();
+  lobby.totals.streamsOpened++;
+  lobbyLog(lobby, 'sse-open', {
+    playerId: p.id, name: p.name, gzip: !!st.gz,
+    streams: lobby.streams.size + 1
+  });
+  if (res.flushHeaders) {
+    try { res.flushHeaders(); } catch (e) {}
+  }
+  return st;
 }
 
-/* Запись события в поток: сжатый или обычный — решает openEventStream. */
+/* Освобождение потока. Вызывается ровно один раз на поток (closed-guard):
+   закрывает gzip, снимает таймер, чистит очереди, убирает запись из лобби. */
+function closeStream(st, reason, hard) {
+  if (st.closed) return;
+  st.closed = true;
+  st.closedReason = reason || st.closedReason;
+  if (st.heartbeat) { clearInterval(st.heartbeat); st.heartbeat = null; }
+  st.control = [];
+  st.controlBytes = 0;
+  st.pendingSnapshot = null;
+  if (st.gz) {
+    var gz = st.gz;
+    st.gz = null;
+    try { gz.removeAllListeners(); } catch (e) {}
+    try { gz.destroy(); } catch (e) {}
+  }
+  if (st.res) {
+    try { st.res.removeListener('drain', st.onDrain); } catch (e) {}
+    try { st.res.removeListener('close', st.onResClose); } catch (e) {}
+    try { st.res.removeListener('error', st.onResError); } catch (e) {}
+    try { if (!st.res.destroyed && !st.res.writableEnded) {
+      if (hard) st.res.destroy();
+      else st.res.end();
+    } } catch (e) {}
+  }
+  if (st.res) st.res.__stream = null;
+  if (st.lobby) {
+    st.lobby.lastSseAt = now();
+    if (st.lobby.totals) {
+      st.lobby.totals.streamsClosed++;
+      st.lobby.totals.rawBytes += st.rawBytes;
+      st.lobby.totals.gzipBytes += st.gzipBytes;
+      st.lobby.totals.wireBytes += st.wireBytes;
+      st.lobby.totals.dropped += st.dropped;
+      st.lobby.totals.coalesced += st.coalesced;
+      st.lobby.totals.droppedControls += st.droppedControls;
+    }
+    lobbyLog(st.lobby, 'sse-close', {
+      playerId: st.playerId, reason: st.closedReason,
+      rawBytes: st.rawBytes, gzipBytes: st.gzipBytes, wireBytes: st.wireBytes,
+      dropped: st.dropped, coalesced: st.coalesced,
+      droppedControls: st.droppedControls,
+      errors: st.errors.length
+    });
+  }
+}
+
+/* Закрытие соединения. Если поток уже заменён новым (переподключение), не
+   объявляем peer-left и не помечаем игрока offline: живой поток важнее
+   запоздалого close. */
+function onStreamClosed(lobby, p, st, reason) {
+  if (st.closed) return;
+  var current = lobby.streams.get(p.id) === st;
+  if (current) lobby.streams.delete(p.id);
+  closeStream(st, reason, true);
+  if (!current) return;
+  if (lobby.players.indexOf(p) < 0) return;
+  if (lobby.started) {
+    broadcast(lobby, 'peer-left', {
+      id: p.id, name: p.name,
+      owner: p.owner === undefined ? 0 : p.owner,
+      host: p.id === lobby.hostId
+    });
+    markOffline(lobby, p);
+    return;
+  }
+  markOffline(lobby, p);
+}
+
+/* Запись события в поток (совместимость с прежними вызовами). */
 function streamWrite(res, text) {
-  if (res.__write) res.__write(text);
-  else try { res.write(text); } catch (e) { /* поток уже закрыт */ }
+  var st = res && res.__stream;
+  if (st) { pushControl(st, text, 'raw'); return; }
+  try { res.write(text); } catch (e) { /* поток уже закрыт */ }
 }
 
 function send(res, type, data) {
   streamWrite(res, eventText(type, data));
 }
 
-/* opts.drop — событие можно ПРОПУСТИТЬ для отстающего потока. Так делают
-   только снимки: следующий снимок абсолютный (мир + битовая карта убранного),
-   поэтому потеря промежуточного ничего не ломает. Без этого медленный друг
-   копил бы в памяти сервера мегабайты SSE, и лагали бы все. */
+/* Снимки — в слот «последний» каждого потока (coalesce), всё остальное — в
+   отдельную управляющую очередь. Так тысяча промежуточных кадров не может
+   вытеснить command-result или host-left. */
 function broadcast(lobby, type, data, exceptId, opts) {
-  const text = eventText(type, data);
-  lobby.streams.forEach(function (res, id) {
+  var text;
+  try { text = eventText(type, data); }
+  catch (e) { lobbyLog(lobby, 'event-error', { type: type, message: e.message }); return; }
+  var seq = data && typeof data.seq === 'number' ? data.seq : null;
+  lobby.streams.forEach(function (st, id) {
     if (exceptId !== undefined && id === exceptId) return;
-    if (opts && opts.drop && res.writableLength > 256 * 1024) return;
-    streamWrite(res, text);
+    if (type === 'snapshot') pushSnapshot(st, text, seq, now());
+    else pushControl(st, text, type);
   });
 }
 
-/* Сколько байт ещё не ушло в сокет самого отстающего потока (после сжатия).
-   Хост по этому числу понимает, что друзья не успевают, и редеет кадры —
-   ДО того, как очередь в роутере превратится в секундный пинг. Раньше
-   хост мерил круг до СВОЕГО loopback-сервера (2–7 мс) и потому никогда
-   не замечал медленного друга. */
+/* Сколько байт ещё не ушло самому отстающему потоку. В отличие от прежней
+   версии это НЕ только res.writableLength: в сумму входят буферы gzip и
+   слот ожидающего снимка. Именно по этому числу хост редеет кадры
+   (play.js: NET_QUEUE_HIGH = 24 КБ), поэтому 12 МБ в zlib больше не могут
+   выглядеть как queue: 0. */
 function streamBacklog(lobby) {
-  var max = 0;
-  lobby.streams.forEach(function (res) {
-    var q = res.writableLength || 0;
+  var max = 0, total = 0, count = 0, maxAge = 0, wireMax = 0;
+  lobby.streams.forEach(function (st) {
+    if (st.closed) return;
+    var q = streamQueueBytes(st);
+    var w = streamWireQueued(st);
+    var age = 0;
+    if (st.pendingSnapshot) age = now() - st.pendingSnapshot.at;
+    else if (q > 0 && st.snapPushedAt) age = now() - st.snapPushedAt;
     if (q > max) max = q;
+    if (w > wireMax) wireMax = w;
+    if (age > maxAge) maxAge = age;
+    total += q;
+    count++;
   });
-  return { queue: max, streams: lobby.streams.size };
+  return { queue: max, total: total, streams: count, ageMs: maxAge, wireQueue: wireMax };
 }
 
 function playerByToken(lobby, t) {
@@ -440,14 +1031,17 @@ function lobbyForRequest(q) {
 /* Игрок приходит и уходит, а лобби живёт. Связь рвётся молча (ноутбук уснул,
    Wi-Fi моргнул) — это не повод выкидывать готового игрока: помечаем offline,
    даём OFFLINE_GRACE на переподключение и только потом убираем. */
-function addPlayer(lobby, name) {
+function addPlayer(lobby, name, proto, clientBuild) {
   const colors = ['#4a90d9', '#d94a4a', '#9b59b6', '#e0a030'];
   const id = lobby.nextId++;
   const p = {
     id: id, name: String(name || ('Игрок ' + (id + 1))).slice(0, 24),
     ready: false, token: token(), color: colors[id % colors.length],
     joined: now(), lastSeen: now(), online: true, goneAt: 0, timer: null,
-    owner: undefined
+    owner: undefined,
+    /* Версия клиента — только для предупреждения, не для отказа. */
+    proto: (typeof proto === 'number' && isFinite(proto)) ? proto : 0,
+    clientBuild: clientBuild ? String(clientBuild).slice(0, 32) : ''
   };
   lobby.players.push(p);
   return p;
@@ -460,10 +1054,23 @@ function touchPlayer(p) {
   if (p) p.lastSeen = now();
 }
 
-function hostLeft(lobby, p) {
+function hostLeft(lobby, p, reason) {
   if (lobby.hostGone) return;
   lobby.hostGone = true;
+  lobby.hostGoneReason = reason || 'host-lost';
   if (lobby.hostTimer) { clearTimeout(lobby.hostTimer); lobby.hostTimer = null; }
+  const t = now();
+  lobbyLog(lobby, 'host-timeout', {
+    playerId: p.id, name: p.name, reason: lobby.hostGoneReason,
+    lastSeenAgeMs: Math.max(0, t - (p.lastSeen || 0)),
+    lastSnapshotAt: lobby.lastSnapAt || null,
+    lastSnapshotAgeMs: lobby.lastSnapAt ? Math.max(0, t - lobby.lastSnapAt) : null,
+    lastSseAt: lobby.lastSseAt || null,
+    lastSseAgeMs: lobby.lastSseAt ? Math.max(0, t - lobby.lastSseAt) : null,
+    snapSeq: lobby.lastSnapSeq || 0,
+    cmdQueue: lobby.cmdQueue.length,
+    graceMs: HOST_GRACE
+  });
   broadcast(lobby, 'host-left', {
     id: p.id, name: p.name, owner: p.owner === undefined ? 0 : p.owner, host: true
   });
@@ -475,6 +1082,12 @@ function hostBack(lobby, p) {
   if (!lobby.hostGone) return;
   lobby.hostGone = false;
   if (lobby.hostTimer) { clearTimeout(lobby.hostTimer); lobby.hostTimer = null; }
+  lobby.hostGoneReason = null;
+  lobbyLog(lobby, 'host-back', {
+    playerId: p.id, name: p.name,
+    lastSnapshotAgeMs: lobby.lastSnapAt ? Math.max(0, now() - lobby.lastSnapAt) : null,
+    snapSeq: lobby.lastSnapSeq || 0
+  });
   broadcast(lobby, 'host-back', {
     id: p.id, name: p.name, owner: p.owner === undefined ? 0 : p.owner, host: true
   });
@@ -484,11 +1097,16 @@ function hostBack(lobby, p) {
 
 function dropPlayer(lobby, p) {
   if (p.timer) { clearTimeout(p.timer); p.timer = null; }
+  lobbyLog(lobby, 'player-dropped', {
+    playerId: p.id, name: p.name, host: p.id === lobby.hostId,
+    lastSeenAgeMs: Math.max(0, now() - (p.lastSeen || 0)),
+    snapSeq: lobby.lastSnapSeq || 0
+  });
   lobby.players = lobby.players.filter(function (x) { return x !== p; });
   const stream = lobby.streams.get(p.id);
   if (stream) {
     lobby.streams.delete(p.id);
-    try { stream.end(); } catch (e) {}
+    closeStream(stream, 'player-dropped', true);
   }
   if (!lobby.players.length) {
     if (lobby.hostTimer) clearTimeout(lobby.hostTimer);
@@ -498,7 +1116,7 @@ function dropPlayer(lobby, p) {
   if (lobby.hostId === p.id && lobby.started) {
     /* В партии мир живёт во вкладке хоста: передать его нельзя. Честно
        говорим клиентам, что игра остановлена, вместо замершего кадра. */
-    hostLeft(lobby, p);
+    hostLeft(lobby, p, 'player-left');
   } else if (lobby.started) {
     broadcast(lobby, 'peer-left', {
       id: p.id, name: p.name,
@@ -521,6 +1139,12 @@ function markOffline(lobby, p) {
   if (lobby.streams.has(p.id)) return;
   p.online = false;
   p.goneAt = now();
+  lobbyLog(lobby, 'player-offline', {
+    playerId: p.id, name: p.name, host: p.id === lobby.hostId,
+    started: !!lobby.started,
+    lastSeenAgeMs: Math.max(0, now() - (p.lastSeen || 0)),
+    snapSeq: lobby.lastSnapSeq || 0
+  });
   broadcast(lobby, 'lobby', lobbyView(lobby));
   if (lobby.started) {
     /* Хосту даём время вернуться: EventSource переподключается сам. Если за
@@ -534,7 +1158,7 @@ function markOffline(lobby, p) {
           markOffline(lobby, p);          // продлить: хост ещё шлёт снимки
           return;
         }
-        if (lobbies.get(lobby.code) === lobby) hostLeft(lobby, p);
+        if (lobbies.get(lobby.code) === lobby) hostLeft(lobby, p, 'host-timeout');
       }, HOST_GRACE);
       if (typeof lobby.hostTimer.unref === 'function') lobby.hostTimer.unref();
     }
@@ -576,12 +1200,28 @@ function cmdKey(from, n) {
 function cmdResultOf(lobby, from, n) {
   const key = cmdKey(from, n);
   const r = lobby.cmdResults.get(key);
-  if (!r) return null;
-  if (r.decidedAt && now() - r.decidedAt > CMD_RESULT_TTL) {
-    lobby.cmdResults.delete(key);
+  if (r) {
+    if (r.decidedAt && now() - r.decidedAt > CMD_RESULT_TTL) {
+      lobby.cmdResults.delete(key);
+    } else {
+      return r;
+    }
+  }
+  /* История ответов ограничена. Вытесненный ответ не должен превращать
+     повтор в новое действие: компактное «надгробие» помнит пару (from,n) и
+     итоговое состояние, пока не истечёт его собственный, более долгий TTL. */
+  const seen = lobby.cmdSeen.get(key);
+  if (!seen) return null;
+  if (seen.decidedAt && now() - seen.decidedAt > CMD_SEEN_TTL) {
+    lobby.cmdSeen.delete(key);
     return null;
   }
-  return r;
+  return {
+    from: from, n: n, sn: seen.sn || 0, state: seen.state,
+    reason: seen.reason || '', at: seen.at || 0,
+    decidedAt: seen.decidedAt || 0, compact: true,
+    ids: seen.ids || [], appliedSeq: seen.appliedSeq || 0
+  };
 }
 
 function findQueued(lobby, from, n) {
@@ -597,14 +1237,37 @@ function rememberCmdResult(lobby, from, n, state, reason, extra) {
   const key = cmdKey(from, n);
   const prev = lobby.cmdResults.get(key);
   /* Первое решение — окончательное: просрочка не должна переписать уже
-     доехавшее «applied», а повторный cmdDone — «rejected». */
-  if (prev && CMD_FINAL[prev.state]) return prev;
+     доехавшее «applied», а повторный cmdDone — «rejected». Но если повтор
+     принёс ids/appliedSeq, которых не было в первом ответе (например,
+     сначала сработал cmdAck, потом точный cmdDone), их НЕ ТЕРЯЕМ. */
+  if (prev && CMD_FINAL[prev.state]) {
+    if (extra && Array.isArray(extra.ids) && extra.ids.length) {
+      prev.ids = extra.ids.slice(0, 32).map(function (x) { return String(x).slice(0, 40); });
+    }
+    if (extra && typeof extra.appliedSeq === 'number' && isFinite(extra.appliedSeq)) {
+      prev.appliedSeq = extra.appliedSeq;
+    }
+    if (lobby.cmdSeen.has(key)) {
+      const seen = lobby.cmdSeen.get(key);
+      if (prev.ids) seen.ids = prev.ids;
+      if (prev.appliedSeq) seen.appliedSeq = prev.appliedSeq;
+    }
+    return prev;
+  }
   const rec = {
     from: from, n: n,
     sn: extra && typeof extra.sn === 'number' ? extra.sn : (prev && prev.sn) || 0,
     state: state,
     reason: reason ? String(reason).slice(0, 160) : '',
     at: (extra && typeof extra.at === 'number') ? extra.at : (prev && prev.at) || now(),
+    /* UX-01: какие постройки созданы/изменены и на какой версии мира это
+       применилось. Сервер эти поля НЕ ВЫБРАСЫВАЕТ: иначе клиент не может
+       сопоставить подтверждение с объектом после возврата в партию. */
+    ids: Array.isArray(extra && extra.ids)
+      ? extra.ids.slice(0, 32).map(function (x) { return String(x).slice(0, 40); })
+      : (prev && prev.ids) || [],
+    appliedSeq: (extra && typeof extra.appliedSeq === 'number' && isFinite(extra.appliedSeq))
+      ? extra.appliedSeq : ((prev && prev.appliedSeq) || 0),
     decidedAt: now()
   };
   lobby.cmdResults.set(key, rec);
@@ -612,6 +1275,18 @@ function rememberCmdResult(lobby, from, n, state, reason, extra) {
     const first = lobby.cmdResults.keys().next();
     if (first.done) break;
     lobby.cmdResults.delete(first.value);
+  }
+  /* «Надгробие» — без тела команды и без длинной причины: только то, что
+     нужно, чтобы повтор не выполнился второй раз. */
+  lobby.cmdSeen.set(key, {
+    state: rec.state, sn: rec.sn, at: rec.at,
+    reason: rec.reason.slice(0, 80), decidedAt: rec.decidedAt,
+    ids: rec.ids, appliedSeq: rec.appliedSeq
+  });
+  while (lobby.cmdSeen.size > CMD_SEEN_MAX) {
+    const firstSeen = lobby.cmdSeen.keys().next();
+    if (firstSeen.done) break;
+    lobby.cmdSeen.delete(firstSeen.value);
   }
   return rec;
 }
@@ -622,15 +1297,25 @@ function rememberCmdResult(lobby, from, n, state, reason, extra) {
 function notifyCmdResult(lobby, rec) {
   const stream = lobby.streams.get(rec.from);
   if (!stream) return;
-  streamWrite(stream, eventText('command-result', {
-    n: rec.n, sn: rec.sn, state: rec.state, reason: rec.reason
-  }));
+  pushControl(stream, eventText('command-result', {
+    n: rec.n, sn: rec.sn, state: rec.state, reason: rec.reason,
+    commandId: rec.n, ageMs: Math.max(0, now() - (rec.at || now())),
+    ids: rec.ids || [], appliedSeq: rec.appliedSeq || 0
+  }), 'command-result');
 }
 
 function decideCmd(lobby, q, state, reason) {
   const rec = rememberCmdResult(lobby, q.from, q.n, state, reason,
     { sn: q.sn, at: q.at });
-  if (rec) notifyCmdResult(lobby, rec);
+  if (rec) {
+    lobbyLog(lobby, 'cmd-decided', {
+      from: q.from, n: q.n, sn: q.sn, type: q.type || '',
+      state: rec.state, reason: rec.reason,
+      ids: (rec.ids || []).length, appliedSeq: rec.appliedSeq || 0,
+      ageMs: Math.max(0, now() - (q.at || now()))
+    });
+    notifyCmdResult(lobby, rec);
+  }
   return rec;
 }
 
@@ -690,7 +1375,8 @@ function pendingCommands(lobby, snapshot) {
       if (from === undefined || typeof n !== 'number') continue;
       const q = dropQueued(lobby, from, n);
       const rec = rememberCmdResult(lobby, from, n, state, d.reason,
-        { sn: (q && q.sn) || d.sn, at: q && q.at });
+        { sn: (q && q.sn) || d.sn, at: q && q.at,
+          ids: d.ids, appliedSeq: d.appliedSeq });
       /* Повтор того же результата в соседних снимках не должен слать
          command-result второй раз. */
       if (rec && q) notifyCmdResult(lobby, rec);
@@ -723,10 +1409,24 @@ function pendingCommands(lobby, snapshot) {
   lobby.cmdQueue.sort(function (a, b) { return (a.sn || 0) - (b.sn || 0); });
   const t = now();
   const live = new Set();
+  let fresh = 0, maxAge = 0;
   for (const c of lobby.cmdQueue) {
     const key = cmdKey(c.from, c.n);
     live.add(key);
+    if (!lobby.cmdDelivered.has(key)) fresh++;
+    /* Возраст считает СЕРВЕР по своим часам на момент выдачи. Хост берёт
+       ageMs, а не cmd.at: часы компьютера хоста и сервера расходятся, и
+       прежняя проверка `Date.now() - cmd.at > 20000` объявляла свежую
+       команду просроченной (или наоборот). `at` оставлен для совместимости. */
+    c.ageMs = Math.max(0, t - (c.at || t));
+    if (c.ageMs > maxAge) maxAge = c.ageMs;
     lobby.cmdDelivered.set(key, t);
+  }
+  if (fresh) {
+    lobbyLog(lobby, 'commands-delivered', {
+      count: fresh, queue: lobby.cmdQueue.length,
+      maxAgeMs: maxAge, oldestSn: lobby.cmdQueue.length ? lobby.cmdQueue[0].sn : null
+    });
   }
   /* Не копим отметки о командах, которых уже нет в очереди. */
   if (lobby.cmdDelivered.size > lobby.cmdQueue.length) {
@@ -796,14 +1496,26 @@ function startLobby(lobby) {
     snapGzip: true,
     /* Протокол команд: 2 — есть sn, cmdDone и /api/command-state. Клиент по
        этому флагу понимает, что 200 на /api/command — только «в очереди», и
-       ждёт конечный результат опросом. Старый сервер флага не шлёт. */
-    cmdProto: 2,
+       ждёт конечный результат опросом. Старый сервер флага не шлёт. Формат
+       команд не ломался, поэтому cmdProto остаётся 2; общий номер протокола
+       сервера (3) и сборка едут отдельными полями — по ним видно, что
+       запущено, и они не меняют поведение старого клиента. */
+    cmdProto: CMD_PROTO,
+    protocol: PROTOCOL,
+    build: buildId(),
+    protocolWarning: protocolWarning(lobby),
+    serverNow: now(),
     cmdTtl: CMD_TTL,
     players: lobby.players.map(function (p, i) {
       return { id: p.id, name: p.name, owner: i, color: p.color };
     })
   };
   lobby.startPayload = payload;
+  lobbyLog(lobby, 'start', {
+    seed: start.seed, size: start.size, players: lobby.players.length,
+    build: buildId(), protocol: PROTOCOL,
+    protocolWarning: payload.protocolWarning
+  });
   broadcast(lobby, 'start', payload);
   console.log('  лобби ' + lobby.code + ': старт, сид «' + start.seed + '», ' +
     lobby.players.length + ' игрока');
@@ -869,28 +1581,116 @@ function serveStatic(req, res) {
  * ВВЕРХ, тот самый общий и узкий канал. gzip сжимает тело в ~7 раз, и
  * `CompressionStream` в браузере делает то же, что здесь `gunzip`.
  * `maxOutputLength` не даёт сжатому телу развернуться в гигабайты. */
-function readJson(req, cb) {
+/* Тело принимаем и обычным, и сжатым. В VPS-режиме снимок идёт с домашнего
+ * интернета хоста на релей; 5,2 КБ двенадцать раз в секунду — это 520 Кбит/с
+ * ВВЕРХ, тот самый общий и узкий канал. gzip сжимает тело в ~7 раз, и
+ * `CompressionStream` в браузере делает то же, что здесь `gunzip`.
+ * `maxOutputLength` не даёт сжатому телу развернуться в гигабайты.
+ *
+ * РАЗБОР И ВЫПОЛНЕНИЕ РАЗДЕЛЕНЫ. Раньше JSON.parse и бизнес-callback были в
+ * одном try/catch: исключение обработчика (например, `.find` по undefined)
+ * ловилось как «битый JSON» и вызывало cb(null) ВТОРОЙ раз — уже после того,
+ * как обработчик успел ответить, или вместо честной 500. Теперь:
+ *   • битый JSON / битый gzip / пустое тело → 400;
+ *   • слишком большое тело → 413 и закрытие;
+ *   • исключение callback → 500 ровно один раз, если ответа ещё не было;
+ *     если ответ уже ушёл — сокет закрывается, второго ответа нет;
+ *   • обрыв сокета → никакого ответа и никакого callback.
+ * `send` внутри readJson — единственный писатель ошибок разбора.
+ */
+const MAX_BODY = 4 * 1024 * 1024;
+const MAX_UNZIP = 8 * 1024 * 1024;
+
+function readJson(req, res, cb) {
   const chunks = [];
   let size = 0;
+  let settled = false;
+  let aborted = false;
+
+  function send(status, obj) {
+    if (settled || aborted) return;
+    settled = true;
+    try { json(res, status, obj); } catch (e) { try { res.destroy(); } catch (x) {} }
+  }
+  function dispatch(raw) {
+    if (settled || aborted) return;
+    const text = raw.toString('utf8');
+    if (!text.trim()) { send(400, { ok: false, reason: 'пустое тело' }); return; }
+    let body;
+    try { body = JSON.parse(text); }
+    catch (e) {
+      serverLog('json-broken', {
+        path: (req.url || '').split('?')[0], bytes: raw.length,
+        message: e.message
+      });
+      send(400, { ok: false, reason: 'тело не JSON' });
+      return;
+    }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      send(400, { ok: false, reason: 'тело должно быть объектом' });
+      return;
+    }
+    /* callback отвечает сам; исключение из него — 500, а не повтор с null. */
+    try { cb(body); }
+    catch (e) {
+      serverLog('handler-error', {
+        path: (req.url || '').split('?')[0],
+        message: (e && e.message) || String(e)
+      });
+      if (!res.headersSent && !res.writableEnded) {
+        send(500, { ok: false, reason: 'внутренняя ошибка сервера' });
+      } else {
+        try { res.destroy(); } catch (x) {}
+      }
+      return;
+    }
+    settled = true;
+  }
+
   req.on('data', function (chunk) {
+    if (settled || aborted) return;
     size += chunk.length;
-    if (size > 4 * 1024 * 1024) { req.destroy(); return; }
+    if (size > MAX_BODY) {
+      aborted = true;
+      chunks.length = 0;
+      try {
+        res.writeHead(413, { 'Content-Type': 'application/json; charset=utf-8',
+          'Connection': 'close' });
+        res.end(JSON.stringify({ ok: false, reason: 'тело больше 4 МБ' }));
+      } catch (e) {}
+      try { req.destroy(); } catch (e) {}
+      return;
+    }
     chunks.push(chunk);
   });
   req.on('end', function () {
+    if (settled || aborted) return;
     const buf = Buffer.concat(chunks);
-    const parse = function (raw) {
-      try { cb(JSON.parse(raw.toString('utf8') || '{}')); }
-      catch (e) { cb(null); }
-    };
-    if (!/gzip/i.test(String(req.headers['content-encoding'] || ''))) {
-      parse(buf);
+    chunks.length = 0;
+    const enc = String(req.headers['content-encoding'] || '').toLowerCase().trim();
+    if (enc && enc !== 'identity' && !/\bgzip\b/.test(enc)) {
+      send(400, { ok: false, reason: 'неизвестная кодировка тела: ' + enc });
       return;
     }
-    zlib.gunzip(buf, { maxOutputLength: 8 * 1024 * 1024 }, function (err, out) {
-      if (err) { cb(null); return; }
-      parse(out);
+    if (!/\bgzip\b/.test(enc)) { dispatch(buf); return; }
+    zlib.gunzip(buf, { maxOutputLength: MAX_UNZIP }, function (err, out) {
+      if (settled || aborted) return;
+      if (err) {
+        serverLog('gzip-broken', {
+          path: (req.url || '').split('?')[0], bytes: buf.length,
+          message: err.message
+        });
+        send(400, { ok: false, reason: 'тело не распознано (gzip)' });
+        return;
+      }
+      dispatch(out);
     });
+  });
+  /* Обрыв посреди тела: ответа нет, callback не зовём. */
+  req.on('aborted', function () { aborted = true; chunks.length = 0; });
+  req.on('error', function () { aborted = true; chunks.length = 0; });
+  req.on('close', function () {
+    if (!req.complete) { aborted = true; chunks.length = 0; }
   });
 }
 
@@ -913,8 +1713,118 @@ function statusView(lobby) {
   };
 }
 
+
+/* ---- диагностика (OBS-01) -------------------------------------------- *
+ *
+ * /api/diag и /api/stream-stats отдают только ХОСТУ лобби (по коду и
+ * токену). В ответе нет токенов, секретов и тел команд — только счётчики,
+ * имена, очереди и кольцо журнала. Это диагностика, а не второй пульт
+ * управления: ни один эндпоинт здесь не меняет игру.
+ * ---------------------------------------------------------------------- */
+function diagPlayer(lobby, p) {
+  return {
+    id: p.id, name: p.name, owner: p.owner === undefined ? null : p.owner,
+    ready: !!p.ready, online: p.online !== false,
+    proto: p.proto || 0, clientBuild: p.clientBuild || '',
+    lastSeenAgeMs: Math.max(0, now() - (p.lastSeen || 0)),
+    hasStream: lobby.streams.has(p.id),
+    host: p.id === lobby.hostId
+  };
+}
+function diagLobby(lobby) {
+  const t = now();
+  const streams = [];
+  let queue = 0, wireQueue = 0, queueAge = 0;
+  lobby.streams.forEach(function (st) {
+    if (st.closed) return;
+    const stats = streamStats(st);
+    streams.push(stats);
+    if (stats.queue > queue) queue = stats.queue;
+    if (stats.wireQueue > wireQueue) wireQueue = stats.wireQueue;
+    if (stats.ageMs > queueAge) queueAge = stats.ageMs;
+  });
+  const lastHeartbeat = lobby.players.reduce(function (m, p) {
+    return Math.max(m, p.lastSeen || 0);
+  }, 0);
+  const snap = lobby.lastSnapshot || null;
+  return {
+    code: lobby.code, started: !!lobby.started, hostId: lobby.hostId,
+    hostGone: !!lobby.hostGone, hostGoneReason: lobby.hostGoneReason || null,
+    players: lobby.players.map(function (p) { return diagPlayer(lobby, p); }),
+    protocol: PROTOCOL, build: buildId(),
+    protocolWarning: protocolWarning(lobby),
+    lastHeartbeatAt: lastHeartbeat,
+    lastHeartbeatAgeMs: lastHeartbeat ? Math.max(0, t - lastHeartbeat) : null,
+    lastSnapshotAt: lobby.lastSnapAt || null,
+    lastSnapshotAgeMs: lobby.lastSnapAt ? Math.max(0, t - lobby.lastSnapAt) : null,
+    lastSseAt: lobby.lastSseAt || null,
+    lastSseAgeMs: lobby.lastSseAt ? Math.max(0, t - lobby.lastSseAt) : null,
+    tick: snap && snap.t !== undefined ? snap.t : null,
+    snapshot: snap ? {
+      seq: snap.seq === undefined ? null : snap.seq,
+      t: snap.t === undefined ? null : snap.t,
+      ageMs: lobby.lastSnapAt ? Math.max(0, t - lobby.lastSnapAt) : null,
+      bytes: lobby.lastSnapshotBytes || null
+    } : null,
+    lastSnapSeq: lobby.lastSnapSeq || 0,
+    cmdSeq: lobby.cmdSeq || 0,
+    cmdQueue: lobby.cmdQueue.length,
+    cmdResults: lobby.cmdResults.size,
+    cmdSeen: lobby.cmdSeen.size,
+    streams: streams,
+    queue: queue, queueWire: wireQueue, queueAgeMs: queueAge,
+    totals: Object.assign({}, lobby.totals)
+  };
+}
+
+function diagView(lobby) {
+  return {
+    ok: true, build: buildId(), protocol: PROTOCOL, cmdProto: CMD_PROTO,
+    node: process.version, pid: process.pid,
+    uptimeMs: Math.round(process.uptime() * 1000),
+    startedAt: new Date(STARTED_AT_MS).toISOString(),
+    now: now(),
+    heap: memInfo(),
+    eventLoopDelay: loopSnapshot(),
+    lobby: diagLobby(lobby),
+    limits: {
+      ringMax: RING_MAX,
+      streamSocketHigh: STREAM_SOCKET_HIGH,
+      streamGzipHigh: STREAM_GZIP_HIGH,
+      controlMax: STREAM_CONTROL_MAX,
+      controlBytes: STREAM_CONTROL_BYTES,
+      cmdTtl: CMD_TTL,
+      cmdDeliveredTtl: CMD_DELIVERED_TTL,
+      cmdResultTtl: CMD_RESULT_TTL,
+      cmdSeenTtl: CMD_SEEN_TTL,
+      cmdMax: CMD_MAX, cmdResultMax: CMD_RESULT_MAX, cmdSeenMax: CMD_SEEN_MAX
+    },
+    log: lobby.log.slice(-RING_MAX),
+    serverLog: SERVER_LOG.slice(-RING_MAX)
+  };
+}
+
+function streamStatsView(lobby) {
+  const streams = [];
+  let queue = 0, wireQueue = 0, queueAge = 0;
+  lobby.streams.forEach(function (st) {
+    if (st.closed) return;
+    const stats = streamStats(st);
+    streams.push(stats);
+    if (stats.queue > queue) queue = stats.queue;
+    if (stats.wireQueue > wireQueue) wireQueue = stats.wireQueue;
+    if (stats.ageMs > queueAge) queueAge = stats.ageMs;
+  });
+  return {
+    ok: true, build: buildId(), protocol: PROTOCOL, now: now(),
+    streams: streams, streamsCount: streams.length,
+    queue: queue, queueWire: wireQueue, queueAgeMs: queueAge,
+    totals: Object.assign({}, lobby.totals)
+  };
+}
+
 /* ------------------------------- сервер ------------------------------- */
-const server = http.createServer(function (req, res) {
+function handleRequest(req, res) {
   const u = new URL(req.url || '/', 'http://' + (req.headers.host || 'localhost'));
 
   /* Адреса сервера: из них клиент собирает ссылку-приглашение. */
@@ -922,20 +1832,61 @@ const server = http.createServer(function (req, res) {
     return json(res, 200, serverView());
   }
 
+  /* Версия сервера и формат протокола — без токена: это не секрет, а метка
+     сборки, по которой приёмка и игрок понимают, что запущено. */
+  if (req.method === 'GET' && u.pathname === '/api/build') {
+    return json(res, 200, buildInfo());
+  }
+
+  /* Диагностика лобби — только хосту. Чужие токены и тела команд сюда не
+     попадают: в журнале ключи с token/secret вырезаны. */
+  if (req.method === 'GET' && u.pathname === '/api/diag') {
+    const lobby = lobbyForRequest({ code: u.searchParams.get('code') });
+    const p = playerByToken(lobby, u.searchParams.get('token'));
+    if (!lobby || !p) return json(res, 403, { ok: false, reason: 'нет доступа' });
+    if (p.id !== lobby.hostId) {
+      return json(res, 403, { ok: false, reason: 'диагностика только хосту' });
+    }
+    touchPlayer(p);
+    return json(res, 200, diagView(lobby));
+  }
+
+  /* Метрики потоков для приёмки NET-01: по каждому клиенту раздельно видно
+     сырые, сжатые и проводные байты, очереди gzip/сокета/ожидающего снимка,
+     dropped/coalesced и возраст снимка. Только хосту. */
+  if (req.method === 'GET' && u.pathname === '/api/stream-stats') {
+    const lobby = lobbyForRequest({ code: u.searchParams.get('code') });
+    const p = playerByToken(lobby, u.searchParams.get('token'));
+    if (!lobby || !p) return json(res, 403, { ok: false, reason: 'нет доступа' });
+    if (p.id !== lobby.hostId) {
+      return json(res, 403, { ok: false, reason: 'метрики только хосту' });
+    }
+    touchPlayer(p);
+    return json(res, 200, streamStatsView(lobby));
+  }
+
   if (req.method === 'POST' && u.pathname === '/api/lobby') {
-    return readJson(req, function (body) {
+    return readJson(req, res, function (body) {
       if (!body) return json(res, 400, { ok: false, reason: 'нет тела' });
       const lobby = makeLobby(body.max);
-      const p = addPlayer(lobby, body.name || 'Хост');
+      const p = addPlayer(lobby, body.name || 'Хост', body.protocol, body.build);
       lobby.hostId = p.id;
-      json(res, 200, { ok: true, code: lobby.code, token: p.token, playerId: p.id,
-        hostId: lobby.hostId, max: lobby.max, players: lobbyView(lobby).players });
+      json(res, 200, {
+        ok: true, code: lobby.code, token: p.token, playerId: p.id,
+        hostId: lobby.hostId, max: lobby.max, players: lobbyView(lobby).players,
+        build: buildId(), protocol: PROTOCOL, cmdProto: CMD_PROTO,
+        protocolWarning: protocolWarning(lobby)
+      });
+      lobbyLog(lobby, 'lobby-created', {
+        playerId: p.id, name: p.name, max: lobby.max,
+        clientProto: p.proto, build: buildId()
+      });
       console.log('  лобби ' + lobby.code + ' создано (хост ' + p.name + ')');
     });
   }
 
   if (req.method === 'POST' && u.pathname === '/api/join') {
-    return readJson(req, function (body) {
+    return readJson(req, res, function (body) {
       if (!body) return json(res, 400, { ok: false, reason: 'нет тела' });
       const lobby = lobbies.get(String(body.code || '').toUpperCase());
       if (!lobby) return json(res, 404, { ok: false, reason: 'лобби не найдено — проверьте код' });
@@ -943,9 +1894,18 @@ const server = http.createServer(function (req, res) {
       if (lobby.players.length >= lobby.max) {
         return json(res, 409, { ok: false, reason: 'лобби заполнено' });
       }
-      const p = addPlayer(lobby, body.name || ('Игрок ' + (lobby.players.length)));
-      json(res, 200, { ok: true, code: lobby.code, token: p.token, playerId: p.id,
-        hostId: lobby.hostId, max: lobby.max, players: lobbyView(lobby).players });
+      const p = addPlayer(lobby, body.name || ('Игрок ' + (lobby.players.length)),
+        body.protocol, body.build);
+      json(res, 200, {
+        ok: true, code: lobby.code, token: p.token, playerId: p.id,
+        hostId: lobby.hostId, max: lobby.max, players: lobbyView(lobby).players,
+        build: buildId(), protocol: PROTOCOL, cmdProto: CMD_PROTO,
+        protocolWarning: protocolWarning(lobby)
+      });
+      lobbyLog(lobby, 'player-joined', {
+        playerId: p.id, name: p.name, players: lobby.players.length,
+        clientProto: p.proto
+      });
       broadcast(lobby, 'lobby', lobbyView(lobby));
       console.log('  лобби ' + lobby.code + ': +' + p.name + ' (' + p.id + ')');
       /* Старт — только по кнопке хоста. Автостарт «как только все готовы»
@@ -955,7 +1915,7 @@ const server = http.createServer(function (req, res) {
   }
 
   if (req.method === 'POST' && u.pathname === '/api/ready') {
-    return readJson(req, function (body) {
+    return readJson(req, res, function (body) {
       const lobby = lobbyForRequest(body || {});
       const p = playerByToken(lobby, body && body.token);
       if (!p) return json(res, 403, { ok: false, reason: 'нет доступа' });
@@ -970,7 +1930,7 @@ const server = http.createServer(function (req, res) {
   /* Старт по кнопке хоста. Отдельный запрос, а не побочный эффект «готов»:
      хост сам решает, когда состав собран. */
   if (req.method === 'POST' && u.pathname === '/api/start') {
-    return readJson(req, function (body) {
+    return readJson(req, res, function (body) {
       const lobby = lobbyForRequest(body || {});
       const p = playerByToken(lobby, body && body.token);
       if (!lobby || !p) return json(res, 403, { ok: false, reason: 'нет доступа' });
@@ -1028,7 +1988,7 @@ const server = http.createServer(function (req, res) {
          не должны решить, что игра уже идёт. */
       lobby.lastSnapSeq = (lobby.lastSnapshot && lobby.lastSnapshot.seq) || 0;
     }
-    return json(res, 200, {
+    const resumed = {
       ok: true,
       started: lobby.started,
       host: p.id === lobby.hostId,
@@ -1038,8 +1998,19 @@ const server = http.createServer(function (req, res) {
       /* Даже если снимка нет, номер последнего кадра нужен: иначе хост после
          возврата начал бы seq с единицы, а клиенты отбросили бы его как
          устаревший. */
-      seq: lobby.lastSnapSeq || 0
+      seq: lobby.lastSnapSeq || 0,
+      /* Версия и протокол — в том же ответе, что и старт: после F5 клиент
+         сверяет сборку до первого кадра, а не после. */
+      build: buildId(), protocol: PROTOCOL, cmdProto: CMD_PROTO,
+      protocolWarning: protocolWarning(lobby),
+      serverNow: now(),
+      snapshotBytes: lobby.lastSnapshotBytes || null
+    };
+    lobbyLog(lobby, 'resume', {
+      playerId: p.id, host: resumed.host, started: !!lobby.started,
+      seq: resumed.seq, build: buildId()
     });
+    return json(res, 200, resumed);
   }
 
   if (req.method === 'GET' && u.pathname === '/api/events') {
@@ -1059,15 +2030,28 @@ const server = http.createServer(function (req, res) {
     }
 
     const old = lobby.streams.get(p.id);
-    if (old && old !== res) { try { old.end(); } catch (e) {} }
-    lobby.streams.set(p.id, res);
+    /* Заголовки, gzip-обёртка, обработчики ошибок и heartbeat — в одном
+       месте: поток обязан быть сжатым (или нет) с ПЕРВОГО байта. Смешать
+       сырой текст с gzip нельзя. */
+    const stream = openEventStream(req, res, lobby, p);
+    if (old && old !== stream) {
+      /* Старый поток мог висеть на медленном сокете: не ждём его 'drain',
+         а освобождаем сразу. Запоздалый close не сочтёт игрока offline —
+         новый поток уже лежит в карте (см. onStreamClosed). */
+      lobby.streams.delete(p.id);
+      closeStream(old, 'replaced', true);
+    }
+    lobby.streams.set(p.id, stream);
 
-    /* Заголовки, gzip-обёртка и setNoDelay — в одном месте: поток обязан быть
-       сжатым (или нет) с ПЕРВОГО байта. Смешать сырой текст с gzip нельзя. */
-    openEventStream(req, res);
     streamWrite(res, 'retry: 1500\n\n');
     send(res, 'hello', { playerId: p.id, hostId: lobby.hostId, lobby: lobbyView(lobby) });
     if (lobby.started && lobby.startPayload) send(res, 'start', lobby.startPayload);
+    /* Переподключение посреди партии: последний снимок абсолютный, отдаём его
+       сразу. Иначе медленный друг после reconnect ждал бы следующего кадра
+       хоста, а хост может быть в фоне. */
+    if (lobby.started && lobby.lastSnapshot) {
+      send(res, 'snapshot', lobby.lastSnapshot);
+    }
     /* Клиент, переподключившийся после падения хоста, обязан узнать, что
        игра стоит, — иначе он будет ждать снимков, которых нет. */
     if (lobby.started && lobby.hostGone && p.id !== lobby.hostId) {
@@ -1083,31 +2067,11 @@ const server = http.createServer(function (req, res) {
       });
     }
     if (back) broadcast(lobby, 'lobby', lobbyView(lobby), p.id);
-
-    const ping = setInterval(function () { streamWrite(res, ': ping\n\n'); }, 15000);
-    if (typeof ping.unref === 'function') ping.unref();
-    req.on('close', function () {
-      clearInterval(ping);
-      if (lobby.streams.get(p.id) === res) lobby.streams.delete(p.id);
-      if (lobby.players.indexOf(p) < 0) return;
-      if (lobby.started) {
-        broadcast(lobby, 'peer-left', {
-          id: p.id, name: p.name,
-          owner: p.owner === undefined ? 0 : p.owner,
-          host: p.id === lobby.hostId
-        });
-        /* Хосту это заводит таймер «потерян», клиенту — просто отметку
-           offline в лобби. */
-        markOffline(lobby, p);
-        return;
-      }
-      markOffline(lobby, p);
-    });
     return;
   }
 
   if (req.method === 'POST' && u.pathname === '/api/snapshot') {
-    return readJson(req, function (body) {
+    return readJson(req, res, function (body) {
       const lobby = lobbyForRequest(body || {});
       const p = playerByToken(lobby, body && body.token);
       if (!lobby || !p || p.id !== lobby.hostId) {
@@ -1138,7 +2102,9 @@ const server = http.createServer(function (req, res) {
         if (seq <= (lobby.lastSnapSeq || 0)) {
           return json(res, 200, { ok: true, stale: true, commands: commands,
             cmdSeq: lobby.cmdSeq, gzip: packed,
-            queue: backlog.queue, streams: backlog.streams });
+            serverNow: now(), build: buildId(), protocol: PROTOCOL,
+            queue: backlog.queue, queueWire: backlog.wireQueue,
+            queueAge: backlog.ageMs, streams: backlog.streams });
         }
         lobby.lastSnapSeq = seq;
       }
@@ -1148,14 +2114,36 @@ const server = http.createServer(function (req, res) {
       /* Сначала ответ хосту: его следующий кадр не должен ждать, пока мы
          разложим текущий по всем потокам. В ответе — команды, ждущие хоста:
          этот POST работает даже тогда, когда SSE у него оборван. */
+      const snapshotText = 'event: snapshot\ndata: ' +
+        JSON.stringify(body.snapshot) + '\n\n';
+      const snapshotBytes = byteLen(snapshotText);
+      lobby.lastSnapshotBytes = snapshotBytes;
       json(res, 200, { ok: true, commands: commands, cmdSeq: lobby.cmdSeq,
-        gzip: packed, queue: backlog.queue, streams: backlog.streams });
+        gzip: packed, serverNow: now(), build: buildId(), protocol: PROTOCOL,
+        queue: backlog.queue, queueWire: backlog.wireQueue,
+        queueAge: backlog.ageMs, streams: backlog.streams,
+        snapshotBytes: snapshotBytes });
       broadcast(lobby, 'snapshot', body.snapshot, p.id, { drop: true });
+      /* Журнал не чаще раза в секунду: 12 снимков/с иначе вытеснят из кольца
+         команды и потерю хоста. При большой очереди пишем сразу — это и есть
+         интересный случай. */
+      const tLog = now();
+      if (tLog - (lobby.lastSnapLogAt || 0) > 1000 ||
+          backlog.queue > 24 * 1024 || commands.length) {
+        lobby.lastSnapLogAt = tLog;
+        lobbyLog(lobby, 'snapshot', {
+          seq: seq === undefined ? null : seq, bytes: snapshotBytes,
+          gzip: packed,
+          commands: commands.length,
+          queue: backlog.queue, queueWire: backlog.wireQueue,
+          queueAge: backlog.ageMs, streams: backlog.streams
+        });
+      }
     });
   }
 
   if (req.method === 'POST' && u.pathname === '/api/command') {
-    return readJson(req, function (body) {
+    return readJson(req, res, function (body) {
       const lobby = lobbyForRequest(body || {});
       const p = playerByToken(lobby, body && body.token);
       if (!lobby || !p) return json(res, 403, { ok: false, reason: 'нет доступа' });
@@ -1199,13 +2187,23 @@ const server = http.createServer(function (req, res) {
          очередь не кладём. Если команда уже решена — отдаём её результат. */
       const queued = findQueued(lobby, p.id, cmd.n);
       if (queued) {
-        return json(res, 200, { ok: true, duplicate: true, n: queued.n,
-          sn: queued.sn, state: 'pending', pending: lobby.cmdQueue.length });
+        return json(res, 200, {
+          ok: true, duplicate: true, n: queued.n, commandId: queued.n,
+          sn: queued.sn, state: 'pending', pending: lobby.cmdQueue.length,
+          serverNow: now(), ageMs: Math.max(0, now() - (queued.at || now()))
+        });
       }
       const known = cmdResultOf(lobby, p.id, cmd.n);
       if (known) {
-        return json(res, 200, { ok: true, duplicate: true, n: known.n,
-          sn: known.sn, state: known.state, reason: known.reason || undefined });
+        return json(res, 200, {
+          ok: true, duplicate: true, n: known.n, commandId: known.n,
+          sn: known.sn, state: known.state,
+          reason: known.reason || undefined,
+          ids: known.ids || [], appliedSeq: known.appliedSeq || 0,
+          serverNow: now(),
+          ageMs: Math.max(0, now() - (known.at || now())),
+          compact: !!known.compact
+        });
       }
 
       /* Очередь переполнена — вытесняем САМУЮ СТАРУЮ по приёму и говорим ей
@@ -1230,16 +2228,30 @@ const server = http.createServer(function (req, res) {
       }
 
       cmd.sn = ++lobby.cmdSeq;               // порядок ПРИЁМА в лобби
-      cmd.at = now();
+      cmd.at = now();                        // часы СЕРВЕРА, для совместимости
+      cmd.ageMs = 0;                         // на момент приёма команда свежая
       lobby.cmdQueue.push(cmd);
+      lobbyLog(lobby, 'cmd-accepted', {
+        from: p.id, n: cmd.n, sn: cmd.sn, type: cmd.type,
+        owner: cmd.owner, pending: lobby.cmdQueue.length
+      });
       /* 200 значит только «принято в очередь». Выполнение подтвердит
          cmdDone в снимке, а клиент узнает его через /api/command-state. */
-      json(res, 200, { ok: true, n: cmd.n, sn: cmd.sn, state: 'pending',
-        pending: lobby.cmdQueue.length });
+      json(res, 200, {
+        ok: true, n: cmd.n, commandId: cmd.n, sn: cmd.sn, state: 'pending',
+        ageMs: 0, serverNow: now(), build: buildId(), protocol: PROTOCOL,
+        pending: lobby.cmdQueue.length
+      });
       /* Событие остаётся для старого хоста и как «толчок» новому: новый хост
          по нему только шлёт снимок сразу, а выполняет команды из ответа на
-         снимок — путь выполнения один. */
-      broadcast(lobby, 'command', cmd, p.id);
+         снимок — путь выполнения один. ageMs считается заново на отправке:
+         команда могла подождать в очереди, пока хост был занят. */
+      broadcast(lobby, 'command', {
+        type: cmd.type, n: cmd.n, sn: cmd.sn, from: cmd.from, owner: cmd.owner,
+        x: cmd.x, y: cmd.y, x2: cmd.x2, y2: cmd.y2,
+        buildingType: cmd.buildingType, variant: cmd.variant, rot: cmd.rot,
+        ids: cmd.ids, at: cmd.at, ageMs: Math.max(0, now() - cmd.at)
+      }, p.id);
     });
   }
 
@@ -1262,43 +2274,58 @@ const server = http.createServer(function (req, res) {
     });
     function ownState(n) {
       const q = findQueued(lobby, p.id, n);
-      if (q) return { n: n, sn: q.sn, state: 'pending', at: q.at };
+      if (q) {
+        return { n: n, commandId: n, sn: q.sn, state: 'pending', at: q.at,
+          ageMs: Math.max(0, now() - (q.at || now())) };
+      }
       const r = cmdResultOf(lobby, p.id, n);
       if (r) {
-        return { n: r.n, sn: r.sn, state: r.state, reason: r.reason,
-          at: r.at, decidedAt: r.decidedAt };
+        return { n: r.n, commandId: r.n, sn: r.sn, state: r.state,
+          reason: r.reason, at: r.at, decidedAt: r.decidedAt,
+          ids: r.ids || [], appliedSeq: r.appliedSeq || 0,
+          ageMs: Math.max(0, now() - (r.at || now())),
+          compact: !!r.compact };
       }
-      return { n: n, state: 'unknown' };
+      /* Честный unknown: «не знаю, выполнялась ли» — не то же самое, что
+         «отклонена». Клиент покажет «результат уточняется». */
+      return { n: n, commandId: n, state: 'unknown', ageMs: null };
     }
     if (ns.length === 1) {
       const one = ownState(ns[0]);
       one.ok = true;
+      one.serverNow = now();
       return json(res, 200, one);
     }
     if (ns.length > 1) {
-      return json(res, 200, { ok: true, now: now(),
+      return json(res, 200, { ok: true, now: now(), serverNow: now(),
         results: ns.slice(0, 20).map(ownState) });
     }
     /* Пачка: своя очередь (pending) + последние окончательные результаты. */
     const results = [];
     for (const q of lobby.cmdQueue) {
       if (q.from !== p.id) continue;
-      results.push({ n: q.n, sn: q.sn, state: 'pending', at: q.at });
+      results.push({ n: q.n, commandId: q.n, sn: q.sn, state: 'pending',
+        at: q.at, ageMs: Math.max(0, now() - (q.at || now())) });
     }
     const finals = [];
     lobby.cmdResults.forEach(function (r) {
       if (r.from !== p.id) return;
       if (r.decidedAt && now() - r.decidedAt > CMD_RESULT_TTL) return;
-      finals.push({ n: r.n, sn: r.sn, state: r.state, reason: r.reason,
-        at: r.at, decidedAt: r.decidedAt });
+      finals.push({ n: r.n, commandId: r.n, sn: r.sn, state: r.state,
+        reason: r.reason, at: r.at, decidedAt: r.decidedAt,
+        ids: r.ids || [], appliedSeq: r.appliedSeq || 0,
+        ageMs: Math.max(0, now() - (r.at || now())) });
     });
     finals.sort(function (a, b) { return (a.decidedAt || 0) - (b.decidedAt || 0); });
-    return json(res, 200, { ok: true, now: now(), pending: results.length,
-      results: results.concat(finals.slice(-20)) });
+    return json(res, 200, {
+      ok: true, now: now(), serverNow: now(), pending: results.length,
+      results: results.concat(finals.slice(-20)),
+      build: buildId(), protocol: PROTOCOL
+    });
   }
 
   if (req.method === 'POST' && u.pathname === '/api/leave') {
-    return readJson(req, function (body) {
+    return readJson(req, res, function (body) {
       const lobby = lobbyForRequest(body || {});
       const p = playerByToken(lobby, body && body.token);
       if (!lobby || !p) return json(res, 200, { ok: true });
@@ -1309,7 +2336,10 @@ const server = http.createServer(function (req, res) {
 
   if (u.pathname.startsWith('/api/')) return json(res, 404, { ok: false, reason: 'нет такого api' });
   serveStatic(req, res);
-});
+}
+
+const server = http.createServer(handleRequest);
+function createServer() { return http.createServer(handleRequest); }
 
 /* --------------------------- запуск и ссылки -------------------------- */
 function printLinks() {
@@ -1427,41 +2457,67 @@ function startNetProbe() {
   });
 }
 
-server.on('error', function (err) {
-  if (err && err.code === 'EADDRINUSE') {
-    console.error('Порт ' + PORT + ' занят. Закройте прошлый сервер или');
-    console.error('запустите с другим портом: node game/server/server.js --port ' + (PORT + 1));
-  } else {
-    console.error('Сервер не поднялся: ' + (err && err.message || err));
-  }
-  process.exit(1);
-});
-
-server.listen(PORT, HOST, function () {
-  printLinks();
-  if (OPEN) {
-    const cmd = process.platform === 'darwin' ? 'open' : (process.platform === 'win32' ? 'start' : 'xdg-open');
-    try { spawn(cmd, [gameUrl('127.0.0.1')], { detached: true, stdio: 'ignore' }).unref(); } catch (e) {}
-  }
-  if (LOCAL) {
-    net.checking = false;
-    net.reason = 'режим --local';
-    return;
-  }
-  if (TUNNEL && !PUBLIC_URL) tunnel = Tunnel.start(PORT, console.log);
-  if (PUBLIC_URL) {
-    /* За reverse proxy внешний IP и UPnP не нужны: адрес уже известен. */
-    startNetProbe();
-    return;
-  }
-  discoverPublicIp(function () {
-    if (publicIp) console.log('  внешний IP: ' + publicIp);
-    startNetProbe();
+function startServer() {
+  server.on('error', function (err) {
+    if (err && err.code === 'EADDRINUSE') {
+      console.error('Порт ' + PORT + ' занят. Закройте прошлый сервер или');
+      console.error('запустите с другим портом: node game/server/server.js --port ' + (PORT + 1));
+    } else {
+      console.error('Сервер не поднялся: ' + (err && err.message || err));
+    }
+    process.exit(1);
   });
-});
+  startLoopMonitor();
+  startDiagSampler();
+  /* Сборка определяется один раз при старте (git rev-parse --short HEAD),
+     а не на каждый запрос: /api/build должен быть дешёвым и стабильным. */
+  buildId();
+  server.listen(PORT, HOST, function () {
+    serverLog('server-start', {
+      build: buildId(), protocol: PROTOCOL, port: PORT, host: HOST,
+      node: process.version, pid: process.pid
+    });
+    printLinks();
+    if (OPEN) {
+      const cmd = process.platform === 'darwin' ? 'open' : (process.platform === 'win32' ? 'start' : 'xdg-open');
+      try { spawn(cmd, [gameUrl('127.0.0.1')], { detached: true, stdio: 'ignore' }).unref(); } catch (e) {}
+    }
+    if (LOCAL) {
+      net.checking = false;
+      net.reason = 'режим --local';
+      return;
+    }
+    if (TUNNEL && !PUBLIC_URL) tunnel = Tunnel.start(PORT, console.log);
+    if (PUBLIC_URL) {
+      /* За reverse proxy внешний IP и UPnP не нужны: адрес уже известен. */
+      startNetProbe();
+      return;
+    }
+    discoverPublicIp(function () {
+      if (publicIp) console.log('  внешний IP: ' + publicIp);
+      startNetProbe();
+    });
+  });
+}
 
-process.on('SIGINT', function () {
-  if (tunnel) { try { tunnel.stop(); } catch (e) {} }
-  console.log('\nостановлен');
-  process.exit(0);
-});
+if (require.main === module) {
+  startServer();
+  process.on('SIGINT', function () {
+    if (tunnel) { try { tunnel.stop(); } catch (e) {} }
+    console.log('\nостановлен');
+    process.exit(0);
+  });
+}
+
+/* Экспорт для приёмки: сервер не поднимается сам, readJson можно проверить
+   в отдельном процессе/тесте. В обычном запуске всё работает как раньше. */
+module.exports = {
+  readJson: readJson,
+  handleRequest: handleRequest,
+  createServer: createServer,
+  buildInfo: buildInfo,
+  buildId: buildId,
+  server: server,
+  PROTOCOL: PROTOCOL,
+  CMD_PROTO: CMD_PROTO
+};
