@@ -32,6 +32,142 @@
     cmdSeq = t > cmdSeq ? t : cmdSeq + 1;
     return cmdSeq;
   }
+
+  /* ---------------- конечный результат команды ------------------------- *
+   *
+   * HTTP 200 на /api/command значит только «принято в очередь». Настоящий
+   * ответ — state applied/rejected/expired в /api/command-state. Опрос один
+   * на все ждущие команды: без n сервер отдаёт последние результаты этого
+   * игрока, так что десять кликов не превращаются в десять запросов в
+   * секунду. SSE `command-result` — быстрый путь, опрос — гарантия.
+   * -------------------------------------------------------------------- */
+  var CMD_SEND_BUDGET = 3000;   // весь POST, включая повтор: не дольше 3 с
+  var CMD_RESULT_WAIT = 8000;   // ждём конечный результат не дольше 8 с
+  var CMD_POLL_MIN = 200;
+  var CMD_POLL_MAX = 1200;
+  var pendingCmds = Object.create(null);    // n → {n,sn,at,resolve,reject}
+  var pumpTimer = null, pumpBusy = false, pollEvery = CMD_POLL_MIN;
+
+  function cmdProto() { return (started && started.cmdProto) || 0; }
+
+  function clearPending(reason) {
+    var key, keys = [];
+    for (key in pendingCmds) {
+      if (Object.prototype.hasOwnProperty.call(pendingCmds, key)) keys.push(key);
+    }
+    for (var i = 0; i < keys.length; i++) {
+      var pc = pendingCmds[keys[i]];
+      delete pendingCmds[keys[i]];
+      if (pc && pc.reject) {
+        try { pc.reject(new Error(reason || 'нет лобби')); } catch (e) {}
+      }
+    }
+    if (pumpTimer) { global.clearTimeout(pumpTimer); pumpTimer = null; }
+    pumpBusy = false;
+    pollEvery = CMD_POLL_MIN;
+  }
+
+  function schedulePump(ms) {
+    if (pumpTimer) return;
+    pumpTimer = global.setTimeout(function () { pumpTimer = null; pumpResults(); },
+      ms || pollEvery);
+  }
+
+  /* Окончательный результат одной команды: резолвим промис и говорим игре
+     событием — HUD покажет отказ в журнале, а не всплывашкой. */
+  function settleCommand(n, r) {
+    var pc = pendingCmds[n];
+    if (!pc || !r) return false;
+    delete pendingCmds[n];
+    var out = {
+      ok: r.state === 'applied', n: pc.n,
+      sn: r.sn !== undefined ? r.sn : pc.sn,
+      state: r.state, reason: r.reason || '',
+      waitedMs: Math.max(0, Date.now() - pc.at)
+    };
+    try { pc.resolve(out); } catch (e) {}
+    emit('command-result', out);
+    return true;
+  }
+
+  function pumpResults() {
+    if (!code || !token) { clearPending('нет лобби'); return; }
+    var any = false, key, pc;
+    for (key in pendingCmds) {
+      if (!Object.prototype.hasOwnProperty.call(pendingCmds, key)) continue;
+      pc = pendingCmds[key];
+      if (Date.now() - pc.at >= CMD_RESULT_WAIT) {
+        delete pendingCmds[key];
+        try {
+          pc.reject(new Error('результат команды не пришёл за ' +
+            Math.round(CMD_RESULT_WAIT / 1000) + ' с'));
+        } catch (e) {}
+        continue;
+      }
+      any = true;
+    }
+    if (!any) { pollEvery = CMD_POLL_MIN; return; }
+    if (pumpBusy) return;
+    pumpBusy = true;
+    apiGet('/api/command-state?code=' + encodeURIComponent(code) +
+      '&token=' + encodeURIComponent(token), 4000).then(function (j) {
+      pumpBusy = false;
+      var list = (j && j.results) || [];
+      for (var i = 0; i < list.length; i++) {
+        var r = list[i];
+        if (!r || typeof r.n !== 'number') continue;
+        if (r.state === 'applied' || r.state === 'rejected' || r.state === 'expired') {
+          settleCommand(r.n, r);
+        }
+      }
+      var left = false, k2;
+      for (k2 in pendingCmds) {
+        if (Object.prototype.hasOwnProperty.call(pendingCmds, k2)) { left = true; break; }
+      }
+      if (!left) { pollEvery = CMD_POLL_MIN; return; }
+      pollEvery = Math.min(CMD_POLL_MAX, pollEvery + 150);
+      schedulePump();
+    }, function (e) {
+      pumpBusy = false;
+      var msg = (e && e.message) || '';
+      /* Старый сервер: /api/command-state ещё нет — конечного результата в
+         природе нет, отдаём «в очереди», как раньше, и не держим игру. */
+      if (/404|нет такого api/.test(msg)) {
+        var keys = [], key;
+        for (key in pendingCmds) {
+          if (Object.prototype.hasOwnProperty.call(pendingCmds, key)) keys.push(key);
+        }
+        for (var i = 0; i < keys.length; i++) {
+          var pc = pendingCmds[keys[i]];
+          delete pendingCmds[keys[i]];
+          try {
+            pc.resolve({ ok: true, n: pc.n, sn: pc.sn, state: 'pending',
+              legacy: true, waitedMs: Date.now() - pc.at });
+          } catch (x) {}
+        }
+        pollEvery = CMD_POLL_MIN;
+        return;
+      }
+      if (/403|нет доступа/.test(msg)) { clearPending('нет доступа'); return; }
+      /* Сеть моргнула — ждём до общего предела, но реже. */
+      var still = false, k3;
+      for (k3 in pendingCmds) {
+        if (Object.prototype.hasOwnProperty.call(pendingCmds, k3)) { still = true; break; }
+      }
+      if (still) {
+        pollEvery = Math.min(CMD_POLL_MAX, pollEvery + 250);
+        schedulePump();
+      }
+    });
+  }
+
+  function waitResult(n, sn, at) {
+    return new Promise(function (resolve, reject) {
+      pendingCmds[n] = { n: n, sn: sn, at: at, resolve: resolve, reject: reject };
+      schedulePump(CMD_POLL_MIN);
+    });
+  }
+
   /* Возврат в партию после F5. Токен лобби — единственный пропуск, и он
      лежит в localStorage этого браузера. Никакого «войти заново»: сервер
      узнаёт того же игрока и отдаёт тот же город. */
@@ -179,8 +315,8 @@
     var source = new EventSource('/api/events?code=' + encodeURIComponent(code) +
       '&token=' + encodeURIComponent(token));
     es = source;
-    ['hello', 'lobby', 'start', 'snapshot', 'command', 'peer-left',
-      'peer-back', 'host-left', 'host-back'].forEach(function (type) {
+    ['hello', 'lobby', 'start', 'snapshot', 'command', 'command-result',
+      'peer-left', 'peer-back', 'host-left', 'host-back'].forEach(function (type) {
         source.addEventListener(type, function (ev) {
           var data = null;
           try { data = JSON.parse(ev.data); } catch (e) { return; }
@@ -197,6 +333,16 @@
           } else if (type === 'start') {
             handleStart(data);
             return;                        // emit делает handleStart
+          } else if (type === 'command') {
+            /* Хост по этому событию только будит снимок: выполнять команду
+               здесь нельзя — путь выполнения один, из ответа на снимок. */
+            emit('command-ready', data);
+          } else if (type === 'command-result') {
+            /* Быстрый путь для интерфейса; правду всё равно подтвердит опрос
+               /api/command-state, если поток оборвётся. */
+            if (data && typeof data.n === 'number' && settleCommand(data.n, data)) {
+              return;
+            }
           }
           emit(type, data);
         });
@@ -211,6 +357,7 @@
 
   function reset() {
     if (es) { try { es.close(); } catch (e) {} }
+    clearPending('партия закрыта');
     es = null; token = null; code = null; playerId = null; hostId = 0;
     lobby = null; started = null; startKey = null; online = false;
     resuming = false; pendingStart = null;
@@ -312,19 +459,16 @@
     return new Promise(function (resolve) { global.setTimeout(resolve, ms); });
   }
 
-  /* Команда хосту. Возвращаемый промис несёт `.n` — номер команды, по нему
-     игра понимает, на какую команду пришёл отказ. Один сетевой сбой не
-     теряет действие: две попытки с паузой; повтор несёт тот же номер, и хост
-     не выполнит его дважды.
+  /* Команда хосту. Возвращаемый промис несёт `.n` — номер команды — и
+     резолвится КОНЕЧНЫМ результатом: applied / rejected / expired. HTTP 200
+     значит только «сервер принял в очередь»; построен дом или нет, отвечает
+     /api/command-state. Отказ мира (rejected) — не сетевой сбой: промис
+     резолвится с ok:false и причиной, чтобы игра показала её в журнале.
+     Отклоняем только сеть и «результат не пришёл вовсе».
 
-     Таймаут — 3 с, а не 6: команда теперь кладётся в очередь на сервере и
-     доезжает до хоста ответом на ЕГО снимок, поэтому долгое ожидание ответа
-     значит «канал действительно лёг», а не «хост медленно строит». Прежние
-     6 с × 3 попытки держали следующую команду в очереди до 18 с — снаружи
-     это и было «здание встало через полминуты». */
-  var CMD_TIMEOUT = 3000;
-  var CMD_TRIES = 2;
-
+     Очередь отправки держим по ПРИЁМУ, а не по результату: следующая команда
+     не должна ждать, пока хост построит предыдущую. Весь POST, включая
+     повтор, укладывается в CMD_SEND_BUDGET = 3 с. */
   function command(cmd) {
     if (!code || !token) return Promise.reject(new Error('нет лобби'));
     var item = {}, k;
@@ -332,25 +476,68 @@
       if (Object.prototype.hasOwnProperty.call(cmd, k)) item[k] = cmd[k];
     }
     item.n = nextCmdSeq();
-    function attempt(left) {
-      return api('/api/command', { code: code, token: token, command: item }, CMD_TIMEOUT)
-        .catch(function (e) {
-          if (left <= 1) throw e;
-          return delay(180 * (CMD_TRIES + 1 - left)).then(function () { return attempt(left - 1); });
-        });
+    var at = Date.now();
+
+    function post() {
+      var deadline = Date.now() + CMD_SEND_BUDGET;
+      function attempt(left) {
+        var ms = Math.max(700, Math.min(2500, deadline - Date.now() + 200));
+        return api('/api/command', { code: code, token: token, command: item }, ms)
+          .catch(function (e) {
+            if (left <= 1 || Date.now() > deadline - 150) throw e;
+            return delay(120).then(function () { return attempt(left - 1); });
+          });
+      }
+      return attempt(2);
     }
-    var p = cmdChain.then(function () {
+
+    var accepted = cmdChain.then(function () {
       /* Пока ждали очередь, могли выйти из лобби. */
       if (!code || !token) throw new Error('нет лобби');
-      return attempt(CMD_TRIES);
+      return post();
     });
-    /* Очередь не должна застрять на одной неудачной команде. */
-    cmdChain = p.catch(function () {});
+    /* Очередь не должна застрять на неудачной команде — и не должна ждать
+       конечного результата: только приёма. */
+    cmdChain = accepted.catch(function () {});
+
+    var p = accepted.then(function (r) {
+      var n = item.n;
+      var sn = r && typeof r.sn === 'number' ? r.sn : undefined;
+      if (sn !== undefined) p.sn = sn;
+      var state = r && r.state;
+      if (state === 'applied' || state === 'rejected' || state === 'expired') {
+        var done = {
+          ok: state === 'applied', n: n, sn: sn, state: state,
+          reason: (r && r.reason) || '', duplicate: !!(r && r.duplicate),
+          waitedMs: Date.now() - at
+        };
+        emit('command-result', done);
+        return done;
+      }
+      /* Старый сервер не умеет результатов: 200 = «в очереди», и это всё,
+         что он может сказать. Новый — cmdProto:2 в старте. */
+      if (cmdProto() < 2) {
+        return { ok: true, n: n, sn: sn, state: 'pending', legacy: true,
+          waitedMs: Date.now() - at };
+      }
+      return waitResult(n, sn, at);
+    });
     p.n = item.n;
     p.catch(function (e) {
-      emit('command-error', { command: item, message: e && e.message || 'команда не ушла' });
+      emit('command-error', { command: item,
+        message: (e && e.message) || 'команда не ушла' });
     });
     return p;
+  }
+
+  /* Один результат по номеру — для приёмки и отладки; игра пользуется
+     ожиданием промиса выше. */
+  function commandState(n) {
+    if (!code || !token) return Promise.reject(new Error('нет лобби'));
+    var q = '/api/command-state?code=' + encodeURIComponent(code) +
+      '&token=' + encodeURIComponent(token) +
+      (n !== undefined ? '&n=' + encodeURIComponent(n) : '');
+    return apiGet(q, 4000);
   }
 
   /* Сжать тело снимка в браузере. CompressionStream есть во всех современных
@@ -475,6 +662,12 @@
     ready: ready,
     start: start,
     command: command,
+    commandState: commandState,
+    pendingCommands: function () {
+      var c = 0, k;
+      for (k in pendingCmds) if (Object.prototype.hasOwnProperty.call(pendingCmds, k)) c++;
+      return c;
+    },
     snapshot: snapshot,
     status: status,
     resume: resume,
