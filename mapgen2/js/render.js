@@ -142,6 +142,16 @@
 
   /* ------------------------------- рендер ------------------------------- */
 
+  /* Телефон/планшет. Нужен только для предела плотности пикселей: DPR 3 —
+     это 9 пикселей полотна на один CSS-пиксель, и заполнение (земля, море,
+     спрайты) дорожает ровно во столько же раз. (pointer: coarse) — тот же
+     признак, которым пользуется игра для «подтверждать кнопкой». */
+  function coarsePointer() {
+    try {
+      return !!(global.matchMedia && global.matchMedia('(pointer: coarse)').matches);
+    } catch (e) { return false; }
+  }
+
   function Renderer(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
@@ -154,9 +164,16 @@
     this.villagerSprites = null;           // атлас жителя
     this.knightSprites = null;             // атлас рыцаря (armored_villager)
     this.ghost = null;                     // призрак размещения: {b, ok, reason, blocked}
+    this.lineGhost = null;                 // предпросмотр всей серии: {items, rot, type, ok}
     this.editing = null;                   // что правим: постройка или null (ведёт игра)
     this.textures = {};
     this.dpr = 1;
+    /* Потолок плотности пикселей. На телефоне 2: текст и кнопки — DOM и
+       остаются резкими, а мир мягче всего на 1/3, зато пикселей полотна
+       в 2.25 раза меньше, чем при DPR 3. В профиле экономии (HUD) — 1.5. */
+    this.dprCap = coarsePointer() ? 2 : 3;
+    /* quality < 1 — реже волны; 1 — полный декор. Мир от числа не зависит. */
+    this.quality = 1;
 
     this.cam = { x: 0, y: 0, zoom: 40 };   // x, y — в клетках, zoom — px на клетку
     this.minZoom = MIN_ZOOM;               // дальше этого не отдаляемся (см. fitIsland)
@@ -1048,7 +1065,12 @@
 
   Renderer.prototype.resize = function () {
     var c = this.canvas;
-    var dpr = global.devicePixelRatio || 1;
+    /* Плотность пикселей ограничена потолком (см. конструктор и setQuality):
+       на телефоне DPR 3 — это 2.07 Мпикс полотна на 360 x 640 против 0.92 при
+       DPR 2. Экранная геометрия (cssW/cssH) не меняется, поэтому клики,
+       камера и пределы панорамы остаются прежними. */
+    var raw = global.devicePixelRatio || 1;
+    var dpr = Math.min(raw, this.dprCap || 3);
     this.dpr = dpr;
     var w = c.clientWidth || 1, h = c.clientHeight || 1;
     if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) {
@@ -1069,6 +1091,17 @@
       // камера, стоявшая у края, обязана подтянуться к острову.
       this.clampCamera();
     }
+  };
+
+  /* Профиль качества: предел DPR и густота декора. Зовётся из HUD («экономия»)
+     и из приёмки; сама игра качество не меняет. Мир, время и физика живут
+     выше отрисовки — здесь только пиксели. */
+  Renderer.prototype.setQuality = function (quality, dprCap) {
+    this.quality = (quality === undefined || quality === null)
+      ? 1 : Math.max(0.3, Math.min(1, quality));
+    if (dprCap) this.dprCap = Math.max(1, Math.min(3, dprCap));
+    if (this.canvas) this.resize();
+    return { quality: this.quality, dprCap: this.dprCap, dpr: this.dpr };
   };
 
   Renderer.prototype.render = function (time) {
@@ -1106,6 +1139,10 @@
        один раз: в eachSprite его не вставлять, иначе участок вклинится в
        порядок глубины и перекроет дерево за домом или жителя. */
     this.drawPlots(ctx);
+    /* Предпросмотр серии — под спрайтами: это пятна на земле, а не здания.
+       Порядок слоёв не меняется: участки -> пятна серии -> спрайты -> выбор,
+       правка, призрак. */
+    this.drawLineGhost(ctx);
     this.drawObjects(ctx);
     /* Порядок слоёв подсветки: выбор -> правка -> призрак. Призрак лежит
        поверх всех (он про то, куда здание ведут), правка — поверх выбора:
@@ -1226,6 +1263,13 @@
        «связь с хостом потеряна». Тот же баг был и в drawWaterShimmer. */
     var box = this.viewTiles(2);
     if (!viewSane(box)) return;
+    /* В экономии на общем плане узор ряби не кладётся: под волнами его всё
+       равно почти не видно, а заливка идёт по всему морю кадра. */
+    var q = (this.quality === undefined || this.quality === null) ? 1 : this.quality;
+    if (q < 0.8) {
+      var span = (box.x1 - box.x0) * (box.y1 - box.y0);
+      if (span > 2500) return;
+    }
 
     ctx.save();
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -1305,6 +1349,10 @@
     // выползает на песок.
     var list = global.Waves.crests(set, box, this.time);
     var hw = this.cssW / 2 + 64, hh = this.cssH / 2 + 64;
+    /* Экономия: на телефоне гребней вдвое меньше и мелочь не рисуется. Это
+       декор, а не мир: гребни не влияют ни на проходимость, ни на время. */
+    var q = (this.quality === undefined || this.quality === null) ? 1 : this.quality;
+    var minPx = WAVE_MIN_PX * (q < 0.8 ? 1.5 : 1);
 
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.translate(this.cssW / 2, this.cssH / 2);
@@ -1319,7 +1367,8 @@
       var spr = cr.spr;
       var dw = spr.sw * sc.x * cr.scale * cr.kx;
       var dh = spr.sh * sc.y * cr.scale * cr.ky;
-      if (dw < WAVE_MIN_PX) continue;
+      if (q < 0.8 && (i % 2)) continue;
+      if (dw < minPx) continue;
       if (sx + dw < -hw || sx - dw > hw || sy + dh < -hh || sy - dh > hh) continue;
       ctx.globalAlpha = cr.alpha;
       ctx.drawImage(spr.img, spr.sx, spr.sy, spr.sw, spr.sh,
@@ -2355,6 +2404,55 @@
   };
 
   // Призрак размещения: пятно под курсором и полупрозрачный спрайт.
+  /* Предпросмотр всей серии: пятно КАЖДОГО кандидата. Один призрак
+     (renderer.ghost) остаётся у негодной серии — он показывает, во что она
+     упёрлась; здесь же вся картина «сколько и где встанет». Цвет — ответ
+     движка: ok && afford зелёный, иначе красный (серия не встанет целиком).
+     Номера рисуются, только когда их можно прочесть: до 20 штук и при
+     достаточном зуме. */
+  Renderer.prototype.drawLineGhost = function (ctx) {
+    var g = this.lineGhost;
+    if (!g || !g.items || !g.items.length || !this.world) return;
+    var B = global.Buildings;
+    if (!B || !B.make) return;
+    var z = this.cam.zoom;
+    var ok = g.ok !== false;
+    var fill = ok ? 'rgba(126,232,164,0.20)' : 'rgba(240,104,86,0.24)';
+    var stroke = ok ? 'rgba(206,255,224,0.50)' : 'rgba(255,190,180,0.55)';
+    var i, it, b;
+    for (i = 0; i < g.items.length; i++) {
+      it = g.items[i];
+      if (!it) continue;
+      b = it.b || (B.make ? B.make({
+        type: it.type || g.type,
+        variant: it.variant || g.variant,
+        rot: it.rot === undefined || it.rot === null ? g.rot : it.rot,
+        x: it.x, y: it.y
+      }) : null);
+      if (!b) continue;
+      this.drawFootprint(ctx, b, { fill: fill, stroke: stroke });
+    }
+    if (z > 8 && g.items.length <= 20) {
+      ctx.save();
+      ctx.font = '700 11px -apple-system, Segoe UI, Roboto, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      for (i = 0; i < g.items.length; i++) {
+        it = g.items[i];
+        if (!it) continue;
+        var fp = B.footprint(it.rot === undefined || it.rot === null ? g.rot : it.rot,
+          it.type || g.type);
+        var cx = this.sx(it.x + fp.w / 2, it.y + fp.h / 2);
+        var cy = this.sy(it.x + fp.w / 2, it.y + fp.h / 2);
+        ctx.fillStyle = 'rgba(24,19,12,0.55)';
+        ctx.fillText(String(i + 1), cx + 1, cy + 1);
+        ctx.fillStyle = ok ? '#eafff2' : '#ffd9d2';
+        ctx.fillText(String(i + 1), cx, cy);
+      }
+      ctx.restore();
+    }
+  };
+
   Renderer.prototype.drawGhost = function (ctx) {
     var g = this.ghost;
     if (!g || !g.b || !this.world) return;

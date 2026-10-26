@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>4tox — остров</title>
 <link rel="stylesheet" href="css/base.css">
 <link rel="stylesheet" href="css/menu.css">
@@ -33,8 +33,24 @@
         <button id="btnDrawer" class="icon-btn drawer-btn" type="button"
                 aria-expanded="false" aria-controls="debugDrawer"
                 title="Сведения о деревне (T)">
-          <span aria-hidden="true">☰</span> Деревня
+          <span aria-hidden="true">☰</span><span class="lbl">Деревня</span>
         </button>
+      </div>
+
+      <!-- Журнал событий: атака, разрушение, остановка роста, отказ стройки,
+           восстановление связи. Это НЕ всплывашка: короткая память, в которую
+           смотрят после того, как что-то пошло не так. В сети всплывашек нет
+           (правило 2026-10-24), а журнал работает всегда: он часть интерфейса,
+           а не весть поверх экрана. -->
+      <div class="event-log" id="eventLog" aria-live="polite">
+        <button id="eventLogToggle" class="event-log-head" type="button"
+                aria-expanded="true" aria-controls="eventLogList" title="Журнал событий">
+          <span class="ev-ico" id="eventLogIcon" aria-hidden="true">•</span>
+          <span class="ev-last" id="eventLogLast">событий пока нет</span>
+          <span class="ev-count hidden" id="eventLogCount"></span>
+          <span class="ev-more" aria-hidden="true">▾</span>
+        </button>
+        <ul class="event-list" id="eventLogList"></ul>
       </div>
 
       <div class="hud-left-col">
@@ -121,20 +137,24 @@
       <!-- Связь в сети: «хост», «12 мс» или «нет связи». В одиночной игре
            скрыт: там сети нет, и бейдж не о чем. -->
       <span id="netBadge" class="net-badge hidden" title="Связь с сервером">сеть</span>
+      <!-- Мир пропустил время: браузер не смог догнать простой (boot.js
+           выбрасывает долг больше MAX_DEBT). Это честная строка, а не тост. -->
+      <span id="simBadge" class="sim-badge hidden"
+            title="Мир пропустил время: браузер не успел догнать простой">—</span>
       <!-- Ратуша пала, но партия идёт: игрок смотрит, не командуя. -->
       <span id="spectatorBadge" class="spectator-badge hidden"
             title="Ваша ратуша пала — вы наблюдаете">Наблюдение</span>
       <button id="btnSquad" class="icon-btn" type="button"
               aria-controls="squadPanel" aria-expanded="false"
               title="Войска (O)">
-        <span aria-hidden="true">⚔</span> Войска
+        <span aria-hidden="true">⚔</span><span class="lbl">Войска</span>
       </button>
       <button id="btnBuild" class="icon-btn build-open" type="button"
               aria-controls="buildMenu" aria-expanded="false"
               title="Меню построек">
-        <span aria-hidden="true">⌂</span> Стройка
+        <span aria-hidden="true">⌂</span><span class="lbl">Стройка</span>
       </button>
-      <button id="btnPause" class="icon-btn" type="button" title="Меню (Esc)"><span aria-hidden="true">☰</span> Меню</button>
+      <button id="btnPause" class="icon-btn" type="button" title="Меню (Esc)"><span aria-hidden="true">☰</span><span class="lbl">Меню</span></button>
     </div>
 
     <!-- Выезжающая панель сведений: раньше сид и список жителей лежали в
@@ -163,6 +183,12 @@
           <span aria-hidden="true">◎</span> Следить
         </button>
         <button id="btnFind" class="icon-btn" type="button" title="Показать выбранного жителя (H)">К жителю</button>
+        <!-- Профиль экономии: 30 кадров/с, DPR до 1.5 и реже волны. Скорость
+             мира не меняется (её держат стенные часы boot.js). -->
+        <button id="btnEconomy" class="icon-btn" type="button" aria-pressed="false"
+                title="Экономия: 30 кадров/с и мельче картинка — для телефона">
+          <span aria-hidden="true">⚡</span> Экономия
+        </button>
       </div>
 
       <div class="drawer-villagers">
@@ -196,8 +222,19 @@
       </div>
       <i class="place-state" id="placeState">ведите мышью · ЛКМ — поставить · Esc — отменить</i>
       <div class="place-actions">
+        <!-- «Поставить» — для телефона: там касание карты только ДВИГАЕТ
+             призрак, а подтверждение отдельной кнопкой (Play.buildAction).
+             На компьютере кнопка скрыта: мышь ставит кликом. -->
+        <button id="placeConfirm" class="play-btn compact hidden" type="button"
+                title="Поставить здесь">Поставить</button>
         <button id="placeRotate" class="wood-btn" type="button" title="Повернуть на 90° (R)">Повернуть</button>
         <button id="placeCancel" class="wood-btn" type="button" title="Отменить постановку (Esc)">Отменить</button>
+        <!-- Линия: подтверждение всей серии одной транзакцией. Число зданий и
+             общая цена — в подписи, причина отказа — в строке состояния. -->
+        <button id="lineConfirm" class="play-btn compact" type="button"
+                title="Построить всю серию">Построить</button>
+        <button id="lineRotate" class="wood-btn" type="button" title="Повернуть серию (R)">Повернуть</button>
+        <button id="lineCancel" class="wood-btn" type="button" title="Отменить серию (Esc)">Отменить</button>
       </div>
     </div>
 
@@ -244,11 +281,20 @@
       <p class="edit-note hidden" id="editNote"></p>
     </div>
 
-    <div class="minimap-frame">
+    <div class="minimap-frame" id="minimapFrame">
       <canvas id="mm" width="192" height="192"></canvas>
+      <!-- Угроза: появляется на 10 секунд после первого удара по своему
+           объекту. Кнопка — «к месту атаки» (Play.goToEvent). -->
+      <button id="threatGo" class="threat-go hidden" type="button"
+              title="К месту атаки" aria-label="К месту атаки">
+        <span aria-hidden="true">⚔</span>
+      </button>
       <div class="mm-bar">
         <button id="btnZoomOut" class="mini-btn" title="Дальше" aria-label="Отдалить">−</button>
-        <span class="mm-caption">обзор</span>
+        <!-- «обзор» — не подпись, а кнопка сворачивания: на телефоне обзор
+             занимает пол-экрана, и его можно убрать в квадрат 44 x 44. -->
+        <button id="btnMmFold" class="mm-caption mm-toggle" type="button"
+                aria-expanded="true" aria-label="Свернуть обзор" title="Свернуть обзор">обзор</button>
         <button id="btnZoomIn" class="mini-btn" title="Ближе" aria-label="Приблизить">+</button>
       </div>
     </div>

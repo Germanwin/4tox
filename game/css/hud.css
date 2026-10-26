@@ -44,8 +44,8 @@
 
 .hud-top-left {
   position: absolute;
-  left: 16px;
-  top: 16px;
+  left: calc(16px + var(--sa-l));
+  top: calc(16px + var(--sa-t));
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -151,8 +151,8 @@
 
 .hud-top-right {
   position: absolute;
-  right: 16px;
-  top: 16px;
+  right: calc(16px + var(--sa-r));
+  top: calc(16px + var(--sa-t));
   display: flex;
   gap: 8px;
   align-items: flex-start;
@@ -200,8 +200,8 @@
 
 .hud-bottom-left {
   position: absolute;
-  left: 16px;
-  bottom: 16px;
+  left: calc(16px + var(--sa-l));
+  bottom: calc(16px + var(--sa-b));
 }
 
 /* ------------------------- клетка под курсором ------------------------- *
@@ -212,7 +212,7 @@
 .cell-bar {
   position: absolute;
   left: 50%;
-  bottom: 16px;
+  bottom: calc(16px + var(--sa-b));
   transform: translateX(-50%);
   padding: 6px 14px;
   border: 3px solid rgba(74, 50, 32, .8);
@@ -280,9 +280,9 @@
 
 .debug-drawer {
   position: absolute;
-  left: 0;
-  top: 74px;
-  bottom: 16px;
+  left: var(--sa-l);
+  top: calc(74px + var(--sa-t));
+  bottom: calc(16px + var(--sa-b));
   z-index: 5;
   display: flex;
   flex-direction: column;
@@ -344,8 +344,12 @@
 }
 .drawer-actions {
   display: flex;
+  flex-wrap: wrap;          /* три кнопки в 92vw не влезают в одну строку */
   gap: 8px;
 }
+/* «Экономия» — третья кнопка панели: своя строка во всю ширину. Иначе на
+   телефоне её подпись уезжала за правую кромку дощечки (замер 2026-10-26). */
+.drawer-actions #btnEconomy { flex: 1 1 100%; }
 .drawer-actions .icon-btn {
   flex: 1;
   height: 40px;
@@ -394,8 +398,9 @@
   gap: 5px;
   min-height: 0;
   flex: 1 1 auto;
-  max-height: none;
+  max-height: min(46vh, 430px);
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .villager-row {
   display: flex;
@@ -525,8 +530,9 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 38vh;
+  max-height: min(38vh, 420px);
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 /* Строка панели — две полосы: сверху имя жителя и кнопка, снизу во всю ширину
    прописка с занятием, под ней — причина отказа. В одну полосу «числится в доме
@@ -807,8 +813,8 @@
 
 .build-menu {
   position: absolute;
-  right: 16px;
-  top: 74px;
+  right: calc(16px + var(--sa-r));
+  top: calc(74px + var(--sa-t));
   z-index: 5;
   display: flex;
   flex-direction: column;
@@ -854,7 +860,9 @@
   flex-direction: column;
   gap: 8px;
   min-height: 0;
+  max-height: min(58vh, 430px);
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .build-card {
   display: grid;
@@ -923,7 +931,7 @@
   font-variant-numeric: tabular-nums;
 }
 .build-card .build-btn {
-  grid-column: 2 / 4;
+  grid-column: 2 / 3;
   grid-row: 2;
   justify-self: stretch;
   padding: 7px 10px;
@@ -931,6 +939,14 @@
   border-width: 3px;
   border-radius: 10px;
   box-shadow: inset 0 2px 0 rgba(255, 255, 255, .55), 0 3px 0 var(--wood-dark);
+}
+/* «Линия» — вторая кнопка карточки, в колонке цены: она уже, текст короткий,
+   а действие другое (серия с предпросмотром, одна транзакция). */
+.build-card .line-btn {
+  grid-column: 3 / 4;
+  justify-self: stretch;
+  padding: 7px 9px;
+  font-size: 12.5px;
 }
 .build-card .build-btn:active {
   transform: translateY(var(--press));
@@ -961,7 +977,7 @@
 .place-bar {
   position: absolute;
   left: 50%;
-  bottom: 56px;
+  bottom: calc(56px + var(--sa-b));
   z-index: 5;
   transform: translateX(-50%);
   display: flex;
@@ -1094,8 +1110,8 @@
 
 .minimap-frame {
   position: absolute;
-  right: 16px;
-  bottom: 16px;
+  right: calc(16px + var(--sa-r));
+  bottom: calc(16px + var(--sa-b));
   padding: 8px 8px 4px;
   border: 4px solid var(--wood-dark);
   border-radius: 18px;
@@ -1167,7 +1183,7 @@
 .edit-bar {
   position: absolute;
   left: 50%;
-  bottom: 56px;
+  bottom: calc(56px + var(--sa-b));
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
@@ -1260,7 +1276,7 @@
 #toasts {
   position: absolute;
   left: 50%;
-  top: 18px;
+  top: calc(18px + var(--sa-t));
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
@@ -1343,22 +1359,287 @@
 
 .pause-buttons { display: grid; gap: 12px; }
 
+/* --------------------------- журнал событий --------------------------- *
+ * Атака, разрушение, остановка роста, отсутствие леса/пути, отказ стройки,
+ * восстановление связи. Это НЕ всплывашка: короткая память, в которую смотрят
+ * после того, как что-то пошло не так (в сети всплывашек нет вовсе — правило
+ * 2026-10-24, а журнал работает всегда).
+ *
+ * Плашка стоит в левом столбце под строкой ресурсов. Свёрнутая показывает
+ * последнее событие одной строкой; тап раскрывает список. На телефоне она
+ * уезжает вниз влево (там свободно) и раскрывается ВВЕРХ, чтобы не уйти за
+ * нижнюю кромку экрана. */
+
+.event-log {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: min(360px, calc(100vw - 32px));
+  max-width: calc(100vw - 20px);
+  pointer-events: none;
+}
+.event-log-head {
+  --press: 2px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 32px;
+  padding: 5px 9px;
+  border: 3px solid var(--wood-dark);
+  border-radius: 12px;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: left;
+  color: #fdf3d9;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .26), rgba(255, 255, 255, 0) 42%),
+    linear-gradient(180deg, var(--wood-lite), var(--wood) 62%, var(--wood-mid));
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, .28),
+    0 4px 0 rgba(74, 50, 32, .5),
+    0 8px 14px rgba(6, 24, 40, .28);
+  pointer-events: auto;
+  transition: transform .09s ease;
+}
+.event-log-head:active { transform: translateY(var(--press)); }
+.ev-ico {
+  flex: 0 0 auto;
+  width: 20px;
+  text-align: center;
+  font-size: 14px;
+  filter: drop-shadow(0 1px 0 rgba(40, 24, 10, .6));
+}
+.ev-last {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 0 rgba(40, 24, 10, .55);
+}
+.event-log.empty .ev-last { opacity: .7; font-weight: 600; }
+.ev-count {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 7px;
+  font-size: 10.5px;
+  font-weight: 800;
+  color: #ffd9c8;
+  background: rgba(120, 40, 24, .55);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
+}
+.ev-more {
+  flex: 0 0 auto;
+  font-size: 12px;
+  opacity: .8;
+  transition: transform .18s ease;
+}
+.event-log.open .ev-more { transform: rotate(180deg); }
+.event-list {
+  display: none;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 172px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  pointer-events: none;
+}
+.event-log.open .event-list { display: flex; }
+.event-row {
+  display: grid;
+  grid-template-columns: 16px auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 9px;
+  font-size: 11.5px;
+  line-height: 1.2;
+  color: #f3e6c8;
+  background: rgba(24, 19, 12, .52);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .10);
+}
+.event-row .ev-ico { font-size: 12px; }
+.event-row .ev-time {
+  font-variant-numeric: tabular-nums;
+  font-size: 10.5px;
+  opacity: .8;
+}
+.event-row .ev-text {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.event-row .ev-count { font-size: 9.5px; padding: 0 5px; }
+.event-row.attacked { color: #ffd0c2; }
+.event-row.destroyed { color: #ffc0ae; }
+.event-row.warn { color: #ffe0a8; }
+.event-row.good { color: #cfe6b8; }
+.event-row .ev-go {
+  --press: 2px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 26px;
+  border: 2px solid var(--wood-dark);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 800;
+  color: #43301c;
+  background: linear-gradient(180deg, var(--sand-lite), var(--sand) 60%, var(--sand-dark));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5), 0 2px 0 var(--wood-dark);
+}
+.event-row .ev-go:active { transform: translateY(var(--press)); }
+.event-row.has-go .ev-go { display: flex; }
+
+/* ------------------------- «мир пропустил N с» ------------------------- *
+ * Постоянная строка, а не тост: время мира выброшено (boot.js, MAX_DEBT), и
+ * это видно, пока игрок не перезапустит партию. Молчаливое ускорение мира
+ * запрещено — отброшенное время должно быть в интерфейсе. */
+.sim-badge {
+  align-self: flex-start;
+  padding: 6px 10px 5px;
+  border: 2px solid #7a4a20;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 800;
+  line-height: 1;
+  color: #5b1e14;
+  background: linear-gradient(180deg, #ffd9a8, #e5b07c);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .45), 0 3px 0 rgba(122, 85, 51, .45);
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* ---------------------------- метка угрозы ---------------------------- *
+ * Десять секунд после первого удара по своему объекту: кнопка в углу обзора
+ * ведёт камеру к месту атаки (Play.goToEvent). Сама метка на мини-карте
+ * рисуется в hud.js (drawMinimap) — здесь только кнопка. */
+.threat-go {
+  --press: 3px;
+  position: absolute;
+  left: -12px;
+  top: -12px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 3px solid #7a2c22;
+  border-radius: 50%;
+  font-size: 15px;
+  color: #fff6d8;
+  background: radial-gradient(circle at 38% 32%, #ffd9a8, #e05a4e 68%, #b23a2e);
+  box-shadow: 0 3px 0 rgba(74, 50, 32, .55), 0 8px 16px rgba(6, 24, 40, .4);
+  animation: threat-pulse 1s ease-in-out infinite;
+}
+.threat-go:active { transform: translateY(var(--press)); }
+@keyframes threat-pulse {
+  50% { transform: scale(1.12); filter: brightness(1.15); }
+}
+
+/* ------------------- обзор: сворачивание и «Поставить» ----------------- *
+ * «обзор» в полосе — кнопка, а не подпись: на телефоне мини-карта занимает
+ * пол-экрана, и её можно свернуть в квадрат 44 x 44. Та же свёрнутая форма
+ * включается сама, пока открыта полоса размещения: полоса и обзор стоят в
+ * одном углу и спорили за место (замер 2026-10-26: пересечение 20 700 px²). */
+.mm-caption.mm-toggle {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: #4a3220;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, .35);
+  cursor: pointer;
+}
+.mm-caption.mm-toggle:active { transform: translateY(1px); }
+.minimap-frame.folded {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  padding: 0;
+}
+/* Пока открыта полоса размещения, обзор убирается совсем: на телефоне полоса
+   с кнопкой «Поставить» выше, и свёрнутый квадрат всё равно попадал под неё.
+   Смотреть обзор в момент выбора места нечего — место выбирают по карте. */
+#hud.placing .minimap-frame { display: none; }
+.minimap-frame.folded #mm,
+.minimap-frame.folded .mm-bar .mini-btn,
+.minimap-frame.folded .threat-go { display: none; }
+.minimap-frame.folded .mm-bar { margin: 0; gap: 0; }
+.minimap-frame.folded .mm-caption.mm-toggle {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 2px solid var(--wood-dark);
+  border-radius: 12px;
+  font-size: 9.5px;
+  letter-spacing: .04em;
+  color: #43301c;
+  background: linear-gradient(180deg, var(--sand-lite), var(--sand) 60%, var(--sand-dark));
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .5), 0 3px 0 var(--wood-dark);
+}
+
+/* --------------------- полоса размещения: линия ----------------------- *
+ * «Построить N» — одна транзакция на всю серию; число и общая цена приходят
+ * из Play.lineInfo. Пока линия не начата или место негодно, кнопка выключена,
+ * а причина стоит в строке состояния словами движка. */
+.place-bar #lineConfirm,
+.place-bar #lineRotate,
+.place-bar #lineCancel { display: none; }
+.place-bar.line #placeConfirm,
+.place-bar.line #placeRotate,
+.place-bar.line #placeCancel { display: none; }
+.place-bar.line #lineConfirm { display: flex; }
+.place-bar.line #lineRotate,
+.place-bar.line #lineCancel { display: block; }
+.place-actions { flex-wrap: wrap; }
+.place-actions .play-btn.compact {
+  flex: 1 1 100%;
+  width: auto;
+  padding: 10px 16px;
+  font-size: 16px;
+  border-radius: 12px;
+}
+.place-bar .play-btn:disabled,
+.place-bar .wood-btn:disabled {
+  cursor: not-allowed;
+  filter: grayscale(.45) brightness(.88);
+  transform: none;
+}
+
 /* --------------------------- мелкие экраны --------------------------- */
 
 @media (max-width: 900px) {
   #mm { width: 132px; height: 132px; }
   .hint-bar { display: none; }
   /* Строка клетки встаёт над обзором и не наезжает на него. */
-  .cell-bar { bottom: 12px; font-size: 11.5px; padding: 5px 10px; }
+  .cell-bar { bottom: calc(12px + var(--sa-b)); font-size: 11.5px; padding: 5px 10px; }
   /* Полоса правки и полоса размещения: в узком окне кнопки переносятся на
      вторую строку, а сами полосы поднимаются выше — строка клетки тут ниже. */
-  .edit-bar { bottom: 46px; padding: 8px 10px 9px; }
+  .edit-bar { bottom: calc(46px + var(--sa-b)); padding: 8px 10px 9px; }
   .edit-actions { flex-wrap: wrap; justify-content: center; max-width: 78vw; }
   .edit-btn { padding: 7px 10px; font-size: 12.5px; }
-  .place-bar { bottom: 46px; padding: 8px 10px 9px; min-width: min(360px, 92vw); }
+  .place-bar { bottom: calc(46px + var(--sa-b)); padding: 8px 10px 9px; min-width: min(360px, 92vw); }
   /* Выезжающая панель на узком окне занимает почти всю ширину: строка жителя
      должна оставаться читаемой. */
-  .debug-drawer { width: 92vw; top: 70px; padding: 10px 10px 12px; }
+  .debug-drawer { width: 92vw; top: calc(70px + var(--sa-t)); padding: 10px 10px 12px; }
   .villager-row { padding: 2px 4px; }
   .villager-row .face-wrap { width: 26px; height: 33px; }
   .villager-who b { font-size: 12.5px; }
@@ -1372,7 +1653,7 @@
   .hire-slots { font-size: 11px; }
   .hire-info { font-size: 10.5px; }
   .hire-list { max-height: 34vh; }
-  .build-menu { right: 10px; width: 92vw; top: 70px; }
+  .build-menu { right: calc(10px + var(--sa-r)); width: 92vw; top: calc(70px + var(--sa-t)); }
   .res-bar { padding: 5px 10px 5px 7px; gap: 7px; }
   .res-icon { width: 37px; height: 30px; }
   .res-count b { font-size: 19px; }
@@ -1386,7 +1667,89 @@
    (проверено приёмкой в окне 760 x 720), и поджимать там нечего. */
 @media (max-height: 660px) {
   .hire-list { max-height: 24vh; }
-  .debug-drawer { top: 66px; bottom: 10px; gap: 7px; }
+  .debug-drawer { top: calc(66px + var(--sa-t)); bottom: calc(10px + var(--sa-b)); gap: 7px; }
   .drawer-actions .icon-btn { height: 36px; }
-  .build-menu { top: 66px; max-height: calc(100% - 82px); }
+  .build-menu { top: calc(66px + var(--sa-t)); max-height: calc(100% - 82px); }
+}
+
+/* ------------------------- телефон: цели касания ----------------------- *
+ * Правило задания 4.10: цель касания — около 44 CSS px. Растут КНОПКИ, а не
+ * текст: промах пальцем дороже плотной вёрстки. На компьютере (pointer: fine)
+ * размеры прежние, и приёмка menu.js не меняется. */
+@media (pointer: coarse) {
+  #hud .mini-btn,
+  .minimap-frame .mini-btn { width: 44px; height: 44px; font-size: 20px; }
+  #hud .icon-btn { min-height: 44px; }
+  #hud .wood-btn { min-height: 44px; }
+  #hud .play-btn { min-height: 44px; }
+  .plaque-edit { min-height: 44px; }
+  .build-card .build-btn { min-height: 44px; }
+  .hire-batch-btn { min-height: 44px; }
+  .hire-row .wood-btn { min-height: 44px; }
+  .squad-controls .mini-btn { width: 44px; height: 44px; }
+  .squad-row .wood-btn { min-height: 44px; }
+  .drawer-actions .icon-btn { min-height: 44px; }
+  .event-log-head { min-height: 44px; }
+  .event-row .ev-go { width: 44px; height: 40px; }
+  .threat-go { left: -14px; top: -14px; width: 44px; height: 44px; font-size: 18px; }
+  /* На телефоне кнопки обзора по 44: полоса из трёх целей требует 132 px,
+     поэтому и сам обзор чуть шире (квадрат 152, а не 132). */
+  #hud .minimap-frame #mm { width: 152px; height: 152px; }
+  .mm-caption.mm-toggle { flex: 0 0 44px; min-height: 44px; letter-spacing: .04em; }
+  .minimap-frame.folded .mm-caption.mm-toggle,
+  #hud.placing .minimap-frame .mm-caption.mm-toggle { flex: 0 0 44px; width: 44px; height: 44px; }
+}
+
+/* Телефон: верхний ряд в одну строку без пересечений. Замер 2026-10-26:
+   при 360 px строка ресурсов (299) и три кнопки справа (320) лежали друг на
+   друге, «Добыто» и «Деревня» были не видны под кнопками армии и стройки.
+   Теперь слева — охапка и число (без слов), справа три значка 44 px. */
+@media (max-width: 560px) {
+  .hud-top-left { left: calc(10px + var(--sa-l)); top: calc(10px + var(--sa-t)); }
+  .hud-left-row { gap: 6px; }
+  .res-bar { gap: 6px; padding: 5px 9px 5px 7px; }
+  .res-title { display: none; }
+  .res-icon { width: 33px; height: 26px; }
+  .res-count { min-width: 40px; gap: 3px; }
+  .res-count b { font-size: 19px; }
+  .res-count i { display: none; }
+  .drawer-btn { width: 44px; min-width: 44px; padding: 0; justify-content: center; }
+  .drawer-btn .lbl { display: none; }
+  .hud-top-right { right: calc(10px + var(--sa-r)); top: calc(10px + var(--sa-t)); gap: 6px; }
+  .hud-top-right .icon-btn { width: 44px; min-width: 44px; padding: 0; justify-content: center; font-size: 19px; }
+  .hud-top-right .lbl { display: none; }
+  .hud-top-right .net-badge,
+  .hud-top-right .spectator-badge,
+  .hud-top-right .sim-badge {
+    position: absolute;
+    right: 0;
+    top: 52px;
+    padding: 4px 7px 3px;
+    font-size: 10.5px;
+  }
+  .hud-top-right .spectator-badge { top: 80px; }
+  .hud-top-right .sim-badge { top: 108px; }
+  /* Журнал на телефоне — в том же левом столбце, под строкой ресурсов:
+     верхний ряд теперь один (значки справа в нём же), поэтому место под ним
+     свободно. Раскрытый список поджимается: панели под ним должны остаться
+     на экране. */
+  .event-log {
+    width: calc(100vw - 20px - var(--sa-l) - var(--sa-r));
+    max-width: calc(100vw - 20px - var(--sa-l) - var(--sa-r));
+  }
+  .event-log.open .event-list { max-height: min(32vh, 168px); }
+  .event-log-head { min-height: 44px; }
+  .plaque-edit { padding: 8px 10px; }
+  .hire-panel { min-width: 0; max-width: min(304px, calc(100vw - 32px)); }
+  .squad-panel { min-width: 0; max-width: min(328px, calc(100vw - 32px)); }
+  .villager-list { max-height: 42vh; }
+  .debug-drawer { width: min(92vw, 360px); }
+  .build-menu { width: min(92vw, 360px); }
+}
+
+/* Ландшафт телефона: обзор не должен занимать пол-экрана по высоте. Кнопки
+   остаются по 44, а сам холст обзора меньше — карта важнее. */
+@media (pointer: coarse) and (max-height: 480px) {
+  #hud .minimap-frame #mm { width: 112px; height: 112px; }
+  .event-log.open .event-list { max-height: min(30vh, 120px); }
 }

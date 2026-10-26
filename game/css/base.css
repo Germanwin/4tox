@@ -63,6 +63,15 @@
   --drop: 0 10px 22px rgba(12, 32, 48, .38);
 
   --ease-pop: cubic-bezier(.34, 1.56, .64, 1);
+
+  /* Безопасные поля устройства (вырез, домашний индикатор). Без
+     viewport-fit=cover они равны нулю, поэтому в index.html он включён:
+     только вместе это даёт игру во весь экран и содержимое вне выреза.
+     Одно место на весь интерфейс, чтобы отступы не разъезжались. */
+  --sa-t: env(safe-area-inset-top, 0px);
+  --sa-r: env(safe-area-inset-right, 0px);
+  --sa-b: env(safe-area-inset-bottom, 0px);
+  --sa-l: env(safe-area-inset-left, 0px);
 }
 
 * { box-sizing: border-box; }
@@ -112,6 +121,10 @@ html, body {
   align-items: center;
   justify-content: center;
   z-index: 5;
+  /* Экраны (меню, пауза, лобби) не залезают под вырез и домашний индикатор:
+     с viewport-fit=cover страница занимает весь экран, и без этих полей
+     доска на телефоне вставала бы под notch. */
+  padding: var(--sa-t) var(--sa-r) var(--sa-b) var(--sa-l);
 }
 
 /* ------------------------------ доска ------------------------------ *

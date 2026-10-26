@@ -93,6 +93,40 @@
   var placeSig = '';          // строка полосы размещения
   var spendTimer = 0;
 
+  /* Сколько секунд метка угрозы живёт на мини-карте (задание 4.9). Само
+     событие остаётся в журнале: гаснет только метка и кнопка «к месту атаки». */
+  var THREAT_LIFE = 10;
+
+  /* Журнал событий. items — уже развёрнутые к виду «новые сверху», lastId —
+     номер последнего прочитанного события: по нему видно, надо ли вообще
+     трогать DOM (Events.sinceId считает то же на стороне движка). Ни один
+     показ здесь не всплывашка: журнал — часть интерфейса, он живёт и в сети,
+     где всплывашек нет вовсе. */
+  var evLog = { open: false, lastId: 0, items: [], threat: null };
+
+  /* Обзор свёрнут игроком (кнопка «обзор») — отдельно от временного
+     сворачивания на время постановки (#hud.placing). */
+  var mmFolded = false;
+
+  /* Профиль экономии: 30 кадров/с + DPR до 1.5 + реже волны. Скорость мира не
+     меняется — её держат стенные часы boot.js, а не число кадров. */
+  var economy = false;
+
+  /* Как выглядит событие: значок и цвет строки. Виды — контракт §6
+     (mapgen2/js/events.js): attack, destroy, growth-stop, no-forest, no-path,
+     build-refused, command-rejected, net-back (+ net-lost у сети). */
+  var EV_KINDS = {
+    attack:             { ico: '⚔', cls: 'attacked' },
+    destroy:            { ico: '☠', cls: 'destroyed' },
+    'growth-stop':      { ico: '⏳', cls: 'warn' },
+    'no-forest':        { ico: '🌲', cls: 'warn' },
+    'no-path':          { ico: '🚧', cls: 'warn' },
+    'build-refused':    { ico: '⛔', cls: 'warn' },
+    'command-rejected': { ico: '⛔', cls: 'warn' },
+    'net-lost':         { ico: '📶', cls: 'warn' },
+    'net-back':         { ico: '📶', cls: 'good' }
+  };
+
   function init(bind) {
     actions = bind || {};
 
@@ -165,8 +199,35 @@
     el.editName = $('editName');
     el.editState = $('editState');
     el.editNote = $('editNote');
+    // Журнал событий: плашка, её шапка, счётчик и список.
+    el.eventLog = $('eventLog');
+    el.eventLogToggle = $('eventLogToggle');
+    el.eventLogLast = $('eventLogLast');
+    el.eventLogIcon = $('eventLogIcon');
+    el.eventLogCount = $('eventLogCount');
+    el.eventLogList = $('eventLogList');
+    // Полоса размещения: подтверждение на телефоне и вся линия.
+    el.placeConfirm = $('placeConfirm');
+    el.lineConfirm = $('lineConfirm');
+    el.lineRotate = $('lineRotate');
+    el.lineCancel = $('lineCancel');
+    // Обзор: сворачивание, кнопка угрозы, рамка (для класса folded).
+    el.minimapFrame = $('minimapFrame');
+    el.btnMmFold = $('btnMmFold');
+    el.threatGo = $('threatGo');
+    // «Мир пропустил N с» и профиль экономии.
+    el.simBadge = $('simBadge');
+    el.btnEconomy = $('btnEconomy');
 
-    mmDpr = global.devicePixelRatio || 1;
+    /* Плотность мини-карты ограничена двумя: внутренний холст 192 x 2 — это
+       уже 147 456 пикселей на перерисовку, а DPR 3 давал 331 776 при том же
+       размере на экране. Обзор — картинка «где я», а не текст: разницы
+       глазом не видно, а блит вдвое дешевле. */
+    mmDpr = Math.min(global.devicePixelRatio || 1, 2);
+
+    /* На телефоне журнал по умолчанию свёрнут в одну строку: экран низкий, и
+       раскрытый список закрыл бы карту. На компьютере — раскрыт. */
+    evLog.open = global.innerWidth > 560 && global.innerHeight > 500;
     el.mm.width = MM * mmDpr;
     el.mm.height = MM * mmDpr;
     mmCtx = el.mm.getContext('2d');
@@ -344,6 +405,66 @@
       $('btnFollow').classList.remove('active');
     });
 
+    /* Журнал: шапка сворачивает/раскрывает, стрелка «→» ведёт камеру к месту
+       события (Play.goToEvent). Делегирование — потому что строки
+       пересобираются на каждое новое событие. */
+    if (el.eventLogToggle) {
+      el.eventLogToggle.addEventListener('click', function () {
+        setEventLogOpen(!evLog.open);
+      });
+    }
+    if (el.eventLogList) {
+      el.eventLogList.addEventListener('click', function (e) {
+        var btn = e.target && e.target.closest ? e.target.closest('.ev-go') : null;
+        if (!btn) return;
+        var row = btn.closest('.event-row');
+        if (!row) return;
+        var x = +row.getAttribute('data-x'), y = +row.getAttribute('data-y');
+        if (isFinite(x) && isFinite(y) && global.Play.goToEvent) {
+          global.Play.goToEvent(x, y);
+        }
+      });
+    }
+    /* «К месту атаки» у обзора: та же точка, что у последнего attack. */
+    if (el.threatGo) {
+      el.threatGo.addEventListener('click', function () {
+        var th = evLog.threat;
+        if (th && global.Play.goToEvent) global.Play.goToEvent(th.x, th.y);
+      });
+    }
+    /* Сворачивание обзора: на телефоне он занимает пол-экрана. */
+    if (el.btnMmFold) {
+      el.btnMmFold.addEventListener('click', function () { setMmFolded(!mmFolded); });
+    }
+    /* «Поставить» на телефоне: касание карты двигает призрак, подтверждение —
+       этой кнопкой (то же действие, что клик мышью). */
+    if (el.placeConfirm) {
+      el.placeConfirm.addEventListener('click', function () { buildAct('place'); });
+    }
+    /* Линия: «Построить N» — одна транзакция, «Повернуть» — поворот серии,
+       «Отменить» — закрыть без покупки. Своих правил у кнопок нет. */
+    if (el.lineConfirm) {
+      el.lineConfirm.addEventListener('click', function () {
+        var res = global.Play.lineConfirm ? global.Play.lineConfirm() : null;
+        if (res && !res.ok && res.reason) toast(res.reason);
+      });
+    }
+    if (el.lineRotate) {
+      el.lineRotate.addEventListener('click', function () {
+        var res = global.Play.lineRotate ? global.Play.lineRotate() : null;
+        if (res && !res.ok && res.reason) toast(res.reason);
+      });
+    }
+    if (el.lineCancel) {
+      el.lineCancel.addEventListener('click', function () {
+        if (global.Play.lineCancel) global.Play.lineCancel();
+      });
+    }
+    /* Экономия: единственная настройка качества, которая видна игроку. */
+    if (el.btnEconomy) {
+      el.btnEconomy.addEventListener('click', function () { toggleEconomy(); });
+    }
+
     /* Клик по карте убирает меню построек: место выбирают глазами по карте, и
        панель не должна закрывать её в этот момент. Панель сведений так не
        закрывается — она живёт сбоку и карте не мешает. */
@@ -520,12 +641,23 @@
     btn.textContent = 'Поставить';
     btn.addEventListener('click', function () { chooseBuilding(opt.type); });
 
+    /* Вторая кнопка карточки — серия. Тот же тип и цена, другое действие:
+       Play.beginLine ведёт линию с предпросмотром всей серии и одной
+       транзакцией (Buildings.planLine). */
+    var lineBtn = document.createElement('button');
+    lineBtn.type = 'button';
+    lineBtn.className = 'wood-btn build-btn line-btn';
+    lineBtn.textContent = 'Линия';
+    lineBtn.title = 'Несколько таких построек одной линией, с предпросмотром';
+    lineBtn.addEventListener('click', function () { chooseLine(opt.type); });
+
     li.appendChild(preview);
     li.appendChild(info);
     li.appendChild(price);
     li.appendChild(btn);
+    li.appendChild(lineBtn);
     el.buildList.appendChild(li);
-    buildRows.push({ li: li, canvas: canvas, btn: btn, opt: opt });
+    buildRows.push({ li: li, canvas: canvas, btn: btn, lineBtn: lineBtn, opt: opt });
 
     paintBuildPreview(canvas, opt);
   }
@@ -590,11 +722,25 @@
       row.btn.title = opt.afford
         ? 'Взять постройку и поставить на карте'
         : 'не хватает брёвен: нужно ' + opt.price + ', у деревни ' + opt.logs;
+      /* «Линия» включается и выключается тем же ответом мира: одна цена на
+         первое здание, а всю серию считает и проверяет движок. */
+      if (row.lineBtn) {
+        row.lineBtn.disabled = !opt.afford;
+        row.lineBtn.title = opt.afford
+          ? 'Серия таких построек одной линией, с предпросмотром'
+          : 'не хватает брёвен: нужно ' + opt.price + ', у деревни ' + opt.logs;
+      }
     }
   }
 
   function chooseBuilding(type) {
     var res = global.Play.beginBuild(type);
+    if (res && res.ok) closeBuildMenu();
+    else if (res && res.reason) toast(res.reason);
+  }
+
+  function chooseLine(type) {
+    var res = global.Play.beginLine ? global.Play.beginLine(type) : null;
     if (res && res.ok) closeBuildMenu();
     else if (res && res.reason) toast(res.reason);
   }
@@ -608,30 +754,74 @@
   }
 
   /* Полоса размещения: что ставим, сколько стоит и годится ли место под
-     курсором. Всё приходит готовым из мира (`Play` шлёт событие `build`). */
+     курсором. Всё приходит готовым из мира (`Play` шлёт событие `build`).
+     Два вида полосы — одно здание и линия: у линии считаются N и общая цена,
+     а подтверждает её отдельная кнопка «Построить N» (одна транзакция). */
   function onBuild(ev) {
     if (!el.placeBar) return;
     var info = ev && ev.info;
     if (!info) {
       el.placeBar.classList.add('hidden');
+      el.placeBar.classList.remove('line');
+      el.hud.classList.remove('placing');
       placeSig = '';
       return;
     }
-    el.placeName.textContent = capitalize(info.name || info.type);
-    el.placePrice.textContent = info.price;
-    var line = buildStateText(info);
-    if (line !== placeSig) {
-      placeSig = line;
-      el.placeState.textContent = line;
-      el.placeState.classList.toggle('bad', !info.ok);
+    var line = info.mode === 'line';
+    el.placeBar.classList.toggle('line', line);
+    /* Пока открыта полоса, мини-карта сворачивается в квадрат (CSS
+       #hud.placing): они стоят в одном углу, и на телефоне полоса накрывала
+       обзор на 20 700 px². */
+    el.hud.classList.add('placing');
+    var name = capitalize(info.name || info.type);
+    el.placeName.textContent = line ? (name + ' · линия') : name;
+    el.placePrice.textContent = line ? (info.cost || 0) : info.price;
+    el.placePrice.title = line
+      ? 'Столько брёвен спишется за всю серию'
+      : 'Столько брёвен спишется при постановке';
+    var text;
+    if (line) {
+      var n = info.count || 0;
+      var parts = [];
+      parts.push(n
+        ? (n + ' ' + buildingWord(n) + ' · ' + info.price + ' × ' + n + ' = ' +
+           info.cost + ' ' + logWord(info.cost))
+        : 'серия ещё не начата');
+      if (!info.ok) parts.push('нельзя: ' + (info.reason || 'нет места'));
+      else if (!info.afford) parts.push('не хватает брёвен');
+      else parts.push(touchUI()
+        ? 'место годится · тап — другой конец · «Построить» — вся серия'
+        : 'место годится · тяните линию · R — повернуть');
+      text = parts.join(' · ');
+      var can = !!(info.ok && info.afford && n);
+      if (el.lineConfirm) {
+        el.lineConfirm.textContent = 'Построить' + (n ? ' ' + n : '');
+        el.lineConfirm.disabled = !can;
+        el.lineConfirm.title = can
+          ? ('Построить всю серию: ' + n + ' шт. за ' + info.cost + ' брёвен')
+          : (info.reason || 'не хватает брёвен');
+      }
+    } else {
+      text = buildStateText(info);
+      /* «Поставить» — только там, где касание не ставит само: на телефоне и
+         планшете (Play.touchPreferred). На компьютере кнопка скрыта, мышь
+         ставит кликом, как раньше. */
+      if (el.placeConfirm) el.placeConfirm.classList.toggle('hidden', !touchUI());
+    }
+    if (text !== placeSig) {
+      placeSig = text;
+      el.placeState.textContent = text;
+      el.placeState.classList.toggle('bad', line ? !(info.ok && info.afford) : !info.ok);
     }
     el.placeBar.classList.remove('hidden');
   }
 
   function buildStateText(info) {
     var head = info.x + ', ' + info.y + ' · ' + info.rot + '° · ';
-    if (info.ok) return head + 'место годится · ЛКМ — поставить · R — повернуть';
-    return head + 'нельзя: ' + info.reason;
+    if (!info.ok) return head + 'нельзя: ' + info.reason;
+    return head + (touchUI()
+      ? 'место годится · тап — двигать · «Поставить» — поставить'
+      : 'место годится · ЛКМ — поставить · R — повернуть');
   }
 
   function onBuilt(ev) {
@@ -834,6 +1024,15 @@
     buildSig = '';
     placeSig = '';
 
+    /* Журнал прошлой партии — прошлый мир: его события к новому острову не
+       относятся. Метка угрозы тоже снимается. */
+    evLog.lastId = 0;
+    evLog.items = [];
+    evLog.threat = null;
+    if (el.threatGo) el.threatGo.classList.add('hidden');
+    paintEventLog();
+    paintSimBadge(global.Play.state);
+
     hintT = 0;
     el.hints.classList.remove('faded');
     $('btnFollow').classList.remove('active');
@@ -861,6 +1060,8 @@
     if (stateAcc >= REFRESH) {
       stateAcc = 0;
       paintLogs(st);
+      refreshEvents(st);
+      paintSimBadge(st);
       paintVillagers(st);
       fillHire();
       if (squad.open) refreshSquad();
@@ -1728,6 +1929,11 @@
     for (var v = 0; v < st.villagers.length; v++) {
       key += (Math.round(st.villagers[v].x * 8) / 8) + ',' + (Math.round(st.villagers[v].y * 8) / 8) + ';';
     }
+    /* Метка угрозы живёт в том же холсте, но меняется по времени: без неё в
+       ключе обзор не перерисовался бы и метка застыла. Четверть секунды —
+       достаточно, чтобы кольцо пульсировало. */
+    var th = evLog.threat;
+    if (th) key += '|threat:' + th.x + ',' + th.y + ',' + Math.floor((st.seconds || 0) * 4);
     if (!force && key === mmKey) return;
     mmKey = key;
 
@@ -1768,6 +1974,7 @@
     }
 
     drawVillagerDots(renderer, st);
+    if (th) drawThreatMark(renderer, th, st);
   }
 
   /* Точки жителей на обзоре. Движок умеет то же самое (Session.drawVillagers),
@@ -1944,6 +2151,205 @@
      несохранённых правках. Фраза приходит готовой от мира. */
   function onEditNote(ev) {
     if (ev && ev.text) toast(ev.text);
+  }
+
+  /* --------------------------- журнал событий -------------------------- *
+   * Что случилось с деревней и почему встала экономика. Читаем
+   * Play.playerEvents(n) — это Events.recent(world, n, playerOwner), то есть
+   * события ТОЛЬКО своего владельца; в сети хост кладёт в снимок не события,
+   * а клиент выводит свои attack/destroy из дельт (js/play.js) и пишет их в
+   * тот же журнал. Поэтому HUD не знает, одиночная это игра или сеть.
+   *
+   * Никаких всплывашек: в сети их нет вовсе (правило 2026-10-24), а здесь —
+   * плашка со списком, которая копится молча. */
+
+  function touchUI() {
+    var P = global.Play;
+    return !!(P && typeof P.touchPreferred === 'function' && P.touchPreferred());
+  }
+
+  function fmtTime(t) {
+    var n = Math.max(0, Math.floor(t || 0));
+    var m = Math.floor(n / 60);
+    n = n % 60;
+    return m + ':' + (n < 10 ? '0' : '') + n;
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&quot;';
+    });
+  }
+
+  /* «3 здания», «5 зданий»: число в подписи кнопки читается как речь. */
+  function buildingWord(n) {
+    var t = Math.abs(n) % 100, d = t % 10;
+    if (t >= 11 && t <= 14) return 'зданий';
+    if (d === 1) return 'здание';
+    if (d >= 2 && d <= 4) return 'здания';
+    return 'зданий';
+  }
+
+  function setEventLogOpen(on) {
+    evLog.open = !!on;
+    if (!el.eventLog) return;
+    el.eventLog.classList.toggle('open', evLog.open);
+    if (el.eventLogToggle) {
+      el.eventLogToggle.setAttribute('aria-expanded', evLog.open ? 'true' : 'false');
+    }
+  }
+
+  /* Один проход по журналу на кадр HUD (0.12 с). DOM трогается, только когда
+     пришло новое событие: Events.sinceId считает то же, но здесь достаточно
+     lastId — он растёт вместе с id. Метка угрозы пересчитывается ВСЕГДА: она
+     гаснет по времени, даже если новых событий нет. */
+  function refreshEvents(st) {
+    if (!el.eventLog || !global.Play || !global.Events) return;
+    var list = global.Play.playerEvents ? (global.Play.playerEvents(12) || []) : [];
+    var sec = (st && st.seconds) || 0;
+    var threat = null;
+    for (var i = 0; i < list.length; i++) {
+      var e = list[i];
+      if (!e || e.kind !== 'attack') continue;
+      if (typeof e.x !== 'number' || typeof e.y !== 'number') continue;
+      if (sec - (e.t || 0) <= THREAT_LIFE) threat = e;
+    }
+    evLog.threat = threat;
+    if (el.threatGo) el.threatGo.classList.toggle('hidden', !threat);
+    var last = list.length ? (list[list.length - 1].id || 0) : 0;
+    if (last === evLog.lastId) return;
+    evLog.lastId = last;
+    evLog.items = list.slice(-8).reverse();   // новые сверху
+    paintEventLog(st);
+  }
+
+  function paintEventLog() {
+    if (!el.eventLog) return;
+    var items = evLog.items;
+    var top = items[0];
+    el.eventLog.classList.toggle('empty', !top);
+    el.eventLog.classList.toggle('open', !!evLog.open);
+    if (el.eventLogToggle) {
+      el.eventLogToggle.setAttribute('aria-expanded', evLog.open ? 'true' : 'false');
+    }
+    if (!top) {
+      if (el.eventLogIcon) el.eventLogIcon.textContent = '•';
+      if (el.eventLogLast) el.eventLogLast.textContent = 'событий пока нет';
+      if (el.eventLogCount) el.eventLogCount.classList.add('hidden');
+      if (el.eventLogList) el.eventLogList.innerHTML = '';
+      return;
+    }
+    var kind = EV_KINDS[top.kind] || { ico: '•', cls: '' };
+    if (el.eventLogIcon) el.eventLogIcon.textContent = kind.ico;
+    if (el.eventLogLast) {
+      el.eventLogLast.textContent = (top.text || top.kind || '') + ' · ' + fmtTime(top.t);
+    }
+    if (el.eventLogCount) {
+      if (top.count > 1) {
+        el.eventLogCount.textContent = '×' + top.count;
+        el.eventLogCount.classList.remove('hidden');
+      } else {
+        el.eventLogCount.classList.add('hidden');
+      }
+    }
+    if (!el.eventLogList) return;
+    var html = '';
+    for (var i = 0; i < items.length; i++) {
+      var e = items[i];
+      var k = EV_KINDS[e.kind] || { ico: '•', cls: '' };
+      var hasGo = typeof e.x === 'number' && typeof e.y === 'number';
+      html += '<li class="event-row ' + k.cls + (hasGo ? ' has-go' : '') + '"' +
+        ' data-id="' + (e.id || 0) + '"' +
+        (hasGo ? ' data-x="' + e.x + '" data-y="' + e.y + '"' : '') + '>' +
+        '<span class="ev-ico" aria-hidden="true">' + k.ico + '</span>' +
+        '<span class="ev-time">' + fmtTime(e.t) + '</span>' +
+        '<span class="ev-text">' + escapeHtml(e.text || e.kind) + '</span>' +
+        (e.count > 1 ? '<span class="ev-count">×' + e.count + '</span>' : '<span></span>') +
+        (hasGo
+          ? '<button class="ev-go" type="button" title="К месту атаки" aria-label="К месту атаки">→</button>'
+          : '<span></span>') +
+        '</li>';
+    }
+    el.eventLogList.innerHTML = html;
+  }
+
+  /* «Мир пропустил N с» — постоянная строка, а не тост: boot.js выбрасывает
+     долг больше MAX_DEBT и пишет его в Play.state.simDropped. Молчаливое
+     ускорение мира запрещено контрактом §1 — отброшенное время должно быть
+     видно, пока игрок не начнёт новую партию. */
+  function paintSimBadge(st) {
+    if (!el.simBadge) return;
+    var lost = (st && st.simDropped) || 0;
+    if (!(lost > 0.05)) {
+      el.simBadge.classList.add('hidden');
+      return;
+    }
+    el.simBadge.classList.remove('hidden');
+    el.simBadge.textContent = 'мир пропустил ' +
+      (lost >= 10 ? String(Math.round(lost)) : String(Math.round(lost * 10) / 10).replace('.', ',')) +
+      ' с';
+    el.simBadge.title = 'Браузер не успел догнать простой: ' + Math.round(lost) +
+      ' с мира отброшено (boot.js, MAX_DEBT). Игра не ускорялась — время потеряно.';
+  }
+
+  /* Метка угрозы на обзоре: ромб и расходящееся кольцо в точке последнего
+     attack. Живёт THREAT_LIFE секунд и гаснет сама; в журнале событие
+     остаётся. */
+  function drawThreatMark(renderer, ev, st) {
+    var p = renderer.worldToMM(ev.x + 0.5, ev.y + 0.5);
+    var sec = (st && st.seconds) || 0;
+    var age = Math.max(0, Math.min(THREAT_LIFE, sec - (ev.t || 0)));
+    var pulse = 0.5 + 0.5 * Math.sin(sec * 6.283);
+    mmCtx.save();
+    mmCtx.beginPath();
+    mmCtx.arc(p.x, p.y, 6.5 + 3.5 * pulse, 0, Math.PI * 2);
+    mmCtx.strokeStyle = 'rgba(224,90,78,' + (0.85 - 0.5 * (age / THREAT_LIFE)) + ')';
+    mmCtx.lineWidth = 2;
+    mmCtx.stroke();
+    mmCtx.beginPath();
+    mmCtx.moveTo(p.x, p.y - 5);
+    mmCtx.lineTo(p.x + 5, p.y);
+    mmCtx.lineTo(p.x, p.y + 5);
+    mmCtx.lineTo(p.x - 5, p.y);
+    mmCtx.closePath();
+    mmCtx.fillStyle = 'rgba(224,90,78,0.95)';
+    mmCtx.fill();
+    mmCtx.strokeStyle = 'rgba(255,246,216,0.9)';
+    mmCtx.lineWidth = 1;
+    mmCtx.stroke();
+    mmCtx.restore();
+  }
+
+  /* Свернуть/развернуть обзор. Свёрнутый — квадрат 44 x 44 с кнопкой «обзор»;
+     на время постановки он сворачивается сам (CSS #hud.placing). */
+  function setMmFolded(on) {
+    mmFolded = !!on;
+    if (el.minimapFrame) el.minimapFrame.classList.toggle('folded', mmFolded);
+    if (el.btnMmFold) {
+      el.btnMmFold.setAttribute('aria-expanded', mmFolded ? 'false' : 'true');
+      el.btnMmFold.textContent = mmFolded ? '▣' : 'обзор';
+      el.btnMmFold.title = mmFolded ? 'Развернуть обзор' : 'Свернуть обзор';
+      el.btnMmFold.setAttribute('aria-label', mmFolded ? 'Развернуть обзор' : 'Свернуть обзор');
+    }
+  }
+
+  /* Экономия: 30 кадров/с (Play.setFpsCap — троттлинг кадра, не мира),
+     DPR до 1.5 и реже волны. Это единственная настройка качества, которую
+     видит игрок; на компьютере она тоже работает, но не включается сама. */
+  function toggleEconomy() {
+    var P = global.Play;
+    var r = P && P.renderer ? P.renderer() : null;
+    economy = !economy;
+    var cap = economy ? 1.5 : (touchUI() ? 2 : 3);
+    if (r && r.setQuality) r.setQuality(economy ? 0.6 : 1, cap);
+    if (P && P.setFpsCap) P.setFpsCap(economy ? 30 : 0);
+    if (el.btnEconomy) {
+      el.btnEconomy.classList.toggle('active', economy);
+      el.btnEconomy.setAttribute('aria-pressed', economy ? 'true' : 'false');
+      el.btnEconomy.title = economy
+        ? 'Обычная чёткость и 60 кадров/с'
+        : 'Экономия: 30 кадров/с и мельче картинка — для телефона';
+    }
   }
 
   /* ------------------------------ сообщения ---------------------------- */
