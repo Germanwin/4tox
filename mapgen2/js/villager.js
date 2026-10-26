@@ -270,9 +270,62 @@
   function beginFrame(world) {
     if (!world) return null;
     world._pathBudgetHit = false;
+    world._pathStop = '';
+    /* Право на одну длинную попытку поиска в этом кадре: см. pathPairOpts. */
+    world._pathBig = false;
     var N = (world.width || 0) * (world.height || 0);
     world._pathFrame = { left: Math.max(PATH_MIN_LIMIT, Math.round(N / FRAME_DIV)) };
     return world._pathFrame;
+  }
+
+  /* Предел ЭТОГО поиска с наращиванием при повторе той же пары клеток.
+     Предел одного поиска — не «пути нет»: A*, упёршись в предел, недостижимость
+     не доказал. Поэтому при повторе той же цели (тот же житель, та же пара
+     клеток) предел удваивается до 4x базового: законный длинный обход (замер:
+     365 клеток вокруг стены) проходит, а перебор всего острова в поисках
+     несуществующей дороги по-прежнему обрывается. Наращивание — счётчиком
+     попыток на жителе, а не временем: тот же кадр — то же решение. */
+  var PATH_RETRY_GROW = 3;      // во сколько раз растёт предел на повтор
+  var PATH_RETRY_MAX = 4;       // не меньше 4x базового — даже если карта мала
+  function pathPairKey(sx, sy, tx, ty) { return sx + ',' + sy + '>' + tx + ',' + ty; }
+  function pathPairOpts(v, world, sx, sy, tx, ty) {
+    var base = pathLimit(world);
+    var N = (world.width || 0) * (world.height || 0);
+    /* Потолок. «4x базового» — это ровно N клеток, но поиск считает не клетки,
+       а СНЯТИЯ с кучи: клетка с улучшенной оценкой кладётся повторно. Замер:
+       законный обход стены 365 клеток на 200x200 требует 41 641 снятия, то
+       есть 4x базового (40 000) ещё не хватает. Поэтому потолок — не меньше
+       1.5 x N снятий. */
+    var cap = Math.max(base * PATH_RETRY_MAX, Math.ceil(N * 1.5));
+    var key = pathPairKey(sx, sy, tx, ty);
+    var n = (v && v.pathTryKey === key) ? (v.pathTryN || 0) : 0;
+    var lim = base;
+    for (var i = 0; i < n && lim < cap; i++) lim *= PATH_RETRY_GROW;
+    lim = Math.min(lim, cap);
+    /* Наращённый предел почти никогда не влезает в остаток кадра (предел
+       кадра N/2, а тут уже 3x базового = 0.75N), поэтому кадр его обрезал бы
+       вечно и до потолка дело не доходило бы. Такой попытке даётся право
+       доработать за кадр — но только ОДНОЙ на кадр: иначе несколько жителей
+       с дальними обходами сложатся в один длинный кадр. Если право уже
+       израсходовано, поиск идёт с базовым пределом и честно скажет 'frame'. */
+    var frameLeft = world._pathFrame ? world._pathFrame.left : Infinity;
+    var wantsBig = n >= 2 || (n >= 1 && lim > frameLeft);
+    if (wantsBig) {
+      if (world._pathBig) return { limit: base };
+      world._pathBig = true;
+      return { limit: lim, ignoreBudget: true };
+    }
+    return { limit: lim };
+  }
+  function pathPairResult(v, sx, sy, tx, ty, stop) {
+    if (!v) return;
+    var key = pathPairKey(sx, sy, tx, ty);
+    if (stop === 'limit') {
+      if (v.pathTryKey === key) v.pathTryN = (v.pathTryN || 0) + 1;
+      else { v.pathTryKey = key; v.pathTryN = 1; }
+    } else if (stop !== 'frame' && v.pathTryKey === key) {
+      v.pathTryKey = null; v.pathTryN = 0;
+    }
   }
 
   /* -------------------------------- атлас -------------------------------- */
@@ -499,17 +552,29 @@
   function findPath(world, solid, sx, sy, tx, ty, opts) {
     opts = opts || {};
     var W = world.width, H = world.height, N = W * H;
-    if (sx === tx && sy === ty) return null;
-    if (!walkable(world, solid, sx, sy) || !walkable(world, solid, tx, ty)) return null;
+    /* world._pathStop — почему последний поиск вернул null. Три разных вещи,
+       которые раньше сливались в один флаг:
+         'frame'       — кончился бюджет КАДРА: житель повторит в следующем,
+                         кэш недостижимого писать нельзя;
+         'limit'       — упёрлись в предел ОДНОГО поиска: A* не доказал, что
+                         пути нет, повтор с большим пределом имеет смысл;
+         'unreachable' — перебрали всю достижимую область: пути правда нет. */
+    if (sx === tx && sy === ty) { world._pathStop = ''; return null; }
+    if (!walkable(world, solid, sx, sy) || !walkable(world, solid, tx, ty)) {
+      world._pathStop = 'unreachable';
+      return null;
+    }
 
     var frame = opts.ignoreBudget ? null : world._pathFrame;
     if (frame && !(frame.left > 0)) {
       world._pathBudgetHit = true;
+      world._pathStop = 'frame';
       if (global.Metrics && global.Metrics.on) global.Metrics.counters.budgetHits++;
       return null;
     }
     var limit = opts.limit > 0 ? opts.limit : pathLimit(world);
-    if (frame && frame.left < limit) limit = frame.left;
+    var clipped = false;
+    if (frame && frame.left < limit) { limit = frame.left; clipped = true; }
 
     var s = scratch(world, N);
     var gen = s.gen, g = s.g, gGen = s.gGen, came = s.came, closedGen = s.closedGen;
@@ -595,7 +660,12 @@
     if (frame) frame.left = Math.max(0, frame.left - nodes);
     if (spent) {
       world._pathBudgetHit = true;
+      /* Упор в УРЕЗАННЫЙ бюджет кадра — это 'frame', а не 'limit': предел
+         одного поиска тут ни при чём, и наращивать его бессмысленно. */
+      world._pathStop = (clipped && frame && frame.left <= 0) ? 'frame' : 'limit';
       if (global.Metrics && global.Metrics.on) global.Metrics.counters.budgetHits++;
+    } else {
+      world._pathStop = found ? '' : 'unreachable';
     }
     if (global.Metrics && global.Metrics.on) {
       var m = global.Metrics.counters;
@@ -717,23 +787,37 @@
 
   /* Деревья по воздушному расстоянию от точки: ближайшее — первое.
 
-     Раньше здесь был проход по ВСЕМ объектам мира и sort НА КАЖДОЕ
-     планирование: 3000 деревьев на 192-й карте, O(n log n) на каждую ходку
-     каждого лесоруба. Теперь выборка идёт кольцами вокруг точки по индексу:
-     как только собрано больше limit, дальше кольца не нужны — деревья за
-     кольцом по воздуху дальше любого собранного. Сортировка по точному
-     расстоянию остаётся: она решает, кто из собранных первый, и она же
-     отсекает то, что пришло из внешнего кольца «на запас».
+     Выборка идёт кольцами вокруг точки по индексу. Кольца расширяются, пока
+     не ДОКАЗАНО, что за кольцом r нет дерева ближе limit-го из собранных: за
+     кольцом r минимальное расстояние — r+1 (ось кольца r+1), поэтому
+     «(r+1)^2 > расстояния до limit-го» и есть доказательство. Раньше здесь
+     стоял ранний выход «собрали limit+8», и он терял ближние деревья: угол
+     кольца r дальше оси кольца r+1, а в разреженном лесу — и подавно (замер
+     на 192-й: 71 из 300 точек давали другой набор 24 ближайших, худшее 24-е
+     дальше точного на 1.88 клетки; в одном разреженном случае возвращалось
+     дерево в 7.21, а дерево в 7.00 не попадало вовсе).
 
-     Если в радиусе 12 колец деревьев нет (лес далеко), честно падаем на
-     прежний полный проход: это редкий случай, и он дешевле, чем расширять
-     кольца до края карты. */
+     Страховочный полный проход по объектам мира (как было до индекса) — в
+     двух случаях: limit = 0 («верни все деревья», кольца его не заменяют) и
+     кольца не доказали границу (лес редкий или ближайшее дерево дальше R
+     колец). Полный проход точен и здесь дешевле, чем расширять кольца до края
+     карты. */
   function treesNear(world, x, y, limit, awayFrom) {
     var idx = treeIndex(world);
     var cx = Math.floor(x), cy = Math.floor(y);
-    var want = limit ? limit + 8 : 0;
     var all = [], i, o;
-    var R = 12;
+    var R = limit ? 12 : -1;
+    var bounded = false;
+    function keep(tree) {
+      /* Дерево, на которое уже нацелен ДРУГОЙ рабочий, не выбирается:
+         метка (tree.mark) — это и есть «занято». */
+      if (awayFrom && tree.mark && tree.mark !== awayFrom) return;
+      all.push(tree);
+    }
+    function byDist(a, b) {
+      return ((a.x - x) * (a.x - x) + (a.y - y) * (a.y - y)) -
+             ((b.x - x) * (b.x - x) + (b.y - y) * (b.y - y));
+    }
     for (var r = 0; r <= R; r++) {
       for (var dy = -r; dy <= r; dy++) {
         var edgeY = (dy === -r || dy === r);
@@ -741,31 +825,33 @@
           if (!edgeY && dx !== -r && dx !== r) continue;
           var bucket = idx.map.get((cy + dy) * 1024 + (cx + dx));
           if (!bucket) continue;
-          for (i = 0; i < bucket.length; i++) {
-            o = bucket[i];
-            /* Дерево, на которое уже нацелен ДРУГОЙ рабочий, не выбирается:
-               метка (tree.mark) — это и есть «занято». */
-            if (awayFrom && o.mark && o.mark !== awayFrom) continue;
-            all.push(o);
-          }
+          for (i = 0; i < bucket.length; i++) keep(bucket[i]);
         }
       }
-      if (want && all.length >= want) break;
+      if (limit && all.length >= limit) {
+        all.sort(byDist);
+        var dLim = (all[limit - 1].x - x) * (all[limit - 1].x - x) +
+                   (all[limit - 1].y - y) * (all[limit - 1].y - y);
+        /* Точка НЕ в центре клетки: дерево из клетки за кольцом r стоит не
+           ближе r+1, а ближе r+1−доля, если точка прижата к дальней кромке.
+           Поэтому граница — не (r+1)^2, а (r+1−frac)^2, иначе ближнее дерево
+           за кольцом теряется (замер: точка (48.76,153.85), дерево в клетке
+           x=57 на 8.43, а 24-е у нас 8.97 — выход по (r+1)^2 был ложным). */
+        var fx = x - cx, fy = y - cy;
+        var minOut = r + Math.min(fx, 1 - fx, fy, 1 - fy);
+        if (minOut > 0 && dLim < minOut * minOut) { bounded = true; break; }
+      }
     }
-    /* У края леса никого не нашлось в 12 кольцах — полный проход, как раньше. */
-    if (!all.length && R < Math.max(world.width, world.height)) {
+    if (!bounded) {
+      all = [];
       var objs = world.objects || [];
       for (i = 0; i < objs.length; i++) {
         o = objs[i];
         if (!o || o.kind !== 'tree') continue;
-        if (awayFrom && o.mark && o.mark !== awayFrom) continue;
-        all.push(o);
+        keep(o);
       }
     }
-    all.sort(function (a, b) {
-      return ((a.x - x) * (a.x - x) + (a.y - y) * (a.y - y)) -
-             ((b.x - x) * (b.x - x) + (b.y - y) * (b.y - y));
-    });
+    all.sort(byDist);
     return limit && all.length > limit ? all.slice(0, limit) : all;
   }
 
@@ -959,7 +1045,9 @@
         arrive(v, opts);
         return true;
       }
-      var cells = findPath(world, solid, sx, sy, sp.cx, sp.cy);
+      var cells = findPath(world, solid, sx, sy, sp.cx, sp.cy,
+        pathPairOpts(v, world, sx, sy, sp.cx, sp.cy));
+      pathPairResult(v, sx, sy, sp.cx, sp.cy, world._pathStop);
       if (!cells || cells.length < 2) continue;
       var cost = pathCost(world, cells);
       if (cost < bestCost) {
@@ -1095,7 +1183,11 @@
       }
       var spots = standCells(world, solid, tree, v.x, v.y);
       var treeBest = null, treeCost = Infinity;
-      var budgetSpent = false;
+      /* Две разные причины «не нашли»: кончился кадр (повторим позже, но НЕ
+         кэшируем и перебор двигаем) и упёрлись в предел одного поиска (это не
+         «пути нет»: повтор той же пары пойдёт с удвоенным пределом, а перебор
+         НЕ двигаем и дерево не кэшируем). */
+      var treeFrame = false, treeLimit = false;
       for (var j = 0; j < spots.length; j++) {
         // Он уже стоит под этим деревом — идти некуда, но повернуться надо.
         if (spots[j].cx === sx && spots[j].cy === sy) {
@@ -1107,9 +1199,13 @@
           v.jobWhy = '';
           return true;
         }
-        var cells = findPath(world, solid, sx, sy, spots[j].cx, spots[j].cy);
+        var cells = findPath(world, solid, sx, sy, spots[j].cx, spots[j].cy,
+          pathPairOpts(v, world, sx, sy, spots[j].cx, spots[j].cy));
+        var stop = world._pathStop;
+        pathPairResult(v, sx, sy, spots[j].cx, spots[j].cy, stop);
         if (!cells || cells.length < 2) {
-          if (world._pathBudgetHit) budgetSpent = true;
+          if (stop === 'frame') treeFrame = true;
+          else if (stop === 'limit') treeLimit = true;
           continue;
         }
         var cost = pathCost(world, cells);
@@ -1118,16 +1214,20 @@
           treeBest = { spot: spots[j], cells: cells };
         }
       }
-      if (!treeBest && budgetSpent && !best) {
+      /* Бюджет КАДРА кончился, а дерева ещё нет: перебор продолжится со
+         следующего. Это отсрочка, а не «пути нет»: причину не выдумываем. */
+      if (!treeBest && treeFrame && !best) {
         v.planSkip = i + 1;
         v.planSkipVer = ver;
         if (v.planSkip >= trees.length) v.planSkip = 0;
-        /* Это отсрочка, а не «пути нет»: причину не выдумываем. */
         v.jobWhy = '';
         if (global.Metrics && global.Metrics.on) global.Metrics.counters.planFails++;
         return false;
       }
-      if (!treeBest && !budgetSpent) tree._noPath = hereKey;
+      /* Кэшируем только ДОКАЗАННУЮ недостижимость: перебрали область, и ни
+         одна стоянка не достижима. Упор в предел одного поиска ничего не
+         доказывает — такое дерево проверим снова (с большим пределом). */
+      if (!treeBest && !treeLimit && !treeFrame) tree._noPath = hereKey;
       if (treeBest && treeCost < bestCost) {
         best = { tree: tree, spot: treeBest.spot, cells: treeBest.cells };
         bestCost = treeCost;
@@ -1655,7 +1755,9 @@
     if (!walkable(world, solid, tx, ty)) return false;
     var sx = Math.floor(v.x), sy = Math.floor(v.y);
     if (sx === tx && sy === ty) return false;
-    var cells = findPath(world, solid, sx, sy, tx, ty);
+    var cells = findPath(world, solid, sx, sy, tx, ty,
+      pathPairOpts(v, world, sx, sy, tx, ty));
+    pathPairResult(v, sx, sy, tx, ty, world._pathStop);
     if (!cells || cells.length < 2) return false;
     v.tree = null;
     v.goal = { x: tx + 0.5, y: ty + 0.5 };
@@ -1823,6 +1925,10 @@
          сменилась — начинаем с ближних деревьев, а не с середины списка. */
       planSkip: 0,
       planSkipVer: null,
+      /* Попытки поиска к одной паре клеток: при упоре в предел одного поиска
+         предел наращивается, но только для той же пары. */
+      pathTryKey: null,
+      pathTryN: 0,
       /* Клетка подхода боя, забронированная за воином (мира _combatCells), и
          на какую цель бронь: пятеро не сходятся в одну клетку. */
       combatCell: null,
