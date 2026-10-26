@@ -96,6 +96,7 @@
       color: TEAM_COLORS[(owner || 0) % TEAM_COLORS.length],
       alive: true, isBot: false,
       logs: 0, deliveries: 0, felled: 0, inTransit: 0, lost: 0,
+      birthNext: BIRTH_EVERY,
       buildings: [], villagers: [], townhall: null
     };
     world.towns.push(t);
@@ -619,7 +620,8 @@
       ? clock.towns[town.id === undefined ? 0 : town.id] : null;
     var boundary = slot && typeof slot.next === 'number' && slot.next > 0
       ? slot.next
-      : (clock && typeof clock.next === 'number' ? clock.next : town.birthNext);
+      : (typeof town.birthNext === 'number' ? town.birthNext
+        : (clock && typeof clock.next === 'number' ? clock.next : null));
     if (slot && slot.pending && seconds !== null) {
       out.retryIn = Math.max(0, +(slot.pending.at - seconds).toFixed(1));
       out.next = out.retryIn;
@@ -1802,6 +1804,20 @@
       var ap = (spot && V.approachCellOf) ? V.approachCellOf(camp, spot) : null;
       if (!ap) { item.ok = false; continue; }
       var sx = Math.floor(vv.x), sy = Math.floor(vv.y);
+      /* Житель может стоять на непроходимой клетке (двор, аварийный выход):
+         для оценки пути берём соседнюю проходимую — сам он выйдет шагом. */
+      if (V.walkable && !V.walkable(world, solid, sx, sy)) {
+        var found = false;
+        for (var oy = -1; oy <= 1 && !found; oy++) {
+          for (var ox = -1; ox <= 1; ox++) {
+            if (!ox && !oy) continue;
+            if (V.walkable(world, solid, sx + ox, sy + oy)) {
+              sx += ox; sy += oy; found = true; break;
+            }
+          }
+        }
+        if (!found) { item.ok = false; continue; }
+      }
       if (sx === ap.x && sy === ap.y) { item.ok = true; item.len = 0; continue; }
       var p = V.findPath(world, solid, sx, sy, ap.x, ap.y,
         { limit: limit, ignoreBudget: true });
