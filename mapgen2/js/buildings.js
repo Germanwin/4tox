@@ -1084,6 +1084,15 @@
      расчищают, и кольцо, которое закрыто от глаз, — одно и то же кольцо. */
   var YARD = 1;
 
+  /* Стройка линией: сколько зданий в серии и какой зазор между пятнами.
+     Оба числа — правило мира, а не интерфейса: по ним планировщик (planLine)
+     считает шаг, а экран только показывает, что вышло. Потолок 20 — из
+     контракта патча (§3): одна команда `buildLine` не может просить больше.
+     Зазор в одну клетку оставляет между домами проход и не даёт серии
+     запереть выходы соседей собственными стенами. */
+  var LINE_MAX = 20;
+  var LINE_GAP = 1;
+
   // Разложить список объектов на два: что мешает (в `blocked`) и что сомнём
   // (в `decorList`). Списки заполняются на месте — считать их заново было бы
   // вторым проходом по тем же объектам ради того же ответа.
@@ -1133,9 +1142,199 @@
     return out;
   }
 
+  /* ---------------------- живые жители и выходы ------------------------- *
+   *
+   * Правило заказчика (2026-10-26): пятно проверяет землю, природу, другие
+   * здания, ЖИВЫХ ЖИТЕЛЕЙ и сохранность выходов действующих построек.
+   * Проверка одна на весь движок: её зовут и постановка, и правка, и серия
+   * (planLine), и сетевой хост через checkAt — своего «что тут можно» у
+   * оболочки нет и быть не должно.
+   *
+   * ВЫХОД — свободная для ходьбы клетка, ортогонально соседняя с пятном.
+   * Кольцо вокруг пятна (2w + 2h клеток) одно покрывает все типы:
+   *   - у дома и ратуши через него выходит frontSpot;
+   *   - у казармы в нём лежит entrance.outCell — дверь снаружи;
+   *   - у лагеря лесоруба в нём лежат клетки подхода всех мест двора;
+   *   - у военного лагеря внешняя кромка кольца — это кольцо патруля.
+   * Диагонали не считаем: findPath не срезает углы, и «выход по диагонали»
+   * на деле непроходим.
+   *
+   * Запирание — не «заняли одну клетку», а «было open>0, стало 0»: только
+   * полная закупорка. Постройку, которая уже заперта (легаси/мир), правка не
+   * блокирует — иначе из такого состояния не выбраться.
+   *
+   * ЖИТЕЛЬ В ПЯТНЕ — запрет словами. Исключение одно и только при правке
+   * САМОЙ постройки (opts.self): её законные обитатели стоят внутри пятна по
+   * правилам — рабочий на месте двора лагеря, ученик в казарме, воин в кольце
+   * своего лагеря, воин во дворе своей казармы. Чужой житель (и жилец дома,
+   * которого двигают) исключением не пользуется: дом на человека не ставят.
+   * ---------------------------------------------------------------------- */
+
+  /* Живые жители партии. Явный список (opts.villagers) главнее мира:
+     у сети и приёмок он свой и свежий. opts.villagers === false выключает
+     проверку целиком — это нужно старым приёмкам генератора, где жителей
+     ещё нет, и профилировщику. */
+  function livingVillagers(world, opts) {
+    if (opts && opts.villagers === false) return [];
+    var list = opts && opts.villagers;
+    if (list && typeof list.length === 'number') return list;
+    return (world && world._villagers) || [];
+  }
+
+  /* Законный обитатель ИМЕННО этой постройки: его место внутри пятна
+     разрешено правилами (см. atOwnYard, training, patrolCells, garrisonCells). */
+  function ownOccupant(b, v) {
+    if (!b || !v) return false;
+    return v.employer === b || v.trainingAt === b ||
+           v.warcamp === b || v.station === b;
+  }
+
+  /* Жители, чья клетка попала в пятно b. Список, а не счётчик: по нему
+     приёмка и интерфейс называют виновника, а не только число. */
+  function villagersIn(world, b, opts) {
+    var fp = footprint(b.rot, b.type);
+    var list = livingVillagers(world, opts), self = opts && opts.self;
+    var out = [], i, v, cx, cy;
+    for (i = 0; i < list.length; i++) {
+      v = list[i];
+      if (!v || v.dead) continue;
+      cx = Math.floor(v.x);
+      cy = Math.floor(v.y);
+      if (cx < b.x || cy < b.y || cx >= b.x + fp.w || cy >= b.y + fp.h) continue;
+      if (self && ownOccupant(self, v)) continue;
+      out.push(v);
+    }
+    return out;
+  }
+
+  /* Карта занятости для проверки выходов: клетки построек и клетки ПОМЕХ
+     (дерево, камень крупнее гальки). Украшение проходимо и выходу не мешает.
+     Строится на один вызов: canPlace зовут десятки раз в секунду, поэтому
+     никакого кэша тут нет — устаревшая карта опаснее лишнего прохода. */
+  function occupancy(world, list) {
+    var bmap = Object.create(null), omap = Object.create(null);
+    var i, j, cs, c, o, tx, ty;
+    for (i = 0; i < (list || []).length; i++) {
+      o = list[i];
+      if (!o) continue;
+      cs = cells(o);
+      for (j = 0; j < cs.length; j++) {
+        c = cs[j];
+        if (c.x < 0 || c.y < 0 || c.x >= world.width || c.y >= world.height) continue;
+        bmap[c.x + ',' + c.y] = o;
+      }
+    }
+    var objs = world.objects || [];
+    for (i = 0; i < objs.length; i++) {
+      o = objs[i];
+      if (!obstacle(o)) continue;
+      tx = Math.floor(o.x);
+      ty = Math.floor(o.y);
+      omap[tx + ',' + ty] = 1;
+    }
+    return { bmap: bmap, omap: omap };
+  }
+
+  function inWorld(world, x, y) {
+    return x >= 0 && y >= 0 && x < world.width && y < world.height;
+  }
+
+  function exitFree(world, occ, x, y) {
+    if (!inWorld(world, x, y)) return false;
+    var idx = y * world.width + x;
+    /* isLand — правда о проходимости у сгенерированного мира. В тестовых
+       мирах его может не быть: тогда вода — только T.WATER, всё остальное
+       суша (песок жителям проходим, villager.js: walkable). */
+    if (world.isLand) { if (!world.isLand[idx]) return false; }
+    else if (world.tile && world.tile[idx] === T.WATER) return false;
+    return !occ.bmap[x + ',' + y] && !occ.omap[x + ',' + y];
+  }
+
+  /* Клетки-выходы постройки при данной карте занятости. */
+  function exitCellsAt(world, b, occ) {
+    var fp = footprint(b.rot, b.type), out = [], i;
+    for (i = 0; i < fp.w; i++) {
+      if (exitFree(world, occ, b.x + i, b.y - 1)) out.push({ x: b.x + i, y: b.y - 1 });
+      if (exitFree(world, occ, b.x + i, b.y + fp.h)) out.push({ x: b.x + i, y: b.y + fp.h });
+    }
+    for (i = 0; i < fp.h; i++) {
+      if (exitFree(world, occ, b.x - 1, b.y + i)) out.push({ x: b.x - 1, y: b.y + i });
+      if (exitFree(world, occ, b.x + fp.w, b.y + i)) out.push({ x: b.x + fp.w, y: b.y + i });
+    }
+    return out;
+  }
+
+  /* Публичная форма для приёмок и интерфейса: выходы постройки в мире как он
+     есть. Внутри движка считается по уже собранной карте (exitCellsAt). */
+  function exitCells(world, list, b) {
+    return exitCellsAt(world, b, occupancy(world, list));
+  }
+
+  /* Два прямоугольника ближе чем на клетку? Только такие постройки может
+     затронуть новое пятно: остальным его клетки выходов не перекрывают. */
+  function nearRect(a, b) {
+    var A = bounds(a), B = bounds(b);
+    return A.x0 - 1 < B.x1 && B.x0 - 1 < A.x1 &&
+           A.y0 - 1 < B.y1 && B.y0 - 1 < A.y1;
+  }
+
+  /* Постройки, у которых постановка/поворот/перенос b запирает ВСЕ выходы.
+     beforeList — мир ДО действия, afterList — ПОСЛЕ. Возвращает список
+     виновников; пустой список — всё цело. Своя постройка (opts.self) тоже
+     проверяется: поворот в стену не должен запирать её саму. */
+  function sealedExits(world, beforeList, afterList, b, opts) {
+    var self = opts && opts.self;
+    var out = [], i, o, was, now;
+    var near = [];
+    for (i = 0; i < (beforeList || []).length; i++) {
+      o = beforeList[i];
+      if (!o || o === b || o === self || o.rubble) continue;
+      if (!nearRect(o, b)) continue;
+      near.push(o);
+    }
+    if (!near.length && !self) return out;
+    var occBefore = occupancy(world, beforeList || []);
+    var occAfter = occupancy(world, afterList || beforeList || []);
+    for (i = 0; i < near.length; i++) {
+      o = near[i];
+      was = exitCellsAt(world, o, occBefore).length;
+      if (!was) continue;                       // уже заперта — не наша вина
+      now = exitCellsAt(world, o, occAfter).length;
+      if (!now) out.push(o);
+    }
+    if (self) {
+      was = exitCellsAt(world, self, occBefore).length;
+      if (was) {
+        now = exitCellsAt(world, b, occAfter).length;
+        if (!now) out.push(self);
+      }
+    }
+    return out;
+  }
+
+  /* Фраза отказа для запертых выходов. Готовая, как и остальные reason:
+     интерфейс её не переписывает. */
+  function sealedReason(world, sealed, self, cand) {
+    if (self && sealed.length === 1 && sealed[0] === self) {
+      var moved = self.x !== cand.x || self.y !== cand.y;
+      var turned = normRot(self.rot) !== normRot(cand.rot);
+      return (moved ? 'переезд' : (turned ? 'поворот' : 'правка')) +
+             ' запирает выход постройки';
+    }
+    if (sealed.length === 1) {
+      var info = TYPES[typeOf(sealed[0])];
+      return 'запирает выход постройки: ' + ((info && info.name) || typeOf(sealed[0]));
+    }
+    return 'запирает выходы построек: ' + sealed.length;
+  }
+
   /* opts.clearable  — разрешено расчищать место (по умолчанию да);
      opts.requireClear — строго: помеха в пятне не годится;
-     opts.yard — сколько клеток вокруг пятна тоже расчищается (по умолчанию 1).
+     opts.yard — сколько клеток вокруг пятна тоже расчищается (по умолчанию 1);
+     opts.villagers — список живых жителей (по умолчанию world._villagers);
+     opts.protectExits — false выключает защиту выходов (приёмки/профиль);
+     opts.self — правимая постройка (её обитатели законны, её выходы защищены);
+     opts.beforeList/afterList — мир до/после для checkAt.
 
      В ответе три списка, и они про разное:
        blocked — ПОМЕХИ в пятне (дерево, камень): из-за них место может не
@@ -1147,7 +1346,10 @@
   function canPlace(world, list, b, opts) {
     opts = opts || {};
     var fp = footprint(b.rot, b.type);
-    var res = { ok: false, reason: '', blocked: [], decor: [], yard: [], fp: fp };
+    /* Villagers/sealed — новые поля ответа; старые (blocked/decor/yard/fp)
+       не трогаем: на них стоят приёмки и подсветка рендера. */
+    var res = { ok: false, reason: '', blocked: [], decor: [], yard: [], fp: fp,
+                villagers: [], sealed: [] };
 
     if (b.x < 0 || b.y < 0 || b.x + fp.w > world.width || b.y + fp.h > world.height) {
       res.reason = 'край карты';
@@ -1175,6 +1377,30 @@
     if (res.blocked.length && (opts.requireClear || opts.clearable === false)) {
       res.reason = 'мешают деревья и камни: ' + res.blocked.length;
       return res;
+    }
+
+    /* Новые проверки — В КОНЦЕ и в этом порядке: житель, потом выходы.
+       Так все прежние фразы отказа остаются дословно теми же, а новая
+       причина появляется только там, где раньше было «место годится». */
+    res.villagers = villagersIn(world, b, opts);
+    if (res.villagers.length) {
+      res.reason = 'в пятне житель: ' + res.villagers.length;
+      return res;
+    }
+    if (opts.protectExits !== false) {
+      var before = opts.beforeList || list || [];
+      var after = opts.afterList;
+      if (!after) {
+        /* Новая постановка: «до» — список без кандидата, «после» — с ним.
+           Если кандидат уже лежит в списке (старый вызов canPlace с собой),
+           второй раз его не добавляем. */
+        after = before.indexOf(b) >= 0 ? before : before.concat([b]);
+      }
+      res.sealed = sealedExits(world, before, after, b, opts);
+      if (res.sealed.length) {
+        res.reason = sealedReason(world, res.sealed, opts.self, b);
+        return res;
+      }
     }
 
     /* Украшение в счёт не идёт: оно и не помеха, и убирать его игроку не
@@ -1272,8 +1498,32 @@
      всегда: куст под домом рисуется поверх стены, и разрешения на это никто не
      спрашивает. Иначе («clear» не false) — полная расчистка пятна и двора. */
   function settle(world, b, opts) {
-    if (opts && opts.clear === false) return crushDecor(world, b, opts);
-    return clearSite(world, b, opts);
+    return settleMany(world, [b], opts);
+  }
+
+  /* То же для серии: пятна и дворы всех построек сливаются в ОДИН список, и
+     `dropObjects` проходит по миру один раз. Это и есть обещание «после
+     успешной серии — один settle»: при 20 домах не 20 проходов по тысячам
+     объектов, а один. Повтор (двор и пятно делят клетку) снимается по ссылке
+     на объект, иначе `dropObjects` вычел бы один и тот же куст дважды.
+
+     Поведение то же, что у settle: opts.clear === false — только украшения;
+     иначе всё, что попало в пятна и дворы. */
+  function settleMany(world, built, opts) {
+    var list = built || [], clear = !(opts && opts.clear === false);
+    var yard = opts && opts.yard !== undefined ? opts.yard : YARD;
+    var doomed = [], i, j, all, o;
+    for (i = 0; i < list.length; i++) {
+      if (!list[i]) continue;
+      all = occupants(world, list[i]).concat(yardOccupants(world, list[i], yard));
+      for (j = 0; j < all.length; j++) {
+        o = all[j];
+        if (!clear && !decor(o)) continue;
+        if (doomed.indexOf(o) >= 0) continue;
+        doomed.push(o);
+      }
+    }
+    return dropObjects(world, doomed);
   }
 
   /* --------------------- проверка места для правки ---------------------- *
@@ -1303,9 +1553,16 @@
    *
    * spot = { x, y, rot } — любое подмножество: недостающие поля берутся у
    * самой постройки, и «повернуть, не трогая место» — это checkAt с одним rot.
+   *
+   * opts (5-й аргумент) — то же, что у canPlace, но правила правки остаются
+   * жёсткими: clearable:false, requireClear:true, yard:0. Отсюда берутся
+   * только villagers/protectExits; список жителей у игры свежее, чем
+   * world._villagers. Список для проверки — ДО (with b) и ПОСЛЕ (with cand):
+   * по этой паре видно, не запирает ли переезд/поворот чужие выходы.
    * ---------------------------------------------------------------------- */
-  function checkAt(world, list, b, spot) {
+  function checkAt(world, list, b, spot, opts) {
     spot = spot || {};
+    opts = opts || {};
     var x = spot.x === undefined ? b.x : spot.x;
     var y = spot.y === undefined ? b.y : spot.y;
     var rot = spot.rot === undefined ? b.rot : spot.rot;
@@ -1319,7 +1576,12 @@
        и на каждом шаге выходило бы «тут уже стоит постройка». */
     var list2 = [], i;
     for (i = 0; i < (list || []).length; i++) list2.push(list[i] === b ? cand : list[i]);
-    var res = canPlace(world, list2, cand, { clearable: false, requireClear: true, yard: 0 });
+    var site = {
+      clearable: false, requireClear: true, yard: 0,
+      beforeList: list || [], afterList: list2, self: b,
+      villagers: opts.villagers, protectExits: opts.protectExits
+    };
+    var res = canPlace(world, list2, cand, site);
     /* Кольцо считается здесь, а не берётся из canPlace: там двор отдан
        расчистке (yard: 0 — правка ничего не убирает), а игроку про соседей
        сказать надо. Кольцо отдаётся двумя списками: `yard` — всё, что рядом
@@ -1337,13 +1599,110 @@
       decor: res.decor,              // украшения: не мешают, сомнутся при «применить»
       yard: ring,
       yardBlocked: ringBlocked,
+      villagers: res.villagers || [], // живые жители в пятне (новое)
+      sealed: res.sealed || [],      // чьи выходы запираются (новое)
       fp: res.fp
     };
   }
 
   // Можно ли применить постройку там, где она стоит сейчас.
-  function canApply(world, list, b) {
-    return checkAt(world, list, b, { x: b.x, y: b.y, rot: b.rot });
+  function canApply(world, list, b, opts) {
+    return checkAt(world, list, b, { x: b.x, y: b.y, rot: b.rot }, opts);
+  }
+
+  /* ----------------------------- стройка линией ------------------------- *
+   *
+   * Контракт патча (2026-10-26, §3 и §4.11): игрок выбирает тип, начало и
+   * конец линии, видит ВСЮ серию и цену, подтверждает одной атомарной
+   * командой. План считает движок — здесь, а не экран: только он знает
+   * повёрнутое пятно, зазор, живых жителей и выходы.
+   *
+   * ШАГ. Вдоль той оси, где from→to длиннее. Шаг = сторона ПОВЁРНУТОГО пятна
+   * по этой оси плюс LINE_GAP. Пример: дом rot 0 — пятно 2 x 3, линия по X
+   * идёт с шагом 3; под 90° пятно 3 x 2, и шаг по X — 4. Если считать шаг по
+   * неповёрнутому пятну, дома под 90° налезали бы друг на друга.
+   *
+   * СЧЁТ. count = floor(длина / шаг) + 1, не больше LINE_MAX (20). Длина
+   * линии — по большей разнице from→to; направление — её знак. Конец линии
+   * может прийтись внутрь последнего пятна: это нормально, важно, что оно
+   * стоит не дальше указанной клетки.
+   *
+   * ПРОВЕРКА. Каждый кандидат проверяется тем же canPlace, что и одиночная
+   * постановка, против мира ПЛЮС уже принятых кандидатов: list.concat(accepted).
+   * Так ловятся и перекрытие соседних домов серии, и житель под любым из них,
+   * и запирание выходов — в том числе двумя домами, каждый из которых по
+   * отдельности безобиден. Негодный кандидат в префикс не попадает, но
+   * перебор продолжается: предпросмотр должен показать все плохие места.
+   *
+   * АТОМАРНОСТЬ. ok = badCount === 0. Функция НИЧЕГО не меняет: ни мира, ни
+   * списка, ни rev. Решает вызывающий (play.js): при !ok не списывать брёвна
+   * и не создавать ни одного дома; при ok — создать все и один раз обновить
+   * кеши (обещание «все или никто» держится на этом).
+   *
+   * spec = { type, variant?, rot, from:{x,y}, to:{x,y} }.
+   * from/to — северная (верхняя) клетка пятна, как b.x/b.y.
+   * opts — как у canPlace (villagers, protectExits, yard, ...).
+   *
+   * Ответ: { ok, reason, axis, dir, pitch, count, okCount, badCount, firstBad,
+   *          items, cells }.
+   * items — ВСЕ count кандидатов: { x, y, rot, variant, type, fp, ok, reason }.
+   * cells — клетки всех пятен серии (для подсветки renderer.lineGhost).
+   * ---------------------------------------------------------------------- */
+  function planLine(world, list, spec, opts) {
+    spec = spec || {};
+    opts = opts || {};
+    var type = spec.type || DEFAULT_TYPE;
+    var variant = spec.variant || 'a';
+    var rot = normRot(spec.rot);
+    var from = spec.from || { x: 0, y: 0 };
+    var to = spec.to || from;
+    var fx = Math.round(Number(from.x) || 0);
+    var fy = Math.round(Number(from.y) || 0);
+    var tx = Math.round(Number(to.x) || 0);
+    var ty = Math.round(Number(to.y) || 0);
+    var fp = footprint(rot, type);
+    var dx = tx - fx, dy = ty - fy;
+    var axis = Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y';
+    var delta = axis === 'x' ? dx : dy;
+    var dir = delta < 0 ? -1 : 1;
+    var pitch = (axis === 'x' ? fp.w : fp.h) + LINE_GAP;
+    var count = Math.min(LINE_MAX, Math.floor(Math.abs(delta) / pitch) + 1);
+    if (!(count > 0)) count = 1;
+
+    var items = [], accepted = [], bad = 0, firstBad = null;
+    var i, x, y, cand, chk, it;
+    for (i = 0; i < count; i++) {
+      x = fx + (axis === 'x' ? dir * pitch * i : 0);
+      y = fy + (axis === 'y' ? dir * pitch * i : 0);
+      cand = make({ type: type, variant: variant, rot: rot, x: x, y: y });
+      chk = canPlace(world, (list || []).concat(accepted), cand, opts);
+      it = {
+        x: cand.x, y: cand.y, rot: rot, variant: variant, type: type,
+        fp: { w: fp.w, h: fp.h },
+        ok: !!chk.ok, reason: chk.ok ? '' : chk.reason
+      };
+      items.push(it);
+      if (chk.ok) accepted.push(cand);
+      else {
+        bad++;
+        if (firstBad === null) firstBad = i;
+      }
+    }
+
+    var cells = [];
+    for (i = 0; i < items.length; i++) {
+      for (var j = 0; j < fp.h; j++) {
+        for (var k = 0; k < fp.w; k++) cells.push({ x: items[i].x + k, y: items[i].y + j });
+      }
+    }
+    return {
+      ok: bad === 0,
+      reason: bad === 0 ? '' : ('место ' + (firstBad + 1) + ' из ' + count + ': ' +
+                                 items[firstBad].reason),
+      axis: axis, dir: dir, pitch: pitch,
+      count: count, okCount: count - bad, badCount: bad, firstBad: firstBad,
+      items: items, cells: cells
+    };
   }
 
   /* ЕДИНСТВЕННЫЙ способ подвинуть или повернуть постройку. Поля ставятся
@@ -1431,7 +1790,10 @@
       var v = villagers[i];
       if (!v || v.employer !== b) continue;
       if (S && typeof S.fire === 'function') {
-        if (S.fire(b, v).ok) n++;
+        /* world третьим аргументом: Session.fire по нему списывает груз в
+           `lost` деревни (агент 5, контракт §5). Старая Session.fire лишний
+           аргумент молча игнорирует — обратная совместимость не ломается. */
+        if (S.fire(b, v, { world: world }).ok) n++;
       } else {
         /* Движок без Session (старая страница) — минимум, без которого
            работник остался бы призраком снесённой постройки. */
@@ -1882,9 +2244,15 @@
     depth: depth,
     overlaps: overlaps,
     canPlace: canPlace,
+    planLine: planLine,
+    LINE_MAX: LINE_MAX,
+    LINE_GAP: LINE_GAP,
+    villagersIn: villagersIn,
+    exitCells: exitCells,
     clearSite: clearSite,
     crushDecor: crushDecor,
     settle: settle,
+    settleMany: settleMany,
     obstacle: obstacle,
     decor: decor,
     occupants: occupants,
