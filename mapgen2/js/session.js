@@ -159,130 +159,483 @@
 
   /* -------------------------- рождение жителей ---------------------------- *
    *
-   * Раз в 30 секунд ИГРОВОГО времени деревня пробует заселить свободные места
-   * в домах. Это не «событие мира», а попытка: жителей становится больше
-   * только тогда, когда есть кому родиться и куда поселиться.
+   * Раз в 30 секунд ИГРОВОГО времени КАЖДАЯ ЖИВАЯ ДЕРЕВНЯ пробует заселить
+   * свободные места в СВОИХ домах. Рост независим: заблокированный дом одной
+   * деревни не мешает другой, выбывший город не рождает вовсе.
    *
    * Время сюда не приходит и таймера здесь нет: часы партии живут в оболочке
    * (game/js/play.js: state.seconds), потому что только она знает, идёт ли
    * игра, стоит ли пауза и открыто ли меню. Здесь — ПРАВИЛО: когда попытка
-   * положена (birthDue), сколько человек родится и куда (tryBirth). Отсчёт
-   * начинается с 30-й секунды партии, новые попытки — на 60-й, 90-й и далее.
+   * положена (birthDue), кто и куда родится (tryBirth). Отсчёт с 30-й секунды,
+   * дальше 60, 90... Пропущенные границы не догоняются.
    *
-   * Пропущенные границы не догоняются: одна попытка на кадр, а следующая
-   * граница ставится по ТЕКУЩЕМУ времени, а не прибавлением 30 к прошлой.
-   * Большой dt (вкладка спала, кадр завис) даёт одну попытку, а не пачку.
+   * ОДНА ПОПЫТКА — ОДНО ПРАВИЛО. Если места в домах есть, но ВСЕ двери заняты
+   * (жители/постройки в радиусе BIRTH_REACH), попытка не пропадает: она
+   * откладывается (pending) и повторяется через BIRTH_RETRY секунд, но не
+   * дальше следующей границы. Это НЕ новый темп: отложенная попытка добирает
+   * только остаток уже положенного числа детей (pending.left), а новое
+   * «min(floor(pop/2), free)» считается только на границе 30 с.
    *
-   * Рождение — только появление жителя: существующие не меняются вовсе, дома
-   * и деревня не трогаются, ресурсы не тратятся. Родители не расходуются:
-   * пары — это любые два живых жителя, и они остаются там же, где были. */
+   * Прописка. Жильё деревни — её живые дома (не rubble, h.town === town.id).
+   * Жильцы — все живые жители деревни, ВКЛЮЧАЯ воинов и учеников: у них та же
+   * прописка (v.home), и место в доме они занимают. Выбывший город
+   * (alive=false, ратуша пала или её нет) не рождает, и его дома не считаются.
+   *
+   * id не переиспользуется: диапазон деревни town.id*1000, номер идёт от
+   * max(живых этой деревни, town._vidNext) + 1. После F5 нумерация
+   * продолжается (syncVillagerIds), а не начинается заново.
+   * ---------------------------------------------------------------------- */
   var BIRTH_EVERY = 30;    // с игрового времени между попытками
   var BIRTH_FADE = 0.5;    // с: сколько новорождённый проявляется (0.4..0.6)
   var BIRTH_REACH = 2;     // клеток: насколько далеко искать место от двери
+  var BIRTH_RETRY = 5;     // с: повтор отложенной попытки (не дольше границы)
 
-  /* Часы попыток. Одна штука на партию: начало партии (Play.start) заводит их
-     с нуля, поэтому новая партия не наследует границу прошлой. */
+  /* Часы попыток. Одна штука на партию: начало партии заводит их с нуля.
+     `towns` — слоты по деревням: { next, pending, blocked, last }. Форма
+     `{next, attempts}` без `towns` поддерживается: старые тесты и инструменты
+     ставят такие часы руками, и они не должны рожать раньше времени. */
   function birthClock() {
-    return { next: BIRTH_EVERY, attempts: 0 };
+    return { next: BIRTH_EVERY, attempts: 0, towns: {} };
   }
 
-  /* Пора ли пробовать. true — ровно один раз на границу: следующая ставится
-     по текущему времени (`floor(seconds / 30) + 1`), поэтому пачка пропущенных
-     границ не превращается в пачку попыток. */
+  function nextBoundary(seconds) {
+    return (Math.floor(seconds / BIRTH_EVERY) + 1) * BIRTH_EVERY;
+  }
+
+  /* Слот попыток деревни. initialNext — когда слот создан старыми часами без
+     `towns`, он наследует их границу; в обычном случае (граница уже сработала)
+     слот созревает сразу. */
+  function birthSlot(clock, town, initialNext) {
+    if (!clock) return null;
+    if (!clock.towns) clock.towns = {};
+    var id = town && town.id !== undefined ? town.id : 0;
+    var slot = clock.towns[id];
+    if (!slot) {
+      slot = clock.towns[id] = {
+        next: typeof initialNext === 'number' ? initialNext : 0,
+        pending: null, blocked: [], last: null, growthReason: ''
+      };
+    }
+    return slot;
+  }
+
+  /* Пора ли пробовать. true — на границе 30 с (ровно один раз: следующая
+     ставится по текущему времени) или на отложенном повторе. Пачка
+     пропущенных границ не превращается в пачку попыток. */
   function birthDue(clock, seconds) {
     if (!clock) return false;
-    if (!(seconds >= clock.next)) return false;
-    clock.next = (Math.floor(seconds / BIRTH_EVERY) + 1) * BIRTH_EVERY;
-    clock.attempts = (clock.attempts || 0) + 1;
-    return true;
+    if (typeof clock.next !== 'number') clock.next = BIRTH_EVERY;
+    var due = false;
+    if (seconds >= clock.next) {
+      clock.next = nextBoundary(seconds);
+      clock.attempts = (clock.attempts || 0) + 1;
+      clock.due = true;
+      clock.lastDue = seconds;
+      due = true;
+    }
+    var slots = clock.towns || {};
+    for (var id in slots) {
+      if (!Object.prototype.hasOwnProperty.call(slots, id)) continue;
+      var slot = slots[id];
+      if (!slot || !slot.pending) continue;
+      if (seconds >= slot.pending.at && seconds < slot.next) due = true;
+    }
+    return due;
   }
 
-  /* Сколько свободных мест в домах деревни. Ратуша и лагерь жильём не
-     считаются: `housingCapacity` возвращает для них 0, а тип проверяется
-     явно — чтобы «жильё» было свойством дома, а не совпадением таблицы. */
-  function housingFree(buildings, villagers) {
-    var B = global.Buildings, free = 0;
-    for (var i = 0; i < (buildings || []).length; i++) {
-      var h = buildings[i];
-      if (!h || B.typeOf(h) !== 'house') continue;
-      free += Math.max(0, B.housingCapacity(h) - residentsOf(h, villagers).length);
+  /* Ратуша деревни: в списке построек (а не только ссылкой town.townhall —
+     после снимка она восстанавливается именно из построек). */
+  function townHallOf(town, buildings) {
+    var list = buildings || (town && town.buildings) || [];
+    for (var i = 0; i < list.length; i++) {
+      var b = list[i];
+      if (!b || b.rubble) continue;
+      if (global.Buildings.typeOf(b) !== 'townhall') continue;
+      if (town && b.town !== undefined && b.town !== town.id) continue;
+      if (town && ownerId(b) !== town.owner) continue;
+      return b;
+    }
+    return null;
+  }
+
+  /* Жив ли город. Выбывший (alive=false), с павшей ратушей или вовсе без неё
+     не рождает. Деревня без списка городов (генератор карт) считается живой:
+     там нет ни ратуши, ни городов, а рождение — обычная проверка движка. */
+  function townAlive(town, buildings) {
+    if (!town) return false;
+    if (town._synthetic) return true;
+    if (town.alive === false) return false;
+    if (town.townhall && town.townhall.rubble) return false;
+    if (town.townhall && !town.townhall.rubble) return true;
+    return !!townHallOf(town, buildings);
+  }
+
+  /* Живые дома деревни: только этот тип, не завал, только свой город. Старый
+     дом без поля town относится к деревне по владельцу. */
+  function townHouses(town, buildings) {
+    var B = global.Buildings, out = [], i, h;
+    var list = buildings || (town && town.buildings) || [];
+    for (i = 0; i < list.length; i++) {
+      h = list[i];
+      if (!h || h.rubble) continue;
+      if (B.typeOf(h) !== 'house') continue;
+      if (town && !town._synthetic) {
+        if (h.town !== undefined) { if (h.town !== town.id) continue; }
+        else if (ownerId(h) !== town.owner) continue;
+      }
+      out.push(h);
+    }
+    return out;
+  }
+
+  /* Жители деревни: все живые, включая воинов и учеников. Списки town.villagers
+     для этого не годятся — там остаются ссылки на мёртвых. */
+  function townResidents(town, villagers) {
+    var out = [], list = villagers || [], i, v;
+    for (i = 0; i < list.length; i++) {
+      v = list[i];
+      if (!v || v.dead) continue;
+      if (town && !town._synthetic) {
+        if (v.town !== undefined) { if (v.town !== town.id) continue; }
+        else if (ownerId(v) !== town.owner) continue;
+      }
+      out.push(v);
+    }
+    return out;
+  }
+
+  /* Свободные места в домах деревни. */
+  function housingFreeOf(town, buildings, villagers) {
+    var B = global.Buildings, houses = townHouses(town, buildings), free = 0;
+    for (var i = 0; i < houses.length; i++) {
+      free += Math.max(0,
+        B.housingCapacity(houses[i]) - residentsOf(houses[i], villagers).length);
     }
     return free;
   }
 
-  /* Дом для следующего ребёнка: среди домов со свободными местами — тот, где
-     их больше; при равенстве — раньше в списке построек. Возвращает дом или
-     null, если жить негде. */
-  function birthHouse(buildings, villagers) {
-    var B = global.Buildings, best = null, bestFree = 0;
-    for (var i = 0; i < (buildings || []).length; i++) {
+  /* Сколько свободных мест в домах. Без третьего аргумента — по всем домам
+     (старый вызов); с деревней — по ней; с миром — по живым городам. */
+  function housingFree(buildings, villagers, worldOrTown) {
+    if (worldOrTown && worldOrTown.towns) {
+      var towns = worldOrTown.towns, free = 0;
+      for (var t = 0; t < towns.length; t++) {
+        if (townAlive(towns[t], buildings)) free += housingFreeOf(towns[t], buildings, villagers);
+      }
+      return free;
+    }
+    if (worldOrTown) return housingFreeOf(worldOrTown, buildings, villagers);
+    var B = global.Buildings, all = 0, i;
+    for (i = 0; i < (buildings || []).length; i++) {
       var h = buildings[i];
       if (!h || B.typeOf(h) !== 'house') continue;
+      all += Math.max(0, B.housingCapacity(h) - residentsOf(h, villagers).length);
+    }
+    return all;
+  }
+
+  /* Дом для следующего ребёнка: среди домов ЭТОЙ деревни со свободными
+     местами — тот, где их больше; при равенстве — раньше в списке. Дом из
+     skip (в этой попытке его дверь занята) пропускается. Старый вызов
+     birthHouse(buildings, villagers) работает как раньше — по всем домам. */
+  function birthHouse(town, buildings, villagers, skip) {
+    var B = global.Buildings, houses, i;
+    if (Array.isArray(town)) {
+      /* Старый вызов birthHouse(buildings, villagers): по всем домам. */
+      var legacyVillagers = buildings;
+      buildings = town;
+      villagers = legacyVillagers;
+      houses = buildings;
+      skip = arguments[3] || null;
+    } else {
+      houses = townHouses(town, buildings);
+    }
+    var best = null, bestFree = 0;
+    for (i = 0; i < houses.length; i++) {
+      var h = houses[i];
+      if (!h || B.typeOf(h) !== 'house') continue;
+      if (skip && h.id !== undefined && skip[String(h.id)]) continue;
       var free = Math.max(0, B.housingCapacity(h) - residentsOf(h, villagers).length);
       if (free > bestFree) { best = h; bestFree = free; }
     }
     return best;
   }
 
-  /* Одна попытка заселения. Возвращает список родившихся (может быть пустым).
-   *
-   * Сколько: born = min(floor(N / 2), свободных мест), где N — число живых на
-   * момент попытки. Дети ставятся по одному на свободное место, и каждый раз
-   * дом выбирается заново: после первого ребёнка у его дома мест меньше, и
-   * следующий может уйти в другой дом — по тому же правилу.
-   *
-   * Место: клетка перед дверью ЕГО дома, а если занята — ближайшая свободная в
-   * пределах BIRTH_REACH клеток. Свободна значит: суша, не стена/вода/чужая
-   * постройка и не другой житель (Villagers.spawnSpot с avoid = villagers).
-   * Не нашлось места — ребёнка нет: бездомных рождение не создаёт.
-   *
-   * id — максимальный существующий + 1, имя собирается из него
-   * (villagerName), поэтому дыр и повторов не бывает даже после серии родов.
-   *
-   * Атлас жителя не загружен — попытка тихо пропускается: партия не падает и
-   * не заводит невидимых людей. */
-  function tryBirth(world, renderer, villagers, buildings) {
-    var born = [];
-    if (!world || !renderer || !renderer.villagerSprites || !villagers) return born;
-    var V = global.Villagers, B = global.Buildings;
-    if (!V || !B) return born;
-    var n = villagers.length;
-    if (n <= 1) return born;
-    var free = housingFree(buildings, villagers);
-    if (free <= 0) return born;
-    var count = Math.min(Math.floor(n / 2), free);
-    var solid = V.blockedMap(world, buildings);
-    for (var i = 0; i < count; i++) {
-      var house = birthHouse(buildings, villagers);
-      if (!house) break;
-      var door = B.frontSpot(house);
-      var spot = V.spawnSpot(world, solid, door.x + 0.5, door.y + 0.5,
-        villagers, BIRTH_REACH);
-      if (!spot) break;
-      var maxId = 0;
-      for (var k = 0; k < villagers.length; k++) {
-        if (villagers[k] && villagers[k].id > maxId) maxId = villagers[k].id;
-      }
-      var child = V.create(world, {
-        index: maxId,
-        x: spot.x, y: spot.y,
-        buildings: buildings,
-        owner: house.owner === undefined ? 0 : house.owner,
-        town: house.town === undefined ? 0 : house.town,
-        home: house,
-        avoid: villagers,
-        appear: BIRTH_FADE
-      });
-      if (!child) break;
-      /* Новый житель сразу считается живым и занимает клетку: следующий
-         ребёнок этого же тика уже не встанет на его место. */
-      villagers.push(child);
-      var btown = townById(world, child.town);
-      if (btown) btown.villagers.push(child);
-      born.push(child);
+  /* Города, которые пробуют родить: живые. Мир без списка городов — одна
+     условная деревня владельца 0 (генератор карт). */
+  function birthTowns(world, buildings) {
+    var list = (world && world.towns) || [], out = [], i;
+    for (i = 0; i < list.length; i++) {
+      if (townAlive(list[i], buildings)) out.push(list[i]);
     }
+    if (out.length) return out;
+    if (!list.length) return [{ id: 0, owner: 0, alive: true, _synthetic: true }];
+    return out;
+  }
+
+  /* Следующий номер жителя деревни. Не переиспользует номера: берёт максимум
+     по ЖИВЫМ этой деревни и по town._vidNext (он переживает смерть и F5), а
+     занятый номер (например, из другого диапазона) пропускает. */
+  function nextVillagerId(world, villagers, town) {
+    var list = villagers || [], i, v;
+    var base = town && typeof town.id === 'number' ? town.id * 1000 : 0;
+    var maxId = 0, used = {};
+    for (i = 0; i < list.length; i++) {
+      v = list[i];
+      if (!v || typeof v.id !== 'number') continue;
+      used[v.id] = true;
+      if (town && !town._synthetic) {
+        if (v.town !== undefined && v.town !== town.id &&
+            ownerId(v) !== town.owner) continue;
+        if (v.town === undefined && ownerId(v) !== town.owner) continue;
+      }
+      if (v.id > maxId) maxId = v.id;
+    }
+    var next = Math.max(base, maxId + 1, (town && town._vidNext) || 0);
+    while (used[next]) next++;
+    if (town) town._vidNext = next + 1;
+    return next;
+  }
+
+  /* Продолжить нумерацию после F5/старта: по каждому городу max id + 1. */
+  function syncVillagerIds(world, villagers) {
+    var towns = (world && world.towns) || [], byTown = {}, i, v;
+    for (i = 0; i < (villagers || []).length; i++) {
+      v = villagers[i];
+      if (!v || typeof v.id !== 'number') continue;
+      var tid = v.town;
+      if (tid === undefined) {
+        var t = townOf(world, ownerId(v));
+        tid = t ? t.id : 0;
+      }
+      byTown[tid] = Math.max(byTown[tid] || 0, v.id);
+    }
+    for (i = 0; i < towns.length; i++) {
+      var town = towns[i];
+      if (!town) continue;
+      var base = (typeof town.id === 'number' ? town.id : i) * 1000;
+      town._vidNext = Math.max(base, (byTown[town.id] || 0) + 1, town._vidNext || 0);
+    }
+    return byTown;
+  }
+
+  /* Отметка «рост остановлен»: событие на СМЕНУ причины, не на каждый кадр.
+     Внутри Events.growthStop уже держит паузу 30 с на владельца. */
+  function noteGrowth(world, town, slot, reason) {
+    if (!slot) return;
+    if (slot.growthReason === (reason || '')) return;
+    slot.growthReason = reason || '';
+    if (!reason) return;
+    if (global.Events && global.Events.growthStop) {
+      global.Events.growthStop(world, town.owner, reason);
+    }
+  }
+
+  /* Одна попытка одной деревни. pending — остаток УЖЕ положенной попытки:
+     quota считается только на границе, повтор добирает pending.left. */
+  function birthAttempt(world, villagers, buildings, town, slot, solid, seconds, born) {
+    var V = global.Villagers, B = global.Buildings;
+    var houses = townHouses(town, buildings);
+    var pop = townResidents(town, villagers).length;
+    var free = housingFreeOf(town, buildings, villagers);
+    var pending = slot ? slot.pending : null;
+    var blockedIds = [], blocked = {}, blockedN = 0;
+    var quota = 0, got = 0, reason = '';
+    var k, house, spot, door, child;
+
+    if (slot) { slot.pending = null; slot.blocked = []; }
+
+    if (!townAlive(town, buildings)) reason = 'город выбыл';
+    else if (!houses.length) reason = 'нет дома';
+    else if (pop <= 1) reason = 'один житель';
+    else if (free <= 0) reason = 'нет свободного места';
+    else {
+      quota = Math.min(Math.floor(pop / 2), free);
+      if (pending && typeof pending.left === 'number') {
+        quota = Math.min(quota, pending.left);
+      }
+      for (k = 0; k < quota; k++) {
+        house = null;
+        spot = null;
+        while (true) {
+          house = birthHouse(town, buildings, villagers, blocked);
+          if (!house) break;
+          door = B.frontSpot(house);
+          spot = V.spawnSpot(world, solid, door.x + 0.5, door.y + 0.5,
+            villagers, BIRTH_REACH);
+          if (spot) break;
+          var hid = house.id === undefined ? '#' + blockedN : String(house.id);
+          blocked[hid] = true;
+          blockedIds.push(hid);
+          blockedN++;
+          house = null;
+        }
+        if (!house || !spot) break;
+        var childId = nextVillagerId(world, villagers, town);
+        child = V.create(world, {
+          id: childId,
+          index: childId,
+          rngKey: childId,
+          x: spot.x, y: spot.y,
+          buildings: buildings,
+          owner: town.owner === undefined ? 0 : town.owner,
+          town: town.id === undefined ? 0 : town.id,
+          home: house,
+          avoid: villagers,
+          appear: BIRTH_FADE
+        });
+        if (!child) break;
+        villagers.push(child);
+        var btown = townById(world, child.town);
+        if (btown) btown.villagers.push(child);
+        born.push(child);
+        got++;
+      }
+      if (got < quota) reason = blockedN > 0 ? 'двери заняты' : 'нет места';
+    }
+
+    if (slot) {
+      slot.blocked = blockedIds.slice();
+      slot.last = {
+        at: seconds, reason: reason, blocked: blockedN,
+        born: got, quota: quota, pop: pop, free: free
+      };
+      if (reason === 'двери заняты' && seconds !== null && got < quota &&
+          slot.next > seconds + BIRTH_RETRY) {
+        slot.pending = {
+          at: seconds + BIRTH_RETRY,
+          left: quota - got,
+          reason: reason,
+          blocked: blockedN
+        };
+      }
+      noteGrowth(world, town, slot, reason);
+    }
+    return got;
+  }
+
+  /* Попытки заселения. opts = {clock, seconds, town}: часы и время партии, а
+     также (для отладки) одна деревня. Без opts — немедленная попытка по всем
+     живым городам: так зовут profile.js и старые приёмки. */
+  function tryBirth(world, renderer, villagers, buildings, opts) {
+    opts = opts || {};
+    if (!world || !renderer || !renderer.villagerSprites || !villagers) return [];
+    var V = global.Villagers, B = global.Buildings;
+    if (!V || !B) return [];
+    var clock = opts.clock || null;
+    var seconds = typeof opts.seconds === 'number' ? opts.seconds : null;
+    var towns = opts.town ? [opts.town] : birthTowns(world, buildings);
+    var solid = null, born = [], i, town, slot, due;
+
+    for (i = 0; i < towns.length; i++) {
+      town = towns[i];
+      if (opts.town && town !== opts.town) continue;
+      slot = clock ? birthSlot(clock, town, clock.due ? 0 : clock.next) : null;
+      if (!clock) due = true;
+      else if (clock.due) due = true;
+      else if (slot.pending && seconds !== null &&
+               seconds >= slot.pending.at && seconds < slot.next) due = true;
+      else if (seconds !== null && seconds >= slot.next) due = true;
+      else due = false;
+      if (!due) continue;
+      if (!solid) solid = V.blockedMap(world, buildings);
+      /* Граница следующей попытки обновляется ДО разбора: отложенный повтор
+         живёт только внутри неё (pending.at < slot.next). */
+      if (slot && seconds !== null) {
+        slot.next = nextBoundary(seconds);
+        if (clock.next < slot.next) clock.next = slot.next;
+        if (town) town.birthNext = slot.next;
+      }
+      birthAttempt(world, villagers, buildings, town, slot, solid, seconds, born);
+    }
+    if (clock) clock.due = false;
     if (born.length) renderer.setVillagers(villagers);
     return born;
+  }
+
+  /* После F5: следующая граница для всех городов, отложенные повторы сняты. */
+  function rearmBirth(world, clock, seconds) {
+    if (!clock) return clock;
+    var next = nextBoundary(seconds || 0);
+    clock.next = next;
+    clock.attempts = clock.attempts || 0;
+    clock.due = false;
+    if (!clock.towns) clock.towns = {};
+    var towns = (world && world.towns) || [];
+    for (var i = 0; i < towns.length; i++) {
+      var town = towns[i];
+      if (!town) continue;
+      var id = town.id === undefined ? i : town.id;
+      var slot = clock.towns[id] || (clock.towns[id] = {
+        next: next, pending: null, blocked: [], last: null, growthReason: ''
+      });
+      slot.next = next;
+      slot.pending = null;
+      slot.blocked = [];
+      slot.growthReason = '';
+      town.birthNext = next;
+    }
+    return clock;
+  }
+
+  /* Что показать игроку про рост деревни. Считается только по переданному
+     списку жителей; town.villagers не используется (там остаются мёртвые).
+     Поля: население/вместимость, свободные места, время до заселения, причина
+     задержки и готовый текст для HUD. */
+  function birthStatus(world, town, villagers, buildings, clock, seconds) {
+    var B = global.Buildings;
+    var out = {
+      town: town ? town.id : null,
+      owner: town ? town.owner : null,
+      alive: false,
+      population: 0, civilians: 0, warriors: 0, trainees: 0,
+      capacity: 0, free: 0, houses: 0, housesFree: 0,
+      next: null, retryIn: null, blockedHouses: 0,
+      reason: '', canGrow: false, text: ''
+    };
+    if (!town) { out.reason = 'нет деревни'; return out; }
+    out.alive = townAlive(town, buildings);
+    var pop = townResidents(town, villagers), i, v;
+    out.population = pop.length;
+    for (i = 0; i < pop.length; i++) {
+      v = pop[i];
+      if (v.warrior) out.warriors++;
+      else if (v.trainee) out.trainees++;
+      else out.civilians++;
+    }
+    var houses = townHouses(town, buildings), cap = 0, free = 0, freeHouses = 0;
+    for (i = 0; i < houses.length; i++) {
+      var hcap = B.housingCapacity(houses[i]);
+      var hfree = Math.max(0, hcap - residentsOf(houses[i], villagers).length);
+      cap += hcap;
+      free += hfree;
+      if (hfree > 0) freeHouses++;
+    }
+    out.capacity = cap;
+    out.free = free;
+    out.houses = houses.length;
+    out.housesFree = freeHouses;
+    var slot = clock && clock.towns
+      ? clock.towns[town.id === undefined ? 0 : town.id] : null;
+    var boundary = slot && typeof slot.next === 'number' && slot.next > 0
+      ? slot.next
+      : (clock && typeof clock.next === 'number' ? clock.next : town.birthNext);
+    if (slot && slot.pending && seconds !== null) {
+      out.retryIn = Math.max(0, +(slot.pending.at - seconds).toFixed(1));
+      out.next = out.retryIn;
+      out.blockedHouses = slot.pending.blocked || 0;
+    } else if (typeof boundary === 'number' && seconds !== null) {
+      out.next = Math.max(0, +(boundary - seconds).toFixed(1));
+    }
+    if (!out.alive) out.reason = 'город выбыл';
+    else if (!houses.length) out.reason = 'нет дома';
+    else if (out.population <= 1) out.reason = 'один житель';
+    else if (free <= 0) out.reason = 'нет свободного места';
+    else if (slot && slot.pending) out.reason = 'двери заняты';
+    out.canGrow = !out.reason;
+    out.text = 'население ' + out.population + ' / ' + out.capacity;
+    if (out.next !== null) out.text += ' · заселение через ' + Math.ceil(out.next) + ' с';
+    return out;
   }
 
   /* ---------------------- режим «против деревни» ------------------------ *
@@ -1439,6 +1792,7 @@
     BIRTH_EVERY: BIRTH_EVERY,
     BIRTH_FADE: BIRTH_FADE,
     BIRTH_REACH: BIRTH_REACH,
+    BIRTH_RETRY: BIRTH_RETRY,
     startHome: startHome,
     startBot: startBot,
     startMulti: startMulti,
@@ -1454,8 +1808,18 @@
     birthClock: birthClock,
     birthDue: birthDue,
     housingFree: housingFree,
+    housingFreeOf: housingFreeOf,
+    townAlive: townAlive,
+    townHallOf: townHallOf,
+    townHouses: townHouses,
+    townResidents: townResidents,
     birthHouse: birthHouse,
     tryBirth: tryBirth,
+    rearmBirth: rearmBirth,
+    birthStatus: birthStatus,
+    nextVillagerId: nextVillagerId,
+    syncVillagerIds: syncVillagerIds,
+    nextBoundary: nextBoundary,
     workersOf: workersOf,
     isWorkplace: isWorkplace,
     isBarracks: isBarracks,
