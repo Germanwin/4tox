@@ -56,12 +56,32 @@
    *
    * 0.05 с — тот же шаг, которым жил мир до этой правки: ходьба, рубка, бой
    * и пятисекундная тренировка считают время шагами, и крупный шаг сдвинул
-   * бы их. Проверено: 600 с мира (12 000 шагов) считаются за ~70 мс. */
+   * бы их.
+   *
+   * Догон ОГРАНИЧЕН. Без предела один вызов advance() прогонял весь отрезок
+   * синхронно; замер на 192-й карте, 4 деревни, 200 существ: 600 с простоя —
+   * это 12 000 шагов и ~1030 мс в главном потоке (62 пропущенных кадра), а
+   * 60 с — ~207–380 мс. Поэтому за вызов тратится не больше BUDGET_MS
+   * стенных миллисекунд; остаток долга (simDebt) ждёт следующего вызова.
+   * Долг ограничен MAX_DEBT: всё, что больше, честно выбрасывается и
+   * записывается в Play.state.simDropped — это не молчаливое ускорение,
+   * игрок видит «мир пропустил N с». Минимум один шаг за вызов делается
+   * всегда: шаг мира бывает тяжелее бюджета (замер: худший шаг 9.96 мс при
+   * бюджете 8), и проверка бюджета ДО шага навсегда заблокировала бы долг.
+   *
+   * Долг не копится до первой партии, после боя и у клиента сети: там мир
+   * либо не идёт, либо время авторитетно у хоста. */
 
   var SIM_STEP = 0.05;        // шаг мира, с
+  var BUDGET_MS = 8;          // столько стенных мс на догон в видимой вкладке
+  var BUDGET_HIDDEN_MS = 25;  // в скрытой: таймер редкий, кадр не рисуется
+  var MAX_DEBT = 120;         // с: больше не догоняем, а выбрасываем и говорим
+  var JUMP_MS = 5000;         // предел тестовой ручки __game.clock.jump
   var STALL_MS = 3000;        // столько без кадров — значит, окно не рисуется
   var simLast = 0;            // время прошлого шага, мс по Date.now
   var lastFrameAt = 0;        // когда кадр действительно случился
+  var simDebt = 0;            // с: сколько мира ещё не догнано
+  var simDropped = 0;         // с: сколько выброшено (зеркало Play.state.simDropped)
 
   /* Атласы построек: по одному на тип (mapgen2/js/buildings.js: TYPES).
      Раньше он был один — ратуша; теперь их четыре, и грузятся они одним
@@ -326,6 +346,14 @@
         Hud.setNetPing(0);
       } else if (ev.type === 'net-ping') {
         Hud.setNetPing(ev.ms, Play.state);
+      } else if (ev.type === 'sim-dropped') {
+        /* Часы выбросили долг (см. MAX_DEBT в advance). Показывает HUD:
+           постоянной строкой суммы, а не всплывашкой — в сети всплывашек нет
+           по правилу 2026-10-24. Если агент 8 ещё не завёл обработчик, сумма
+           всё равно живёт в Play.state.simDropped и доступна HUD. */
+        if (Hud && typeof Hud.onSimDropped === 'function') {
+          Hud.onSimDropped(ev.lost, ev.total);
+        }
       } else if (ev.type === 'spectator') {
         /* Своя ратуша пала, но партия идёт: наблюдаем без команд. Это не
            экран итога — итог придёт отдельным событием `defeat`. */
@@ -351,7 +379,52 @@
 
   /* ------------------------------- часы мира ---------------------------- */
 
-  /* Один шаг мира. Всё, что проснулось, догоняет по нему прошедшее время. */
+  function simNow() { return Date.now(); }
+
+  /* Стенные миллисекунды для бюджета. Date.now груб (1 мс) и прыгает от
+     правки системного времени; бюджету нужен ровный счётчик. */
+  function wallNow() {
+    return (global.performance && global.performance.now)
+      ? global.performance.now() : Date.now();
+  }
+
+  /* Выброшенное время видит игрок, журнал (Metrics) и HUD. Функция одна:
+     иначе «пропущено» в часах, в Metrics и в Play.state разошлось бы. */
+  function dropTime(sec) {
+    if (!(sec > 0) || !isFinite(sec)) return;
+    simDropped += sec;
+    var M = global.Metrics;
+    if (M && M.on && M.counters) M.counters.dropped += sec;
+    var P = global.Play;
+    if (P && typeof P.noteSimDropped === 'function') P.noteSimDropped(sec);
+    else if (P && P.state) P.state.simDropped = (P.state.simDropped || 0) + sec;
+  }
+
+  /* Тратит не больше budgetMs стенных мс на догон. Возвращает, сколько
+     секунд МИРА прогнано этим вызовом. Минимум один шаг делается всегда —
+     даже если он один тяжелее бюджета: иначе долг не кончится никогда. */
+  function drain(budgetMs) {
+    if (!(simDebt > 1e-9)) return 0;
+    var M = global.Metrics;
+    var measure = !!(M && M.on);
+    var started = wallNow();
+    var simulated = 0;
+    do {
+      var step = simDebt > SIM_STEP ? SIM_STEP : simDebt;
+      if (!(step > 1e-9)) break;
+      var t0 = measure ? wallNow() : 0;
+      Play.tick(step);
+      if (measure) M.step(wallNow() - t0);
+      simDebt -= step;
+      simulated += step;
+      if (!(simDebt > 1e-9)) break;
+    } while (wallNow() - started < budgetMs);
+    if (simulated > 0 && measure && M.counters) M.counters.caughtUp += simulated;
+    return simulated;
+  }
+
+  /* Один шаг мира. Всё, что проснулось, догоняет по нему прошедшее время.
+     Возвращает, сколько секунд мира догнано этим вызовом. */
   function advance(now) {
     if (!simLast) { simLast = now; return 0; }
     var elapsed = (now - simLast) / 1000;
@@ -360,18 +433,40 @@
     if (!(elapsed > 0)) { simLast = now; return 0; }
     simLast = now;
 
-    var left = elapsed;
-    while (left > 1e-9) {
-      var step = left > SIM_STEP ? SIM_STEP : left;
-      Play.tick(step);
-      left -= step;
+    var P = global.Play;
+    if (!P || !P.state || !P.state.world) { simDebt = 0; return 0; }
+
+    /* Клиент не считает мир: его время приходит снимками. Один тик нужен
+       только для сглаживания позиций — и один большой dt честнее тысячи
+       маленьких: сглаживание по exp() и так сходится за него. Долг клиента
+       не касается: авторитетное время у хоста. */
+    if (P.state.netRole === 'client') {
+      P.tick(elapsed);
+      return elapsed;
     }
-    return elapsed;
+
+    /* До первой партии и после боя мир не идёт: копить за это время долг
+       значило бы «догнать» несуществующие минуты при старте следующей. Но
+       оболочка при этом жива: хост обязан слать снимки гостям и heartbeat
+       (иначе «мир стоит» у хоста = «связи нет» у друзей), а Play.tick сам
+       решает, что делать при running=false — сеть стоит в нём ДО проверки
+       времени. Даём один кадр, а не весь отрезок: время мира не идёт. */
+    if (!P.state.running) {
+      simDebt = 0;
+      P.tick(elapsed > SIM_STEP ? SIM_STEP : elapsed);
+      return elapsed;
+    }
+
+    simDebt += elapsed;
+    if (simDebt > MAX_DEBT) {
+      var lost = simDebt - MAX_DEBT;
+      simDebt = MAX_DEBT;
+      dropTime(lost);
+    }
+    return drain(document.hidden ? BUDGET_HIDDEN_MS : BUDGET_MS);
   }
 
   function catchUp() { advance(simNow()); }
-
-  function simNow() { return Date.now(); }
 
   /* Всё, что возвращает страницу в мир: вкладку выбрали, окно вернули,
      страницу разморозили. Мир к этому моменту отстал на весь отрезок — и
@@ -421,6 +516,8 @@
      принадлежит. Дальше их двигает каждый кадр и каждый возврат. */
   function startClock() {
     simLast = simNow();
+    simDebt = 0;
+    simDropped = 0;
     lastFrameAt = simLast;
     bindClock();
     loop(performance.now());
@@ -469,17 +566,25 @@
   /* ------------------------------- цикл -------------------------------- */
 
   function loop(t) {
+    var M = global.Metrics;
+    var frameStart = (M && M.frame) ? wallNow() : 0;
     var dt = Math.min(0.05, (t - last) / 1000) || 0;
     last = t;
     lastFrameAt = simNow();
 
     if (Play.stepKeys(dt)) { /* камера поехала от клавиш */ }
     /* Мир идёт по стенным часам: кадр может опоздать на секунды — вкладка
-       была скрыта, окно свёрнуто, машина спала, — и весь отрезок догоняется
-       здесь. renderer получает время кадра, ему нужны волны и анимация. */
+       была скрыта, окно свёрнуто, машина спала, — и отрезок догоняется
+       порциями по бюджету (advance). renderer получает время кадра, ему
+       нужны волны и анимация. */
     advance(simNow());
     Play.draw(t / 1000);
     Hud.tick(dt);
+
+    /* Полный кадр — для встроенных счётчиков (Metrics.frame). Если агент 2
+       ещё не завёл функцию, ничего не выдумываем: поле frameMaxMs в
+       metrics.js есть, но API кадра — его зона. */
+    if (frameStart && M && M.frame) M.frame(wallNow() - frameStart);
 
     global.requestAnimationFrame(loop);
   }
@@ -502,10 +607,39 @@
     assets: ASSETS,
     /* Часы мира — для приёмки: `jump(ms)` делает вид, что прошло ms, и
        возвращает, сколько мира догнано. Проверять фон заморозкой страницы
-       тоже можно (menu.js так и делает), но точный отрезок так короче. */
+       тоже можно (menu.js так и делает), но точный отрезок так короче.
+       Догон идёт теми же порциями по BUDGET_MS, что и в игре, — иначе
+       jump(600000) на 192-й карте синхронно держал бы поток ~1 с и
+       приёмка «повисла» бы на одном вызове. Предел JUMP_MS не даёт
+       зависнуть навсегда: что не успели, остаётся в долге (debt()) и
+       догоняется следующими вызовами/кадрами, а не выбрасывается. */
     clock: {
       now: simNow,
-      jump: function (ms) { simLast -= Math.max(0, ms || 0); return advance(simNow()); }
+      jump: function (ms) {
+        var P = global.Play;
+        if (!P || !P.state || !P.state.world) return 0;
+        if (P.state.netRole === 'client' || !P.state.running) return 0;
+        var want = Math.max(0, Number(ms) || 0) / 1000;
+        if (!(want > 1e-9)) return 0;
+        var before = P.state.seconds || 0;
+        simDebt += want;
+        var started = wallNow();
+        while (simDebt > 1e-9 && wallNow() - started < JUMP_MS) {
+          if (!(drain(BUDGET_MS) > 0)) break;
+        }
+        /* Время, потраченное на сам догон, миру не принадлежит. */
+        simLast = simNow();
+        var done = (P.state.seconds || 0) - before;
+        return done > 0 ? done : 0;
+      },
+      debt: function () { return simDebt; },
+      dropped: function () { return simDropped; },
+      /* Приёмке: подать часы напрямую, не ожидая кадра или таймера. Это
+         ровно тот же advance(now), что зовёт цикл; возвращает, сколько мира
+         догнано этим вызовом. */
+      advance: function (now) {
+        return advance(typeof now === 'number' ? now : simNow());
+      }
     }
   };
   global.__game.Play = global.Play;
