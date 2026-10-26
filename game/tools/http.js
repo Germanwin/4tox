@@ -597,6 +597,28 @@ async function readJsonTests() {
 
 async function commandTests() {
   console.log('\n-- сервер: ageMs, TTL по своим часам, идемпотентность >1000 --');
+
+  /* Предупреждение о другой версии — только поле: старт не отказывает. */
+  const oldClient = await postJSON('/api/lobby', {
+    max: 2, name: 'Старый клиент', protocol: 2
+  });
+  const oldPeer = await postJSON('/api/join', {
+    code: oldClient.j.code, name: 'Напарник', protocol: 2
+  });
+  check(!!oldClient.j.protocolWarning,
+    'клиент другой версии получает protocolWarning в лобби: ' +
+    oldClient.j.protocolWarning);
+  await postJSON('/api/ready', { code: oldClient.j.code, token: oldClient.j.token, ready: true });
+  await postJSON('/api/ready', { code: oldClient.j.code, token: oldPeer.j.token, ready: true });
+  const oldStart = await postJSON('/api/start', {
+    code: oldClient.j.code, token: oldClient.j.token
+  });
+  check(oldStart.j.ok && oldStart.j.start.protocolWarning &&
+    oldStart.j.start.protocol >= 3,
+    'старт с другой версией не отказан, предупреждение в пакете: ' +
+    JSON.stringify({ ok: oldStart.j.ok, warning: oldStart.j.start.protocolWarning }));
+  await postJSON('/api/leave', { code: oldClient.j.code, token: oldPeer.j.token });
+  await postJSON('/api/leave', { code: oldClient.j.code, token: oldClient.j.token });
   const host = await postJSON('/api/lobby', { max: 2, name: 'Хост-команд' });
   const guest = await postJSON('/api/join', { code: host.j.code, name: 'Гость-команд' });
   await postJSON('/api/ready', { code: host.j.code, token: host.j.token, ready: true });
