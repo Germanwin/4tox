@@ -214,13 +214,9 @@ console.log('сид %s: мир %d×%d, деревьев %d, камней %d, р�
   home ? home.x + ',' + home.y : 'нет');
 
 let target, spot, points, source;
+/* Начало измеряемого отрезка: для камня — стартовая клетка, для лесоруба —
+   первая точка уже построенного пути (её ставит планировщик после лагеря). */
 let routeFrom = { x: from.x, y: from.y };
-/* Клетка, ОТ КОТОРОЙ считается кратчайший клеточный путь.
-
-   Для лесоруба это не двор ратуши, а место, откуда планировщик выбрал дерево
-   (он выходит из лагеря) — иначе сравнение шло бы не с тем маршрутом. Для
-   камня это прежняя точка старта. */
-let startCell = { cx: Math.floor(routeFrom.x), cy: Math.floor(routeFrom.y) };
 let worker = null;
 let walkSeconds = 0;
 
@@ -258,7 +254,6 @@ if (kind === 'tree') {
        сглаживатель её законно не взял (ровно через угол лагеря). */
     routeFrom = { x: points[0].x, y: points[0].y };
     source = 'код игры (наём → лагерь → Villagers.plan)';
-    startCell = { cx: Math.floor(routeFrom.x), cy: Math.floor(routeFrom.y) };
     walkSeconds = setup * DT;
   }
 } else {
