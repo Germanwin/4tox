@@ -911,6 +911,33 @@
     emit({ type: 'sim-dropped', lost: sec, total: state.simDropped });
   }
 
+  /* Состояние найма для панели лагеря: занято/вакансии/идут/нет пути/нет
+     леса. Считает движок (Session.hireStatus); запасной расчёт — по снимку,
+     чтобы панель гостя не пустовала. */
+  function workInfo(camp) {
+    if (!camp) return null;
+    var S = global.Session, B = global.Buildings;
+    if (S && S.hireStatus) return S.hireStatus(camp, state.villagers);
+    var slots = B.workSlots(camp), workers = 0, free = 0, i, v;
+    var who = camp.owner === undefined ? 0 : camp.owner;
+    for (i = 0; i < state.villagers.length; i++) {
+      v = state.villagers[i];
+      if (!v || v.dead || (v.owner === undefined ? 0 : v.owner) !== who) continue;
+      if (v.employer === camp) workers++;
+      else if (!v.employer && !v.warrior && !v.trainee) free++;
+    }
+    var vacancies = Math.max(0, slots - workers);
+    return {
+      ok: vacancies > 0 && free > 0, slots: slots, workers: workers,
+      vacancies: vacancies, free: free, status: vacancies <= 0 ? 'занято'
+        : (free > 0 ? 'вакансии' : 'нет работников'),
+      text: 'работники ' + workers + ' / ' + slots +
+        (vacancies > 0 ? ' · свободных ' + free : ' · мест нет'),
+      reason: vacancies <= 0 ? 'в лагере нет свободных мест'
+        : (free > 0 ? '' : 'нет свободных жителей')
+    };
+  }
+
   /* Население своей деревни и когда ждать следующего — для HUD.
      Считает движок (Session.birthStatus), если он это умеет; иначе — тот же
      расчёт по снимку, чтобы панель не врала в сети, где клиента не считает
@@ -3680,6 +3707,7 @@
     netWake: netWake,
     playerEvents: playerEvents,
     birthInfo: birthInfo,
+    workInfo: workInfo,
     noteSimDropped: noteSimDropped,
     goToEvent: goToEvent,
     applyNetCommand: applyNetCommand,
