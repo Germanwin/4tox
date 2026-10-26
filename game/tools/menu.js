@@ -689,8 +689,13 @@ const getJSON = (u) => new Promise((res, rej) => {
       const door = v.home ? B.frontSpot(v.home) : null;
       return door ? { x: door.x + 0.5, y: door.y + 0.5 } : { x: v.x, y: v.y };
     };
-    /* Старожилы снимаются ДО прогона: за 30 секунд игры деревня рожает
-       четвёртого, и это не должно ломать замер прогулки первых трёх. */
+    /* Замер прогулки НЕ должен зависеть от того, сколько реального времени
+       прошло до него. Раньше здесь была гонка с рождением на 30-й секунде:
+       под нагрузкой четвёртый успевал появиться до снятия старожилов, и
+       base.length===3 падало на ровном месте. Теперь часы рождения на время
+       прогулки отводятся в далёкое будущее, а рождение проверяется отдельным
+       блоком ниже — правило не ослаблено, просто развязано по времени. */
+    st.birth = { next: 1e9, attempts: 0 };
     const base = st.villagers.slice();
     const from = base.map(v => [v.x, v.y]);
     const states = base.map(() => new Set());
@@ -728,10 +733,36 @@ const getJSON = (u) => new Promise((res, rej) => {
     wander.maxD.every(d => d <= wander.radius + 0.5),
     'дальше всего ' + Math.max(...wander.maxD).toFixed(1) + ' клетки при радиусе ' + wander.radius);
   check('и не заходят в воду', wander.onLand);
-  check('за 30 секунд игры родился ровно четвёртый, и он прописан в доме',
-    wander.n === 4 && wander.born.length === 1 && wander.born[0].id === 4 &&
-    wander.born[0].home && wander.born[0].homeHouse === 'house',
-    wander.n + ' жителей, новорождённые: ' + JSON.stringify(wander.born));
+  check('на прогулке часов рождения нет: старожилов ровно трое, лишних нет',
+    wander.base === 3 && wander.ids.join(',') === '1,2,3' &&
+    wander.n === 3 && wander.born.length === 0,
+    wander.base + ' старожила (id ' + wander.ids.join(',') + '), всего ' +
+    wander.n + ', новорождённых ' + wander.born.length);
+
+  /* Рождение возвращаем на границу отдельным блоком. `Session.birthClock()` —
+     те же часы, что заводит новая партия; `next` ставим на ближайший шаг,
+     иначе пришлось бы ждать 30 секунд. Проверяем не «часы стоят», а что после
+     возврата часов движок действительно рожает четвёртого — с номером, домом и
+     попыткой в часах. */
+  const birthNow = await js(`(() => {
+    const P = window.__game.Play, st = P.state;
+    st.birth = window.Session.birthClock();
+    st.birth.next = st.seconds + 0.05;
+    const before = st.villagers.length;
+    P.tick(0.2);
+    const v4 = st.villagers.find(v => v.id === 4);
+    return { before: before, n: st.villagers.length,
+             ids: st.villagers.map(v => v.id),
+             v4: v4 ? { id: v4.id, home: !!v4.home,
+                        homeHouse: v4.home ? window.Buildings.typeOf(v4.home) : null } : null,
+             attempts: st.birth && st.birth.attempts, seconds: st.seconds };
+  })()`);
+  check('часы рождения возвращены на границу — четвёртый рождается и прописан в доме',
+    birthNow.before === 3 && birthNow.n === 4 && !!birthNow.v4 &&
+    birthNow.v4.id === 4 && birthNow.v4.home && birthNow.v4.homeHouse === 'house' &&
+    birthNow.attempts >= 1,
+    'было ' + birthNow.before + ', стало ' + birthNow.n + ' (id ' +
+    birthNow.ids.join(',') + '), попыток ' + birthNow.attempts);
 
   /* --- 4б. панель сведений: все жители строками ----------------------- *
    * Требование: у каждого жителя в панели номер, ЖИВОЙ портрет (тот кадр
