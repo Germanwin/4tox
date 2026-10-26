@@ -1876,14 +1876,14 @@
 
   /* Распустить всех, кто работает ИМЕННО ЗДЕСЬ. Чужие не трогаются: выборка
      workersOf идёт по v.employer === camp. */
-  function fireAll(camp, villagers) {
+  function fireAll(camp, villagers, opts) {
     var workers = workersOf(camp, villagers);
     if (!workers.length) {
       return { ok: false, reason: noFireReason(camp), fired: 0, count: 0 };
     }
     var fired = 0, i;
     for (i = 0; i < workers.length; i++) {
-      if (fire(camp, workers[i]).ok) fired++;
+      if (fire(camp, workers[i], opts).ok) fired++;
     }
     if (!fired) return { ok: false, reason: noFireReason(camp), fired: 0, count: 0 };
     return { ok: true, reason: '', fired: fired, count: fired };
