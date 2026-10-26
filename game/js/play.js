@@ -606,6 +606,10 @@
       if (!v || v.dead) continue;
       v.path = null; v.goal = null; v.spot = null; v.order = null;
       v.target = null; v.combatMode = null; v.tree = null; v.job = null;
+      /* Кэши выбора цели/работы привязаны к старому миру и кадру: после
+         возврата их нельзя наследовать. */
+      v.planSkip = 0; v.noPathKey = null; v.jobWhy = '';
+      v.holdFire = false;
       v.campKey = undefined; v.stationKey = undefined;
       v.intoYard = false; v.exitYard = false; v.escape = false;
       v.spotTrip = false; v.jobPath = false; v.close = false;
@@ -1567,6 +1571,9 @@
     if (!state.running) return;
     state.seconds += dt;
 
+    /* Бронь клеток подхода живёт один кадр: воины выбирают места в одном
+       тике, и без сброса бронь копилась бы между кадрами. */
+    state.world._combatCells = null;
     /* Бой — до шага жителей: Combat выставляет v.target/v.combatMode и наносит
        урон, а Villagers.update ведёт воина к цели. Два модуля не пишут одно
        поле: движение остаётся за villager.js. */
