@@ -732,7 +732,12 @@
        именно те списки, по которым сейчас идёт бой. */
     if (opts.buildings) world._buildings = buildings;
     if (opts.villagers) world._villagers = villagers;
-    world.time = (world.time || 0) + dt;
+    /* Часы мира принадлежат ОДНОМУ владельцу шага. Server Simulation и
+       локальная оболочка ставят world.time сами и передают advanceTime:false;
+       старые прямые вызовы Combat.tick (приёмки, прототипы) по умолчанию
+       двигают часы, как раньше. Иначе серверный тик и world.time расходились
+       на один шаг. */
+    if (opts.advanceTime !== false) world.time = (world.time || 0) + dt;
     init(world, buildings, villagers);
     var solid = opts.solid || solidMap(world, buildings);
 

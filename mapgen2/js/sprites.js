@@ -54,15 +54,18 @@
     // лежит внутри meta.atlas и задан относительно неё, поэтому склеивать
     // их «в лоб» нельзя: получится assets/sprites/sprites/atlas.png.
     var base = opts.base || 'assets/';
-    var meta = global.SPRITE_ATLAS;
+    var metaName = opts.metaName || 'SPRITE_ATLAS';
+    var meta = global[metaName];
     if (meta) { loadImage(meta, base, opts, onReady, onError); return; }
 
     if (typeof fetch !== 'function') { onError(new Error('нет ни atlas.js, ни fetch')); return; }
-    fetch(joinPath(base, 'sprites/atlas.json')).then(function (r) {
+    var metaPath = (metaName === 'MOBILE_SPRITE_ATLAS')
+      ? 'sprites/mobile/atlas.json' : 'sprites/atlas.json';
+    fetch(joinPath(base, metaPath)).then(function (r) {
       if (!r.ok) throw new Error('atlas.json: HTTP ' + r.status);
       return r.json();
     }).then(function (json) {
-      global.SPRITE_ATLAS = json;
+      global[metaName] = json;
       loadImage(json, base, opts, onReady, onError);
     }).catch(onError);
   }

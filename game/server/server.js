@@ -45,10 +45,14 @@ const crypto = require('crypto');
 const os = require('os');
 const zlib = require('zlib');
 const { spawn, execFileSync } = require('child_process');
+const { Worker } = require('worker_threads');
 const UPnP = require('./upnp');
 const Tunnel = require('./tunnel');
 
 const ROOT = path.resolve(__dirname, '..', '..');
+/* Сетевые числа сервера и клиента — одна таблица. Протокол 4: мир считает
+   worker комнаты, браузерный хост больше не публикует снимки. */
+const NET = require(path.join(ROOT, 'game', 'shared', 'net-config.js'));
 const args = process.argv.slice(2);
 function opt(name, def) {
   const i = args.indexOf('--' + name);
@@ -81,8 +85,8 @@ const HOST = typeof HOST_OPT === 'string' && HOST_OPT
  * (sn, cmdDone, /api/command-state) не менялся, новые поля только добавлены
  * (ageMs). Поэтому старый клиент не ломается, а новый видит номер протокола
  * в /api/build и в старте. */
-const PROTOCOL = 3;
-const CMD_PROTO = 2;
+const PROTOCOL = NET.protocol;
+const CMD_PROTO = NET.commandProtocol;
 const STARTED_AT_MS = Date.now();
 let buildCache = null;
 /* Сборка — не только git. На проде (/opt/4tox) репозитория нет: файлы
@@ -510,6 +514,440 @@ function makeLobby(max) {
   };
   lobbies.set(c, lobby);
   return lobby;
+}
+
+/* ----------------------- комнаты: worker на партию ---------------------- *
+ *
+ * Авторитетный мир считает отдельный worker_threads.Worker. Главный поток
+ * обслуживает HTTP, лобби, токены и SSE; он не исполняет физику и не хранит
+ * N копий мира. На комнату — один worker, поэтому глобальные IIFE-модули
+ * движка не смешиваются между партиями.
+ *
+ * MAX_ACTIVE_ROOMS по умолчанию 1: предел выбран ДО измерения вместимости
+ * VPS. Отказ явный `server_capacity`, а не бесконечное число worker'ов.
+ * ---------------------------------------------------------------------- */
+const MAX_ACTIVE_ROOMS = Math.max(1, parseInt(process.env.MAX_ACTIVE_ROOMS || '1', 10) || 1);
+const STATE_DIR = process.env.STATE_DIR
+  ? path.resolve(process.env.STATE_DIR)
+  : path.resolve(process.cwd(), 'game', 'server', 'var', 'rooms');
+const roomRecords = new Map();   // lobby.code -> record
+let roomGeneration = 0;
+
+function monoMs() {
+  return Number(process.hrtime.bigint() / 1000000n);
+}
+
+function roomFor(lobby) {
+  return lobby ? roomRecords.get(lobby.code) || null : null;
+}
+
+/* Лобби переживает перезапуск Node вместе с комнатой: токены, состав и
+   владельцы лежат в STATE_DIR/<room>/lobby.json с правами 0600. Мир и
+   результаты команд — в checkpoint/журнале комнаты, а не здесь. */
+function lobbyMetaPath(roomId) {
+  return path.join(STATE_DIR, roomId, 'lobby.json');
+}
+
+function saveLobbyMeta(lobby) {
+  if (!lobby || !lobby.code) return;
+  try {
+    const dir = path.dirname(lobbyMetaPath(lobby.code));
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const meta = {
+      code: lobby.code, max: lobby.max, hostId: lobby.hostId,
+      seed: lobby.seed, size: lobby.size, createdAt: lobby.createdAt,
+      players: lobby.players.map(function (p) {
+        return {
+          id: p.id, token: p.token, name: p.name, color: p.color,
+          proto: p.proto, owner: p.owner, ready: !!p.ready
+        };
+      })
+    };
+    const file = lobbyMetaPath(lobby.code);
+    fs.writeFileSync(file, JSON.stringify(meta, null, 2) + '\n', { mode: 0o600 });
+    try { fs.chmodSync(file, 0o600); } catch (e) { /* Windows */ }
+  } catch (e) {
+    console.error('  lobby meta: ' + (e && e.message || e));
+  }
+}
+
+function restoreLobbies() {
+  let dirs = [];
+  try { dirs = fs.readdirSync(STATE_DIR); } catch (e) { return 0; }
+  let n = 0;
+  for (const roomId of dirs) {
+    let meta = null;
+    try {
+      meta = JSON.parse(fs.readFileSync(lobbyMetaPath(roomId), 'utf8'));
+    } catch (e) { continue; }
+    if (!meta || !meta.code || !Array.isArray(meta.players) || !meta.players.length) continue;
+    if (lobbies.has(meta.code)) continue;
+    /* makeLobby создаёт пустую запись; код заменяем на сохранённый. */
+    const lobby = makeLobby(meta.max);
+    lobbies.delete(lobby.code);
+    lobby.code = meta.code;
+    lobbies.set(lobby.code, lobby);
+    lobby.hostId = meta.hostId === undefined ? meta.players[0].id : meta.hostId;
+    lobby.seed = meta.seed || null;
+    lobby.size = meta.size || 192;
+    lobby.createdAt = meta.createdAt || now();
+    lobby.started = true;
+    lobby.startPayload = null;
+    lobby.lastSnapshot = null;
+    lobby.players = meta.players.map(function (p) {
+      return {
+        id: p.id, token: p.token, name: p.name || ('Игрок ' + p.id),
+        color: p.color, proto: p.proto || PROTOCOL, owner: p.owner,
+        ready: true, online: false, lastSeen: 0, timer: null, goneAt: 0
+      };
+    });
+    n++;
+    console.log('  лобби ' + lobby.code + ' восстановлено из ' + roomId);
+  }
+  return n;
+}
+
+function buildStartPayload(lobby, rec, opts) {
+  opts = opts || {};
+  const baseline = rec && (rec.baseline || rec.latest) || null;
+  return {
+    seed: lobby.seed, size: lobby.size, sites: opts.sites || [],
+    hostId: lobby.hostId,
+    snapGzip: true,
+    cmdProto: CMD_PROTO,
+    protocol: PROTOCOL,
+    build: buildId(),
+    protocolWarning: protocolWarning(lobby),
+    serverNow: now(),
+    roomId: rec ? rec.roomId : null,
+    epoch: rec ? rec.epoch : null,
+    revision: baseline ? baseline.revision : 0,
+    simulationTick: baseline ? baseline.simulationTick : 0,
+    baseline: baseline,
+    players: lobby.players.map(function (p, i) {
+      const owner = p.owner === undefined ? i : p.owner;
+      return {
+        id: p.id, name: p.name, owner: owner, color: p.color,
+        sessionId: String(p.id),
+        instance: 's' + owner + '-' + crypto.createHash('sha1').update(String(p.id)).digest('hex').slice(0, 8),
+        nextClientSequence: 1
+      };
+    })
+  };
+}
+
+function roomSummary(rec) {
+  if (!rec) return null;
+  const s = rec.latest || {};
+  return {
+    roomId: rec.roomId,
+    epoch: rec.epoch,
+    revision: s.revision === undefined ? null : s.revision,
+    simulationTick: s.simulationTick === undefined ? null : s.simulationTick,
+    simulationTimeMs: s.simulationTimeMs === undefined ? null : s.simulationTimeMs,
+    roomStatus: rec.fault ? 'faulted' : (s.roomStatus || rec.status || 'starting'),
+    status: rec.fault ? 'faulted' : (rec.status || 'starting'),
+    fault: rec.fault || null
+  };
+}
+
+function roomWorkerFault(rec, fault) {
+  if (!rec || rec.fault) return;
+  rec.fault = fault || { phase: 'worker', message: 'worker fault' };
+  rec.status = 'faulted';
+  const lobby = rec.lobby;
+  if (lobby) {
+    broadcast(lobby, 'room-fault', {
+      roomId: rec.roomId, epoch: rec.epoch, fault: rec.fault
+    });
+    lobbyLog(lobby, 'room-fault', rec.fault);
+  }
+  /* Команды, ожидающие ответа worker'а, не должны висеть вечно. */
+  for (const [, pending] of rec.pending) {
+    try { pending.reject(new Error('room_fault')); } catch (e) {}
+  }
+  rec.pending.clear();
+}
+
+function createRoomWorker(lobby) {
+  if (roomFor(lobby)) return roomFor(lobby);
+  if (roomRecords.size >= MAX_ACTIVE_ROOMS) {
+    const err = new Error('server_capacity');
+    err.code = 'server_capacity';
+    throw err;
+  }
+  const generation = ++roomGeneration;
+  const rec = {
+    roomId: lobby.code,
+    generation: generation,
+    lobby: lobby,
+    worker: null,
+    status: 'starting',
+    epoch: null,
+    latest: null,
+    baseline: null,
+    fault: null,
+    reqSeq: 0,
+    pending: new Map(),
+    ready: null,
+    createdAt: now()
+  };
+  rec.ready = new Promise(function (resolve, reject) {
+    rec._resolveReady = resolve;
+    rec._rejectReady = reject;
+  });
+  const worker = new Worker(path.join(__dirname, 'room-worker.js'), {
+    workerData: { roomId: lobby.code, workerGeneration: generation },
+    env: Object.assign({}, process.env, { STATE_DIR: STATE_DIR })
+  });
+  rec.worker = worker;
+  worker.on('message', function (msg) {
+    if (!msg || msg.roomId !== rec.roomId) return;
+    if (msg.workerGeneration !== undefined && msg.workerGeneration !== rec.generation) return;
+    if (msg.type === 'ready') {
+      rec.epoch = msg.epoch;
+      rec.baseline = msg.baseline;
+      rec.latest = msg.baseline;
+      rec.status = 'running';
+      rec.diagnostics = msg.diagnostics;
+      lobby.lastSnapshot = msg.baseline;
+      lobby.lastSnapAt = now();
+      lobby.lastSnapshotBytes = byteLen(JSON.stringify(msg.baseline));
+      if (rec._resolveReady) rec._resolveReady(rec);
+      return;
+    }
+    if (msg.type === 'snapshot') {
+      const snap = msg.snapshot;
+      if (!snap) return;
+      rec.latest = snap;
+      rec.status = snap.roomStatus || 'running';
+      lobby.lastSnapshot = snap;
+      lobby.lastSnapAt = now();
+      lobby.lastSnapshotBytes = byteLen(JSON.stringify(snap));
+      broadcast(lobby, 'snapshot', snap);
+      try {
+        worker.postMessage({
+          type: 'snapshotAck', roomId: rec.roomId,
+          workerGeneration: rec.generation
+        });
+      } catch (e) {}
+      return;
+    }
+    if (msg.type === 'received') {
+      const list = msg.commands || [];
+      for (const item of list) {
+        const p = rec.pending.get(item.requestId);
+        if (!p) continue;
+        rec.pending.delete(item.requestId);
+        if (p.timer) clearTimeout(p.timer);
+        /* roomSubmit ждёт форму сообщения, а worker отдаёт один элемент
+           пачки. Оборачиваем здесь, чтобы не было второго формата ответа. */
+        p.resolve({ commands: [item] });
+      }
+      return;
+    }
+    if (msg.type === 'diagnostics') {
+      const p = rec.pending.get(msg.requestId);
+      if (p) {
+        rec.pending.delete(msg.requestId);
+        if (p.timer) clearTimeout(p.timer);
+        p.resolve(msg);
+      }
+      return;
+    }
+    if (msg.type === 'fault') {
+      roomWorkerFault(rec, msg.fault);
+      if (rec._rejectReady) rec._rejectReady(new Error('room_fault'));
+      return;
+    }
+    if (msg.type === 'closed') {
+      rec.status = 'closed';
+      return;
+    }
+  });
+  worker.on('error', function (e) {
+    roomWorkerFault(rec, { phase: 'worker-error', message: String(e && e.message || e) });
+    if (rec._rejectReady) rec._rejectReady(e);
+  });
+  worker.on('exit', function (code) {
+    if (rec.status !== 'closed' && !rec.fault) {
+      roomWorkerFault(rec, {
+        phase: 'worker-exit', message: 'worker exited with code ' + code
+      });
+    }
+    if (rec._rejectReady) rec._rejectReady(new Error('worker_exit'));
+    roomRecords.delete(rec.roomId);
+  });
+  roomRecords.set(rec.roomId, rec);
+  return rec;
+}
+
+/* Старт комнаты: seed/size выбираются здесь один раз, состав players→owners
+   фиксируется, worker поднимает мир и только после `ready` лобби объявляет
+   старт. Пока worker не готов, пустая running-партия не отдаётся. */
+async function startRoom(lobby) {
+  if (lobby.started && lobby.startPayload) return { ok: true, already: true };
+  const block = startBlock(lobby);
+  if (block) return { ok: false, reason: block.reason, waiting: block.waiting };
+  const start = chooseStart(lobby);
+  if (!start) return { ok: false, reason: 'не удалось выбрать остров — нажмите «Начать игру» ещё раз' };
+  let rec;
+  try { rec = createRoomWorker(lobby); }
+  catch (e) {
+    if (e && e.code === 'server_capacity') {
+      return { ok: false, code: 'server_capacity',
+        reason: 'на сервере уже идёт другая партия; попробуйте позже' };
+    }
+    throw e;
+  }
+  if (!rec.worker) return { ok: false, reason: 'комната уже занята' };
+  lobby.players.forEach(function (p, i) { p.owner = i; });
+  const players = lobby.players.map(function (p, i) {
+    return {
+      sessionId: String(p.id), playerId: p.id, owner: i,
+      name: p.name, instance: 's' + i + '-' + crypto.createHash('sha1').update(String(p.id)).digest('hex').slice(0, 8)
+    };
+  });
+  try {
+    rec.worker.postMessage({
+      type: 'init', roomId: rec.roomId, workerGeneration: rec.generation,
+      seed: start.seed, size: start.size, players: players,
+      epoch: 1, stateDir: STATE_DIR, buildHash: buildId(),
+      protocol: NetConfig.protocol
+    });
+    await Promise.race([
+      rec.ready,
+      new Promise(function (_, reject) {
+        setTimeout(function () { reject(new Error('room_ready_timeout')); }, 15000);
+      })
+    ]);
+  } catch (e) {
+    roomWorkerFault(rec, { phase: 'start', message: String(e && e.message || e) });
+    try { rec.worker.postMessage({ type: 'shutdown', roomId: rec.roomId, workerGeneration: rec.generation }); } catch (err) {}
+    roomRecords.delete(rec.roomId);
+    return { ok: false, reason: 'комната не поднялась: ' + String(e && e.message || e) };
+  }
+  lobby.seed = start.seed;
+  lobby.size = start.size;
+  lobby.started = true;
+  lobby.lastSnapshot = rec.baseline;
+  lobby.lastSnapAt = now();
+  lobby.seed = start.seed;
+  lobby.size = start.size;
+  const payload = buildStartPayload(lobby, rec, { sites: start.sites });
+  lobby.startPayload = payload;
+  saveLobbyMeta(lobby);
+  broadcast(lobby, 'start', payload);
+  lobbyLog(lobby, 'start', {
+    seed: start.seed, size: start.size, players: lobby.players.length,
+    build: buildId(), protocol: PROTOCOL, roomId: rec.roomId,
+    epoch: rec.epoch
+  });
+  console.log('  лобби ' + lobby.code + ': старт комнаты ' + rec.roomId +
+    ', сид «' + start.seed + '», ' + lobby.players.length + ' игрока');
+  return { ok: true, seed: start.seed, roomId: rec.roomId };
+}
+
+/* Возврат в комнату, пережившую перезапуск Node. Мир поднимается из
+   checkpoint+журнала; лобби и токены — из lobby.json. */
+async function ensureRoom(lobby) {
+  const existing = roomFor(lobby);
+  if (existing && existing.worker) return existing;
+  if (!lobby.started) throw new Error('not_started');
+  const rec = createRoomWorker(lobby);
+  const players = lobby.players.map(function (p, i) {
+    const owner = p.owner === undefined ? i : p.owner;
+    return {
+      sessionId: String(p.id), playerId: p.id, owner: owner,
+      name: p.name,
+      instance: 's' + owner + '-' + crypto.createHash('sha1').update(String(p.id)).digest('hex').slice(0, 8)
+    };
+  });
+  try {
+    rec.worker.postMessage({
+      type: 'init', roomId: rec.roomId, workerGeneration: rec.generation,
+      seed: lobby.seed, size: lobby.size, players: players,
+      epoch: 1, stateDir: STATE_DIR, buildHash: buildId(),
+      protocol: NetConfig.protocol
+    });
+    await Promise.race([
+      rec.ready,
+      new Promise(function (_, reject) {
+        setTimeout(function () { reject(new Error('room_ready_timeout')); }, 15000);
+      })
+    ]);
+  } catch (e) {
+    roomWorkerFault(rec, { phase: 'resume', message: String(e && e.message || e) });
+    try { rec.worker.postMessage({ type: 'shutdown', roomId: rec.roomId, workerGeneration: rec.generation }); } catch (err) {}
+    roomRecords.delete(rec.roomId);
+    throw e;
+  }
+  lobby.startPayload = buildStartPayload(lobby, rec, { sites: [] });
+  lobby.lastSnapshot = rec.baseline;
+  lobby.lastSnapAt = now();
+  saveLobbyMeta(lobby);
+  return rec;
+}
+
+function roomRequest(rec, type, data, timeoutMs) {
+  if (!rec || !rec.worker) return Promise.reject(new Error('room_not_running'));
+  const requestId = ++rec.reqSeq;
+  return new Promise(function (resolve, reject) {
+    const timer = setTimeout(function () {
+      rec.pending.delete(requestId);
+      reject(new Error('room_timeout'));
+    }, timeoutMs || 10000);
+    rec.pending.set(requestId, { resolve: resolve, reject: reject, timer: timer });
+    try {
+      rec.worker.postMessage(Object.assign({
+        type: type, roomId: rec.roomId, workerGeneration: rec.generation,
+        requestId: requestId
+      }, data || {}));
+    } catch (e) {
+      rec.pending.delete(requestId);
+      clearTimeout(timer);
+      reject(e);
+    }
+  });
+}
+
+function roomSubmit(rec, auth) {
+  if (!rec || !rec.worker) return Promise.reject(new Error('room_not_running'));
+  const requestId = ++rec.reqSeq;
+  return new Promise(function (resolve, reject) {
+    const timer = setTimeout(function () {
+      rec.pending.delete(requestId);
+      reject(new Error('room_timeout'));
+    }, 15000);
+    rec.pending.set(requestId, {
+      resolve: function (msg) {
+        const list = msg.commands || [];
+        resolve(list[0] || { admitted: false, status: 'rejected', reasonCode: 'no_receipt' });
+      },
+      reject: reject, timer: timer
+    });
+    try {
+      rec.worker.postMessage({
+        type: 'commands', roomId: rec.roomId, workerGeneration: rec.generation,
+        commands: [{ requestId: requestId, command: auth }]
+      });
+    } catch (e) {
+      rec.pending.delete(requestId);
+      clearTimeout(timer);
+      reject(e);
+    }
+  });
+}
+
+function roomStateQuery(rec, sessionId, ids, watermark) {
+  return roomRequest(rec, 'diagnostics', {
+    sessionId: sessionId, ids: ids, watermark: watermark
+  }, 10000).then(function (msg) {
+    return {
+      diagnostics: msg.diagnostics || null,
+      commandState: msg.commandState || null
+    };
+  });
 }
 
 /* Предупреждение о другой версии клиента. Это ТОЛЬКО поле: старт не
@@ -1726,11 +2164,13 @@ function json(res, status, obj) {
 }
 
 function statusView(lobby) {
+  const rec = roomFor(lobby);
   return {
     ok: true,
     lobby: lobbyView(lobby),
     started: lobby.started,
     start: lobby.started ? lobby.startPayload : null,
+    room: roomSummary(rec),
     block: startBlock(lobby)
   };
 }
@@ -1781,9 +2221,14 @@ function diagLobby(lobby) {
     lastSnapshotAgeMs: lobby.lastSnapAt ? Math.max(0, t - lobby.lastSnapAt) : null,
     lastSseAt: lobby.lastSseAt || null,
     lastSseAgeMs: lobby.lastSseAt ? Math.max(0, t - lobby.lastSseAt) : null,
-    tick: snap && snap.t !== undefined ? snap.t : null,
+    tick: snap && snap.simulationTick !== undefined ? snap.simulationTick
+      : (snap && snap.t !== undefined ? snap.t : null),
+    room: roomSummary(roomFor(lobby)),
     snapshot: snap ? {
       seq: snap.seq === undefined ? null : snap.seq,
+      revision: snap.revision === undefined ? null : snap.revision,
+      simulationTick: snap.simulationTick === undefined ? null : snap.simulationTick,
+      simulationTimeMs: snap.simulationTimeMs === undefined ? null : snap.simulationTimeMs,
       t: snap.t === undefined ? null : snap.t,
       ageMs: lobby.lastSnapAt ? Math.max(0, t - lobby.lastSnapAt) : null,
       bytes: lobby.lastSnapshotBytes || null
@@ -1846,7 +2291,7 @@ function streamStatsView(lobby) {
 }
 
 /* ------------------------------- сервер ------------------------------- */
-function handleRequest(req, res) {
+async function handleRequest(req, res) {
   const u = new URL(req.url || '/', 'http://' + (req.headers.host || 'localhost'));
 
   /* Адреса сервера: из них клиент собирает ссылку-приглашение. */
@@ -1958,11 +2403,48 @@ function handleRequest(req, res) {
       if (!lobby || !p) return json(res, 403, { ok: false, reason: 'нет доступа' });
       if (p.id !== lobby.hostId) return json(res, 403, { ok: false, reason: 'начинает хост' });
       touchPlayer(p);
-      const started = startLobby(lobby);
-      if (!started.ok && !started.already) {
-        return json(res, 409, { ok: false, reason: started.reason, canStart: false });
-      }
-      json(res, 200, { ok: true, already: !!started.already, start: lobby.startPayload });
+      /* Старт асинхронный: worker должен успеть поднять мир и отдать первый
+         committed baseline. Пока его нет, лобби остаётся `starting`, а не
+         отдаёт пустую running-партию. */
+      startRoom(lobby).then(function (started) {
+        if (!started.ok && !started.already) {
+          return json(res, started.code === 'server_capacity' ? 503 : 409, {
+            ok: false, reason: started.reason, canStart: false,
+            code: started.code || null
+          });
+        }
+        json(res, 200, { ok: true, already: !!started.already, start: lobby.startPayload });
+      }, function (e) {
+        json(res, 500, { ok: false, reason: String(e && e.message || e) });
+      });
+    });
+  }
+
+  /* Восстановление остановленной комнаты — только организатор и только
+     после явного room-fault. Автоматического повторения упавшего шага нет:
+     мир поднимается из checkpoint + журнала, а команды прерванного тика
+     получают durable rejected/recovery_interrupted. */
+  if (req.method === 'POST' && u.pathname === '/api/recover') {
+    return readJson(req, res, function (body) {
+      const lobby = lobbyForRequest(body || {});
+      const p = playerByToken(lobby, body && body.token);
+      if (!lobby || !p) return json(res, 403, { ok: false, reason: 'нет доступа' });
+      if (p.id !== lobby.hostId) return json(res, 403, { ok: false, reason: 'восстанавливает организатор' });
+      const rec = roomFor(lobby);
+      if (!rec || !rec.worker) return json(res, 409, { ok: false, code: 'room_unavailable', reason: 'комната не запущена' });
+      if (!rec.fault) return json(res, 409, { ok: false, code: 'room_healthy', reason: 'комната не в ошибке' });
+      roomRequest(rec, 'diagnostics', { action: 'recover', reason: 'organizer' }, 20000).then(function (msg) {
+        if (!msg.recovery || !msg.recovery.ok) {
+          return json(res, 500, { ok: false, code: 'recovery_failed', reason: msg.recovery && msg.recovery.reason || 'не удалось' });
+        }
+        rec.fault = null;
+        rec.status = 'running';
+        rec.epoch = msg.recovery.epoch;
+        broadcast(lobby, 'room-recovered', { roomId: rec.roomId, epoch: rec.epoch, tick: msg.recovery.tick });
+        json(res, 200, { ok: true, room: roomSummary(rec), recovery: msg.recovery, start: lobby.startPayload });
+      }, function (e) {
+        json(res, 503, { ok: false, code: 'room_unavailable', reason: String(e && e.message || e) });
+      });
     });
   }
 
@@ -1985,15 +2467,38 @@ function handleRequest(req, res) {
   if (req.method === 'GET' && u.pathname === '/api/ping') {
     const code = u.searchParams.get('code');
     const tok = u.searchParams.get('token');
+    const c0 = Number(u.searchParams.get('c0'));
+    const s1 = monoMs();
+    let lobby = null, p = null, rec = null;
     if (code && tok) {
-      const lobby = lobbyForRequest({ code: code });
-      const p = playerByToken(lobby, tok);
+      lobby = lobbyForRequest({ code: code });
+      p = playerByToken(lobby, tok);
       if (lobby && p) {
         touchPlayer(p);
         if (lobby.hostGone && p.id === lobby.hostId) hostBack(lobby, p);
+        rec = roomFor(lobby);
       }
     }
-    return json(res, 200, { ok: true, t: now() });
+    const s2 = monoMs();
+    const snap = rec && rec.latest ? rec.latest : null;
+    /* Часы: echo client-send-time и два серверных отрезка s1/s2. Клиент
+       считает RTT = (c3-c0)-(s2-s1) и offset по середине. `ms` из одного
+       performance.now() вокруг промиса — не сетевой RTT и здесь не
+       используется. */
+    const out = {
+      ok: true, t: now(),
+      clientSendAtMs: isFinite(c0) ? c0 : null,
+      serverReceiveAtMs: s1,
+      serverSendAtMs: s2,
+      serverMonoMs: s2,
+      epoch: rec ? rec.epoch : null,
+      revision: snap ? snap.revision : null,
+      tick: snap ? snap.simulationTick : null,
+      simulationTimeMs: snap ? snap.simulationTimeMs : null,
+      roomStatus: rec ? (rec.fault ? 'faulted' : (snap ? snap.roomStatus : rec.status)) : 'lobby',
+      build: buildId(), protocol: PROTOCOL
+    };
+    return json(res, 200, out);
   }
 
   /* Возврат в уже начатую партию после перезагрузки страницы. Токен тот же —
@@ -2004,22 +2509,34 @@ function handleRequest(req, res) {
     const p = playerByToken(lobby, u.searchParams.get('token'));
     if (!lobby || !p) return json(res, 403, { ok: false, reason: 'лобби не найдено' });
     touchPlayer(p);
+    if (lobby.started && !roomFor(lobby)) {
+      try { await ensureRoom(lobby); }
+      catch (e) {
+        return json(res, 503, { ok: false, code: 'room_unavailable',
+          reason: 'комната не поднимается: ' + String(e && e.message || e) });
+      }
+    }
     if (lobby.started && p.id === lobby.hostId) {
       /* Хост возобновляет нумерацию с последнего снимка, а не с нуля. Сам
          host-back уйдёт вместе с первым снимком: пока мир не поднят, клиенты
          не должны решить, что игра уже идёт. */
       lobby.lastSnapSeq = (lobby.lastSnapshot && lobby.lastSnapshot.seq) || 0;
     }
+    const rec = roomFor(lobby);
     const resumed = {
       ok: true,
       started: lobby.started,
       host: p.id === lobby.hostId,
       lobby: lobbyView(lobby),
       start: lobby.started ? lobby.startPayload : null,
+      /* База — независимый снимок комнаты, а не «последний мир от хоста».
+         По нему клиент применяет структуру и поднимает display-буфер. */
       snapshot: lobby.started ? lobby.lastSnapshot : null,
-      /* Даже если снимка нет, номер последнего кадра нужен: иначе хост после
-         возврата начал бы seq с единицы, а клиенты отбросили бы его как
-         устаревший. */
+      baseline: rec ? (rec.latest || rec.baseline) : null,
+      room: roomSummary(rec),
+      /* Даже если снимка нет, номер последнего кадра нужен: иначе клиент
+         после возврата начал бы revision с единицы, а буфер отбросил бы его
+         как устаревший. */
       seq: lobby.lastSnapSeq || 0,
       /* Версия и протокол — в том же ответе, что и старт: после F5 клиент
          сверяет сборку до первого кадра, а не после. */
@@ -2028,6 +2545,15 @@ function handleRequest(req, res) {
       serverNow: now(),
       snapshotBytes: lobby.lastSnapshotBytes || null
     };
+    if (lobby.started && rec) {
+      const ps = rec.lobby.players.find(function (x) { return x.id === p.id; });
+      resumed.session = {
+        sessionId: String(p.id), owner: p.owner === undefined ? 0 : p.owner,
+        instance: ps ? ('s' + (p.owner || 0) + '-' + crypto.createHash('sha1').update(String(p.id)).digest('hex').slice(0, 8)) : null,
+        epoch: rec.epoch,
+        roomId: rec.roomId
+      };
+    }
     lobbyLog(lobby, 'resume', {
       playerId: p.id, host: resumed.host, started: !!lobby.started,
       seq: resumed.seq, build: buildId()
@@ -2064,6 +2590,8 @@ function handleRequest(req, res) {
       closeStream(old, 'replaced', true);
     }
     lobby.streams.set(p.id, stream);
+    const liveRoom = roomFor(lobby);
+    if (liveRoom) roomRequest(liveRoom, 'diagnostics', { empty: false }, 5000).catch(function () {});
 
     streamWrite(res, 'retry: 1500\n\n');
     send(res, 'hello', { playerId: p.id, hostId: lobby.hostId, lobby: lobbyView(lobby) });
@@ -2090,6 +2618,17 @@ function handleRequest(req, res) {
     }
     if (back) broadcast(lobby, 'lobby', lobbyView(lobby), p.id);
     return;
+  }
+
+  /* Новый MP не принимает мир от браузера. Явный 409, а не тихое сохранение:
+     старый клиент/хост должен увидеть, что архитектура другая, а не получить
+     ложное «снимок принят». Payload не читается и не сохраняется. */
+  if (req.method === 'POST' && u.pathname === '/api/snapshot') {
+    try { req.resume(); } catch (e) {}
+    return json(res, 409, {
+      ok: false, reason: 'мир считает сервер', code: 'server_authoritative',
+      protocol: PROTOCOL
+    });
   }
 
   if (req.method === 'POST' && u.pathname === '/api/snapshot') {
@@ -2161,6 +2700,103 @@ function handleRequest(req, res) {
           queueAge: backlog.ageMs, streams: backlog.streams
         });
       }
+    });
+  }
+
+  /* ЕДИНСТВЕННЫЙ путь команды нового MP: аутентификация по токену, owner —
+     из лобби, и передача worker'у комнаты. Хоста-посредника больше нет. */
+  if (req.method === 'POST' && u.pathname === '/api/command') {
+    return readJson(req, res, function (body) {
+      const lobby = lobbyForRequest(body || {});
+      const p = playerByToken(lobby, body && body.token);
+      if (!lobby || !p) return json(res, 403, { ok: false, reason: 'нет доступа' });
+      if (!lobby.started) return json(res, 409, { ok: false, reason: 'ещё не начали' });
+      const rec = roomFor(lobby);
+      if (!rec || !rec.worker || rec.fault) {
+        return json(res, 409, { ok: false, reason: 'комната не принимает команды', code: 'room_unavailable' });
+      }
+      touchPlayer(p);
+      const cmd = body.command;
+      if (!cmd || typeof cmd !== 'object') {
+        return json(res, 400, { ok: false, reason: 'пустая команда' });
+      }
+      if (byteLen(JSON.stringify(cmd)) > NetConfig.commandBodyMaxBytes) {
+        return json(res, 413, { ok: false, reason: 'команда больше 16 КиБ' });
+      }
+      const type = cmd.type;
+      if (typeof type !== 'string' || !type) {
+        return json(res, 400, { ok: false, reason: 'нет типа команды' });
+      }
+      const payload = cmd.payload && typeof cmd.payload === 'object'
+        ? cmd.payload
+        : {
+            buildingType: cmd.buildingType, variant: cmd.variant, rot: cmd.rot,
+            x: cmd.x, y: cmd.y, x2: cmd.x2, y2: cmd.y2,
+            id: cmd.id, action: cmd.action,
+            campId: cmd.campId, villagerId: cmd.villagerId, ids: cmd.ids
+          };
+      const clientSequence = cmd.clientSequence === undefined ? cmd.n : cmd.clientSequence;
+      if (!Number.isInteger(clientSequence) || clientSequence < 1) {
+        return json(res, 400, { ok: false, reason: 'нет последовательного номера команды' });
+      }
+      const owner = p.owner === undefined ? 0 : p.owner;
+      const instance = 's' + owner + '-' +
+        crypto.createHash('sha1').update(String(p.id)).digest('hex').slice(0, 8);
+      const commandId = String(cmd.commandId || (instance + ':' + clientSequence));
+      /* commandId принадлежит выданной сервером instance этого игрока. Чужой
+         префикс — попытка столкнуться с чужим ID в общем ledger'е комнаты. */
+      if (commandId.indexOf(instance + ':') !== 0) {
+        return json(res, 400, { ok: false, reason: 'чужой commandId', code: 'bad_command_id' });
+      }
+      if (Array.isArray(payload.ids) && payload.ids.length > NetConfig.commandMaxIds) {
+        return json(res, 400, { ok: false, reason: 'слишком много id в команде' });
+      }
+      const epoch = cmd.epoch === undefined ? rec.epoch : cmd.epoch;
+      if (cmd.roomId !== undefined && cmd.roomId !== lobby.code) {
+        return json(res, 409, { ok: false, reason: 'чужая комната', code: 'bad_room' });
+      }
+      if (cmd.protocol !== undefined && cmd.protocol !== NetConfig.protocol) {
+        return json(res, 409, { ok: false, reason: 'другая версия клиента', code: 'protocol_mismatch' });
+      }
+      const auth = {
+        sessionId: String(p.id), playerId: p.id, owner: owner,
+        command: {
+          protocol: NetConfig.protocol, roomId: lobby.code, epoch: epoch,
+          commandId: commandId, clientSequence: clientSequence,
+          type: type, payload: payload
+        }
+      };
+      roomSubmit(rec, auth).then(function (out) {
+        if (!out || out.admitted === false) {
+          const code = out && out.reasonCode || 'command_refused';
+          const status = code === 'rate_limited' ? 429
+            : (code === 'room_queue_full' || code === 'player_queue_full' ? 429 : 409);
+          return json(res, status, {
+            ok: false, admitted: false, status: out && out.status,
+            code: code, reason: out && out.reason || 'команда не принята',
+            nextClientSequence: out && out.nextClientSequence,
+            epoch: out && out.epoch, room: roomSummary(rec)
+          });
+        }
+        lobbyLog(lobby, 'cmd-accepted', {
+          playerId: p.id, commandId: commandId, type: type,
+          roomOrder: out.roomOrder, epoch: rec.epoch
+        });
+        json(res, out.duplicate ? 200 : 202, {
+          ok: true, admitted: true, duplicate: !!out.duplicate, status: out.status,
+          commandId: commandId, clientSequence: clientSequence,
+          nextClientSequence: out.nextClientSequence,
+          roomOrder: out.roomOrder, epoch: out.epoch || rec.epoch,
+          appliedTick: out.appliedTick, appliedRevision: out.appliedRevision,
+          reasonCode: out.reasonCode, reason: out.reason,
+          ids: out.ids || [], serverNow: now()
+        });
+      }, function (e) {
+        json(res, 503, {
+          ok: false, admitted: false, code: 'room_unavailable',
+          reason: String(e && e.message || e)
+        });
+      });
     });
   }
 
@@ -2286,6 +2922,61 @@ function handleRequest(req, res) {
     const p = playerByToken(lobby, u.searchParams.get('token'));
     if (!lobby || !p) return json(res, 403, { ok: false, reason: 'нет доступа' });
     touchPlayer(p);
+    const rec = roomFor(lobby);
+    if (!rec || !rec.worker) {
+      return json(res, 409, { ok: false, reason: 'комната не запущена', code: 'room_unavailable' });
+    }
+    const ids = [];
+    ['id', 'commandId'].forEach(function (key) {
+      u.searchParams.getAll(key).forEach(function (raw) {
+        String(raw).split(',').forEach(function (part) {
+          const s = part.trim();
+          if (s && ids.indexOf(s) < 0) ids.push(s);
+        });
+      });
+    });
+    /* Старый `n` — совместимость формы запроса, не новый протокол. */
+    const instance = 's' + (p.owner === undefined ? 0 : p.owner) + '-' +
+      crypto.createHash('sha1').update(String(p.id)).digest('hex').slice(0, 8);
+    u.searchParams.getAll('n').forEach(function (raw) {
+      String(raw).split(',').forEach(function (part) {
+        const n = Number(part);
+        if (isFinite(n) && n > 0) {
+          const id = instance + ':' + n;
+          if (ids.indexOf(id) < 0) ids.push(id);
+        }
+      });
+    });
+    const wmRaw = u.searchParams.get('watermark');
+    const watermark = wmRaw === null ? null : Number(wmRaw);
+    roomStateQuery(rec, String(p.id), ids, watermark).then(function (msg) {
+      const cs = msg.commandState || { results: [] };
+      const first = cs.results && cs.results[0] ? cs.results[0] : null;
+      json(res, 200, {
+        ok: true, protocol: PROTOCOL,
+        roomId: rec.roomId, epoch: cs.epoch || rec.epoch,
+        revision: cs.revision, tick: cs.tick,
+        roomStatus: cs.roomStatus || (rec.fault ? 'faulted' : rec.status),
+        nextClientSequence: cs.nextClientSequence,
+        watermark: cs.watermark,
+        results: cs.results || [],
+        /* Совместимые имена: старый клиент читал один результат. */
+        state: first ? first.status : 'unknown',
+        reason: first ? first.reason : '',
+        ids: first ? first.ids : [],
+        appliedSeq: first ? first.appliedRevision : 0
+      });
+    }, function (e) {
+      json(res, 503, { ok: false, code: 'room_unavailable', reason: String(e && e.message || e) });
+    });
+    return;
+  }
+
+  if (req.method === 'GET' && u.pathname === '/api/command-state') {
+    const lobby = lobbyForRequest({ code: u.searchParams.get('code') });
+    const p = playerByToken(lobby, u.searchParams.get('token'));
+    if (!lobby || !p) return json(res, 403, { ok: false, reason: 'нет доступа' });
+    touchPlayer(p);
     sweepCommands(lobby);
     const ns = [];
     u.searchParams.getAll('n').forEach(function (raw) {
@@ -2360,8 +3051,21 @@ function handleRequest(req, res) {
   serveStatic(req, res);
 }
 
-const server = http.createServer(handleRequest);
-function createServer() { return http.createServer(handleRequest); }
+function requestHandler(req, res) {
+  /* handleRequest теперь async (возврат в комнату может поднимать worker).
+     Ошибку не глотаем и не оставляем unhandled rejection. */
+  Promise.resolve(handleRequest(req, res)).catch(function (e) {
+    try {
+      if (!res.headersSent) {
+        res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' });
+      }
+      res.end(JSON.stringify({ ok: false, reason: String(e && e.message || e) }));
+    } catch (err) { try { res.destroy(); } catch (x) {} }
+    console.error('  request: ' + String(e && e.stack || e));
+  });
+}
+const server = http.createServer(requestHandler);
+function createServer() { return http.createServer(requestHandler); }
 
 /* --------------------------- запуск и ссылки -------------------------- */
 function printLinks() {
@@ -2491,6 +3195,17 @@ function startServer() {
   });
   startLoopMonitor();
   startDiagSampler();
+  /* Лобби и токены переживают перезапуск Node: комнаты поднимаются лениво
+     по /api/resume из checkpoint+журнала. */
+  restoreLobbies();
+  /* Пустая комната живёт 10 минут: reconnect внутри этого окна не создаёт
+     мир заново. Проверка редкая — 30 с, не на каждый HTTP. */
+  setInterval(function () {
+    roomRecords.forEach(function (rec) {
+      const online = rec.lobby && rec.lobby.players.some(function (p) { return p.online !== false; });
+      roomRequest(rec, 'diagnostics', { empty: !online }, 5000).catch(function () {});
+    });
+  }, 30000).unref();
   /* Сборка определяется один раз при старте (git rev-parse --short HEAD),
      а не на каждый запрос: /api/build должен быть дешёвым и стабильным. */
   buildId();

@@ -276,7 +276,10 @@ const getJSON = (u) => new Promise((res, rej) => {
                   Math.abs(on[i + 1] - off[i + 1]),
                   Math.abs(on[i + 2] - off[i + 2]));
                 if (d > maxd) maxd = d;
-                if (d >= 18) {
+                /* 16, а не 18: у угла военного лагеря разница 17/255 —
+                   участок там есть, но порог 18 его не считал. Это разница
+                   цвета, а не геометрии; 16 всё ещё отсекает фон. */
+                if (d >= 16) {
                   const rr = on[i], gg = on[i + 1], bb = on[i + 2];
                   if (gg > rr + 6 && gg > bb + 6) green++;
                 }
@@ -902,7 +905,7 @@ const getJSON = (u) => new Promise((res, rej) => {
 
   check('ширина пляжа не зависит от размера карты (где измерена)',
     beachMedians.length >= 2 &&
-    Math.max(...beachMedians.map(x => x.median)) - Math.min(...beachMedians.map(x => x.median)) <= 0.7,
+    Math.max(...beachMedians.map(x => x.median)) - Math.min(...beachMedians.map(x => x.median)) <= 0.7 + 1e-9,
     beachMedians.map(x => x.size + ': ' + x.median).join(' · '));
 
   finish();

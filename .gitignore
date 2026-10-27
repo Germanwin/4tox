@@ -24,3 +24,6 @@ game/tools/out/
 # То же для приёмки стенда моделей: node art/tools/model-stand/tools/shot.js
 # (отобранные кадры для README лежат рядом — art/tools/model-stand/show/)
 art/tools/model-stand/tools/out/
+
+# Состояние серверных комнат: журнал, checkpoint, lobby.json (секреты токенов)
+game/server/var/

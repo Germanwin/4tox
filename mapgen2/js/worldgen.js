@@ -580,6 +580,7 @@
     for (var oi = 0; oi < out.objects.length; oi++) out.objects[oi].id = oi;
     out.objectTotal = out.objects.length;
     out.removedIds = [];
+    out.objectRev = 0;
     return out;
   }
 

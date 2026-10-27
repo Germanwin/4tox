@@ -176,7 +176,11 @@
     /* Потолок плотности пикселей. На телефоне 2: текст и кнопки — DOM и
        остаются резкими, а мир мягче всего на 1/3, зато пикселей полотна
        в 2.25 раза меньше, чем при DPR 3. В профиле экономии (HUD) — 1.5. */
-    this.dprCap = coarsePointer() ? 2 : 3;
+    /* Общий выбор качества (game/js/quality.js). Без него — прежний
+       консервативный потолок, но не DPR 3: на телефоне это лишние пиксели. */
+    this.dprCap = (global.Quality && global.Quality.dprCap)
+      ? global.Quality.dprCap()
+      : (coarsePointer() ? 1.5 : 2);
     /* quality < 1 — реже волны; 1 — полный декор. Мир от числа не зависит. */
     this.quality = 1;
 
@@ -222,6 +226,47 @@
    * тип постройки, а не порядок загрузки: атласа типа нет — постройка просто
    * не рисуется, и партия от этого не падает.
    * -------------------------------------------------------------------- */
+
+  /* F15: инвентаризация фактически загруженных изображений. Это НЕ GPU/RSS
+     memory и не «всё занимает N МБ»: только decoded estimate w*h*4 по
+     уникальным img-объектам, плюс отдельно main/cache canvas. */
+  Renderer.prototype.assetStats = function () {
+    var seen = typeof Set !== 'undefined' ? new Set() : null;
+    var images = [], bytes = 0;
+    function add(img) {
+      if (!img || !seen || seen.has(img)) return;
+      seen.add(img);
+      var w = img.naturalWidth || img.width || 0;
+      var h = img.naturalHeight || img.height || 0;
+      var b = w * h * 4;
+      images.push({ w: w, h: h, bytes: b });
+      bytes += b;
+    }
+    add(this.sprites && this.sprites.img);
+    add(this.waveSprites && this.waveSprites.img);
+    add(this.villagerSprites && this.villagerSprites.img);
+    add(this.knightSprites && this.knightSprites.img);
+    var k;
+    for (k in this.buildingSets) if (Object.prototype.hasOwnProperty.call(this.buildingSets, k)) {
+      add(this.buildingSets[k] && this.buildingSets[k].img);
+    }
+    for (k in this.ruinSets) if (Object.prototype.hasOwnProperty.call(this.ruinSets, k)) {
+      add(this.ruinSets[k] && this.ruinSets[k].img);
+    }
+    for (k in this.textures) if (Object.prototype.hasOwnProperty.call(this.textures, k)) {
+      add(this.textures[k]);
+    }
+    var c = this.canvas;
+    var cc = this.cache && (this.cache.canvas || this.cache);
+    return {
+      tier: (global.Quality && global.Quality.tier) ? global.Quality.tier() : 'default',
+      dpr: this.dpr, dprCap: this.dprCap,
+      images: images, count: images.length,
+      decodedBytesEstimate: bytes,
+      main: c ? { w: c.width, h: c.height, bytes: c.width * c.height * 4 } : null,
+      cache: cc ? { w: cc.width, h: cc.height, bytes: cc.width * cc.height * 4 } : null
+    };
+  };
 
   Renderer.prototype.setBuildingSet = function (type, set) {
     var id = type || global.Buildings.DEFAULT_TYPE;
@@ -1110,7 +1155,7 @@
   Renderer.prototype.setQuality = function (quality, dprCap) {
     this.quality = (quality === undefined || quality === null)
       ? 1 : Math.max(0.3, Math.min(1, quality));
-    if (dprCap) this.dprCap = Math.max(1, Math.min(3, dprCap));
+    if (dprCap) this.dprCap = Math.max(1, Math.min(2, dprCap));
     if (this.canvas) this.resize();
     return { quality: this.quality, dprCap: this.dprCap, dpr: this.dpr };
   };
@@ -2193,11 +2238,127 @@
      Мелочь, закрытая постройкой, из обхода ВЫПАДАЕТ (coverMask): так один и тот
      же пропуск достаётся и экрану, и экспорту — второй реализации правила,
      которая однажды разошлась бы с первой, не заводится. */
-  Renderer.prototype.eachSprite = function (onObject, onBuilding, onWalker) {
+  /* ---------------------- F14: чанки природы 16×16 ---------------------- *
+   *
+   * Природа (деревья, камни, трава) не меняется между шагами, поэтому её
+   * индекс строится один раз на версию мира и обновляется только при
+   * удалении/возврате объектов (`world.objectRev`). Внутри чанка объекты
+   * упорядочены тем же ключом глубины, что и раньше: x+y, затем исходный
+   * порядковый id. Экран сливает только пересекающие кадр чанки; экспорт
+   * идёт полным списком, без отсечения.
+   *
+   * Главное правило — НЕ «сначала чанк 1, потом чанк 2»: это ломает
+   * изометрическое перекрытие. k-way merge сохраняет общий порядок глубины.
+   * -------------------------------------------------------------------- */
+  var NATURE_CHUNK = 16;
+
+  Renderer.prototype.naturePad = function () {
+    var set = this.sprites;
+    var maxCells = 3;
+    if (set && set.meta) {
+      var cell = set.meta.cell || set.meta.res;
+      var ppu = set.ppu || 96, mul = set.mul || 1.35;
+      if (Array.isArray(cell) && cell.length) {
+        var px = Math.max(cell[0] || 0, cell[1] || 0);
+        if (px > 0) maxCells = Math.max(2, Math.ceil(px / ppu * mul) + 1);
+      }
+    }
+    return Math.max(2, Math.min(12, maxCells));
+  };
+
+  Renderer.prototype.natureIndex = function () {
+    var w = this.world;
+    if (!w) return { rev: -1, n: 0, chunks: new Map() };
+    var rev = w.objectRev || 0;
+    var objs = w.objects || [];
+    var idx = this._natureIndex;
+    if (idx && idx.world === w && idx.rev === rev && idx.n === objs.length) return idx;
+    var chunks = new Map();
+    for (var i = 0; i < objs.length; i++) {
+      var o = objs[i];
+      if (!o) continue;
+      var cx = Math.floor(o.x / NATURE_CHUNK), cy = Math.floor(o.y / NATURE_CHUNK);
+      var k = cx + ',' + cy;
+      var list = chunks.get(k);
+      if (!list) { list = []; chunks.set(k, list); }
+      list.push(o);
+    }
+    chunks.forEach(function (list) {
+      list.sort(function (a, b) {
+        var da = a.x + a.y, db = b.x + b.y;
+        if (da !== db) return da - db;
+        return (a.id === undefined ? 0 : a.id) - (b.id === undefined ? 0 : b.id);
+      });
+    });
+    idx = { world: w, rev: rev, n: objs.length, chunks: chunks, maxPad: this.naturePad() };
+    this._natureIndex = idx;
+    return idx;
+  };
+
+  /* Слияние отсортированных списков чанков. Небольшая двоичная куча: k
+     обычно 10–40, а не «все объекты»; линейный поиск минимума на каждом
+     объекте дал бы O(k·n) и снова стоил бы дороже, чем экономит. */
+  Renderer.prototype.natureStream = function (box) {
+    var idx = this.natureIndex();
+    if (!idx.chunks.size) return [];
+    var lists = [], key;
+    var cx0 = Math.floor(box.x0 / NATURE_CHUNK), cx1 = Math.floor(box.x1 / NATURE_CHUNK);
+    var cy0 = Math.floor(box.y0 / NATURE_CHUNK), cy1 = Math.floor(box.y1 / NATURE_CHUNK);
+    for (var cy = cy0; cy <= cy1; cy++) {
+      for (var cx = cx0; cx <= cx1; cx++) {
+        var l = idx.chunks.get(cx + ',' + cy);
+        if (l && l.length) lists.push({ list: l, i: 0 });
+      }
+    }
+    if (!lists.length) return [];
+    if (lists.length === 1) return lists[0].list;
+    function less(a, b) {
+      var oa = a.list[a.i], ob = b.list[b.i];
+      var da = oa.x + oa.y, db = ob.x + ob.y;
+      if (da !== db) return da < db;
+      return (oa.id === undefined ? 0 : oa.id) - (ob.id === undefined ? 0 : ob.id) < 0;
+    }
+    var heap = [];
+    function push(h) {
+      heap.push(h);
+      var i = heap.length - 1;
+      while (i > 0) {
+        var p = (i - 1) >> 1;
+        if (!less(heap[i], heap[p])) break;
+        var t = heap[p]; heap[p] = heap[i]; heap[i] = t; i = p;
+      }
+    }
+    function pop() {
+      var top = heap[0], last = heap.pop();
+      if (heap.length) {
+        heap[0] = last;
+        var i = 0;
+        for (;;) {
+          var l = i * 2 + 1, r = l + 1, m = i;
+          if (l < heap.length && less(heap[l], heap[m])) m = l;
+          if (r < heap.length && less(heap[r], heap[m])) m = r;
+          if (m === i) break;
+          var t = heap[m]; heap[m] = heap[i]; heap[i] = t; i = m;
+        }
+      }
+      return top;
+    }
+    for (var q = 0; q < lists.length; q++) push(lists[q]);
+    var out = [];
+    while (heap.length) {
+      var h = pop();
+      out.push(h.list[h.i]);
+      h.i++;
+      if (h.i < h.list.length) push(h);
+    }
+    return out;
+  };
+
+  Renderer.prototype.eachSprite = function (onObject, onBuilding, onWalker, opts) {
     var w = this.world;
     if (!w) return;
     var B = global.Buildings;
-    var objs = w.objects;
+    var objs = (opts && opts.cull) ? this.natureStream(opts.box) : w.objects;
     var mask = this.coverMask();
     var blds = this.showBuildings ? this.buildingOrder() : [];
     /* Ожидающие — в тот же обход и ту же сортировку по глубине. Отдельный
@@ -2246,7 +2407,9 @@
     var w = this.world, set = this.sprites;
     if (!w) return;
     var z = this.cam.zoom;
-    var box = this.viewTiles(2);
+    /* Запас — из фактического максимального кадра природы, а не «2 клетки»:
+       высокая крона у края кадра иначе пропадает. */
+    var box = this.viewTiles(this.naturePad());
     var self = this;
 
     // Размер спрайта на единицу масштаба объекта. Смысл перевода единиц
@@ -2350,7 +2513,7 @@
           vb.dx, vb.dy, vb.dw, vb.dh);
         self.drawSpriteOutline(ctx, vb, self.teamColorFor(v.owner, 0.9), 1.1, edgeClip);
       }
-    });
+    }, { cull: true, box: box });
   };
 
   // Одна постройка. alpha < 1 — призрак под курсором.

@@ -519,8 +519,19 @@
      также (для отладки) одна деревня. Без opts — немедленная попытка по всем
      живым городам: так зовут profile.js и старые приёмки. */
   function tryBirth(world, renderer, villagers, buildings, opts) {
-    opts = opts || {};
     if (!world || !renderer || !renderer.villagerSprites || !villagers) return [];
+    var born = tryBirthCore(world, villagers, buildings, opts);
+    if (born.length && renderer.setVillagers) renderer.setVillagers(villagers);
+    return born;
+  }
+
+  /* Чистое ядро заселения: ни renderer, ни PNG. Возвращает рождённых, а
+     причины отказа остаются в часах (`slot.last`, `slot.growthReason`) —
+     ровно там, где их читает birthStatus. Серверу этого достаточно; браузер
+     через обёртку tryBirth ещё и обновляет спрайты. */
+  function tryBirthCore(world, villagers, buildings, opts) {
+    opts = opts || {};
+    if (!world || !villagers) return [];
     var V = global.Villagers, B = global.Buildings;
     if (!V || !B) return [];
     var clock = opts.clock || null;
@@ -550,7 +561,6 @@
       birthAttempt(world, villagers, buildings, town, slot, solid, seconds, born);
     }
     if (clock) clock.due = false;
-    if (born.length) renderer.setVillagers(villagers);
     return born;
   }
 
@@ -661,13 +671,25 @@
   ];
 
   function startBot(world, renderer, opts) {
+    var st = startBotCore(world, opts);
+    if (renderer) {
+      renderer.world = world;
+      if (renderer.setBuildings) renderer.setBuildings(st.buildings);
+      if (renderer.setVillagers) renderer.setVillagers(st.villagers);
+      if (renderer.fitIsland) renderer.fitIsland();
+    }
+    return st;
+  }
+
+  /* Чистое ядро «против деревни»: тот же состав врага, без renderer. */
+  function startBotCore(world, opts) {
     opts = opts || {};
     var B = global.Buildings;
     var sites = (global.WorldGen && global.WorldGen.spawnSites)
       ? global.WorldGen.spawnSites(world, 2) : [];
     if (sites.length < 2) {
       /* Остров не дал двух площадок — не ломаем партию: играем одиночную. */
-      return startHome(world, renderer, opts);
+      return startHomeCore(world, opts);
     }
     var player = newTown(world, 0, 'Ваша деревня');
     var playerList = B.villageAt(world, sites[0], HOME, VILLAGE, opts.site || SITE);
@@ -694,13 +716,11 @@
 
     var all = playerList.concat(botList);
     world._buildings = all;
-    renderer.world = world;
-    renderer.setBuildings(all);
 
-    var pv = spawnVillagers(world, renderer, all, player.townhall, {
+    var pv = spawnVillagersCore(world, all, player.townhall, {
       count: VILLAGERS, owner: 0, townId: player.id, idBase: 0
     });
-    var bv = spawnVillagers(world, renderer, all, bot.townhall, {
+    var bv = spawnVillagersCore(world, all, bot.townhall, {
       count: 16, owner: 1, townId: bot.id, idBase: 1000, append: true
     });
     var villagers = world._villagers;
@@ -735,8 +755,6 @@
       }
     }
 
-    renderer.setVillagers(villagers);
-    if (renderer.fitIsland) renderer.fitIsland();
     return {
       home: player.townhall, buildings: all, playerTown: player,
       botTown: bot, villagers: villagers
@@ -752,6 +770,20 @@
    * Деревни строит ОДИН код для всех игроков: если бы у первого была одна
    * деревня, а у второго другая, «одинаковый старт» был бы только на словах. */
   function startMulti(world, renderer, opts) {
+    var st = startMultiCore(world, opts);
+    if (renderer) {
+      renderer.world = world;
+      if (renderer.setBuildings) renderer.setBuildings(st.buildings);
+      if (renderer.setVillagers) renderer.setVillagers(st.villagers);
+      if (renderer.fitIsland) renderer.fitIsland();
+    }
+    return st;
+  }
+
+  /* Чистое ядро старта сети: мир, деревни и жители, без renderer, камеры и
+     PNG. Именно его зовёт worker комнаты; браузерная обёртка startMulti
+     добавляет к результату только представление. */
+  function startMultiCore(world, opts) {
     opts = opts || {};
     var B = global.Buildings;
     var n = Math.max(2, Math.min(4, opts.players || 2));
@@ -776,16 +808,13 @@
     }
     world.village = towns[0];
     world._buildings = all;
-    renderer.world = world;
-    renderer.setBuildings(all);
     for (i = 0; i < n; i++) {
-      spawnVillagers(world, renderer, all, towns[i].townhall, {
+      spawnVillagersCore(world, all, towns[i].townhall, {
         count: VILLAGERS, owner: i, townId: towns[i].id,
         idBase: i * 1000, append: i > 0
       });
     }
-    renderer.setVillagers(world._villagers);
-    if (renderer.fitIsland) renderer.fitIsland();
+    world._villagers = world._villagers || [];
     return {
       home: towns[0].townhall, buildings: all, towns: towns,
       villagers: world._villagers
@@ -803,6 +832,19 @@
      Рендер получает мир, постройки и кадр «остров целиком»: партия всегда
      открывается общим планом, и это тоже часть начала игры. */
   function startHome(world, renderer, opts) {
+    var st = startHomeCore(world, opts);
+    if (renderer) {
+      renderer.world = world;
+      if (renderer.setBuildings) renderer.setBuildings(st.buildings);
+      if (renderer.fitIsland) renderer.fitIsland();
+    }
+    return st;
+  }
+
+  /* Чистое ядро одиночного старта. Отдельно от startHome, потому что
+     локальная игра и серверная комната должны начинать один и тот же мир;
+     renderer — только представление. */
+  function startHomeCore(world, opts) {
     var site = opts || SITE;
     /* Казна деревни. Счётчик добытого живёт ЗДЕСЬ, на мире партии, и это
        ЕДИНСТВЕННОЕ его место: и игра, и генератор читают world.village, а
@@ -835,11 +877,6 @@
     town.buildings = list;
     town.townhall = list.length ? list[0] : null;
     var home = list.length ? list[0] : null;
-    if (renderer) {
-      renderer.world = world;
-      renderer.setBuildings(list);
-      renderer.fitIsland();
-    }
     return { home: home, buildings: list };
   }
 
@@ -869,17 +906,30 @@
      того места, где появился (якорь прогулки, см. villager.js). Дом не
      поставился — бездомные все. */
   function spawnVillagers(world, renderer, buildings, home, opts) {
+    var list;
+    opts = opts || {};
+    // Атласа нет — жителей нет: спрайты грузит оболочка, и это не повод
+    // ронять партию.
+    if (!world || !renderer || !renderer.villagerSprites ||
+        (opts.count === undefined ? VILLAGERS : opts.count) <= 0) {
+      if (renderer && renderer.setVillagers) renderer.setVillagers([]);
+      return [];
+    }
+    list = spawnVillagersCore(world, buildings, home, opts);
+    if (renderer.setVillagers) renderer.setVillagers(world._villagers || list);
+    return list;
+  }
+
+  /* Чистое ядро появления жителей: без renderer и без проверки спрайтов.
+     Именно оно нужно worker'у комнаты — сервер не грузит PNG и не знает, что
+     такое спрайт. */
+  function spawnVillagersCore(world, buildings, home, opts) {
     var list = [];
     opts = opts || {};
     var n = opts.count === undefined ? VILLAGERS : opts.count;
-    // Атласа нет — жителей нет: спрайты грузит оболочка, и это не повод
-    // ронять партию.
-    if (!world || !renderer.villagerSprites || n <= 0) {
-      renderer.setVillagers(list);
-      return list;
-    }
+    if (!world || n <= 0) return list;
     var base = (opts.append && world._villagers) ? world._villagers.slice() : [];
-    var list = [];
+    list = [];
     var town = opts.townId !== undefined ? townById(world, opts.townId) : townOf(world, opts.owner || 0);
     var houses = [], i;
     for (i = 0; i < (buildings || []).length; i++) {
@@ -928,7 +978,6 @@
       base.push(v);
       if (town) town.villagers.push(v);
     }
-    renderer.setVillagers(base);
     /* Список партии — на мире: по нему движок выбирает места двора
        (Villagers.partnersOf) и освобождает работников при сносе постройки.
        Тот же список каждый кадр кладёт stepVillagers; здесь он появляется
@@ -1939,6 +1988,27 @@
 
   function stepVillagers(villagers, world, renderer, dt, buildings) {
     if (!world || !villagers || !villagers.length) return 0;
+    /* Бюджет поиска пути на этот шаг — ОДИН на всех жителей. Если загружен
+       порционный Navigation, шаг выдаёт он; старый beginFrame остаётся для
+       генератора и тестов, которые грузят движок без simulation/. */
+    if (global.Navigation && typeof global.Navigation.beginTick === 'function') {
+      global.Navigation.beginTick(world);
+    } else if (global.Villagers.beginFrame) {
+      global.Villagers.beginFrame(world);
+    }
+    return stepVillagersCore(villagers, world, dt, buildings,
+      renderer ? renderer.villagerSprites : null);
+  }
+
+  /* Чистое ядро шага жителей: ни renderer, ни PNG. `gameplay` — логический
+     набор анимаций (frames/fps/loop), а не спрайты: длительности работы,
+     обучения и сдачи считаются по нему, а не по загруженным картинкам. */
+  function stepVillagersCore(villagers, world, dt, buildings, gameplay) {
+    if (!world || !villagers || !villagers.length) return 0;
+    if (typeof dt !== 'number' || !isFinite(dt) || dt < 0) {
+      throw new Error('invalid_dt');
+    }
+    if (dt === 0) return 0;
     /* Груз погибших учитывается ДО шага: дальше их уже нет в списке, и без
        этого ходка навсегда осталась бы «в пути». */
     noteDeadCargo(world, villagers);
@@ -1957,8 +2027,6 @@
       rebalanceGarrison(world, world._buildings, villagers);
     }
     var opts = { buildings: buildings };
-    /* Бюджет поиска пути на этот кадр — ОДИН на всех жителей. */
-    if (global.Villagers.beginFrame) global.Villagers.beginFrame(world);
     var felled = 0;
     for (var i = 0; i < villagers.length; i++) {
       /* Граница на ОДНОМ жителе (LOOP-01): ошибка на элементе i не должна
@@ -1967,7 +2035,7 @@
          диагностическую границу кадра, которая явно остановит мир. Частично
          применённый шаг этого жителя не повторяется молча. */
       try {
-        global.Villagers.update(villagers[i], world, renderer.villagerSprites, dt, opts);
+        global.Villagers.update(villagers[i], world, gameplay || null, dt, opts);
         felled += villagers[i].felled;
       } catch (e) {
         var bad = villagers[i];
@@ -1982,6 +2050,7 @@
         throw e;
       }
     }
+    world._navWho = null;
     /* Нет леса/пути — состояние мира, а не панели: событие пишется здесь. */
     watchWork(world, buildings, villagers, dt);
     return felled;
@@ -2078,6 +2147,12 @@
     startHome: startHome,
     startBot: startBot,
     startMulti: startMulti,
+    startHomeCore: startHomeCore,
+    startBotCore: startBotCore,
+    startMultiCore: startMultiCore,
+    spawnVillagersCore: spawnVillagersCore,
+    tryBirthCore: tryBirthCore,
+    stepVillagersCore: stepVillagersCore,
     newTown: newTown,
     aliveTowns: aliveTowns,
     standing: standing,

@@ -529,19 +529,10 @@
 </div>
 
 <!-- Движок игры: те же модули, что и у генератора карт (mapgen2/). Атласы
-     подключены как window.<ИМЯ>_ATLAS, чтобы страница работала и по file://. -->
-<script src="../mapgen2/assets/sprites/atlas.js"></script>
-<script src="../mapgen2/assets/townhall/atlas.js"></script>
-<!-- тип `house` (дом жителя) читает стартовый дом; прежний атлас
-     mapgen2/assets/house/ остался на диске, но страница его не грузит -->
-<script src="../mapgen2/assets/starter_house/atlas.js"></script>
-<script src="../mapgen2/assets/lumbercamp/atlas.js"></script>
-<script src="../mapgen2/assets/barracks/atlas.js"></script>
-<script src="../mapgen2/assets/warcamp/atlas.js"></script>
-<script src="../mapgen2/assets/waves/atlas.js"></script>
-<script src="../mapgen2/assets/hero/atlas.js"></script>
-<script src="../mapgen2/assets/villager/atlas.js"></script>
-<script src="../mapgen2/assets/armored_villager/atlas.js"></script>
+     подключаются ровно одним tier через atlas-tags.js: desktop или mobile.
+     Так страница работает и по file://, и не тянет оба набора. -->
+<script src="js/quality.js"></script>
+<script src="js/atlas-tags.js"></script>
 <script src="../mapgen2/js/noise.js"></script>
 <script src="../mapgen2/js/rng.js"></script>
 <!-- Имена клавиш по физическому месту: русская раскладка не должна глушить
@@ -559,9 +550,13 @@
 <script src="../mapgen2/js/combat.js"></script>
 <script src="../mapgen2/js/army.js"></script>
 <script src="../mapgen2/js/serialize.js"></script>
+<script src="../mapgen2/js/simulation/navigation.js"></script>
+<script src="../mapgen2/js/simulation/gameplay-config.js"></script>
 <script src="../mapgen2/js/render.js"></script>
-<script src="../mapgen2/assets/ruins/atlas.js"></script>
 
+<script src="shared/net-config.js"></script>
+<script src="js/server-clock.js"></script>
+<script src="js/snapshot-buffer.js"></script>
 <script src="js/net.js"></script>
 <script src="js/lobby.js"></script>
 <!-- Ожидающие действия гостя (UX-01) — до play.js: он их только спрашивает. -->

@@ -874,7 +874,7 @@
   var last = 0;
 
   function loop(t) {
-    var dt = Math.min(0.05, (t - last) / 1000) || 0;
+    var dt = Math.max(0, Math.min(0.05, (t - last) / 1000)) || 0;
     last = t;
 
     if (stepCamera(dt)) needFrame = true;

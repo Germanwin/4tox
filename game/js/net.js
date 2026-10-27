@@ -15,10 +15,14 @@
   var token = null, code = null, playerId = null, hostId = 0;
   var es = null, handlers = {}, lobby = null, started = null, startKey = null;
   var online = false, serverInfoCache = null;
+  /* Устойчивая клиентская сессия комнаты: instance выдаёт сервер, sequence
+     переживает F5. Сброс ID на 1 внутри той же instance запрещён — иначе
+     сервер не отличит новую команду от повтора старой. */
+  var roomId = null, roomEpoch = 0, clientInstance = null, clientSeq = 0;
 
   /* Версия формата этого клиента. Сервер отвечает своей (`protocol` в
      /api/build и в старте); расхождение — только предупреждение, не отказ. */
-  var CLIENT_PROTOCOL = 3;
+  var CLIENT_PROTOCOL = 4;
 
   /* Поколение партии. Растёт в reset()/create()/join()/resume(). Любой
      асинхронный ответ (status/resume/command/command-state/snapshot) несёт
@@ -316,7 +320,9 @@
   function saveSession() {
     if (!code || !token) return;
     storeSet(JSON.stringify({
-      code: code, token: token, playerId: playerId, hostId: hostId, at: Date.now()
+      code: code, token: token, playerId: playerId, hostId: hostId,
+      roomId: roomId, epoch: roomEpoch,
+      instance: clientInstance, seq: clientSeq, at: Date.now()
     }));
   }
 
@@ -341,6 +347,10 @@
     code = v.code; token = v.token;
     playerId = v.playerId === undefined ? null : v.playerId;
     hostId = v.hostId === undefined ? 0 : v.hostId;
+    roomId = v.roomId || null;
+    roomEpoch = v.epoch || 0;
+    clientInstance = v.instance || null;
+    clientSeq = v.seq || 0;
     lobby = null; started = null; startKey = null; online = false;
     return true;
   }
@@ -369,11 +379,17 @@
       try { j = text ? JSON.parse(text) : {}; }
       catch (e) { bad = true; }
       if (!r.ok) {
-        throw httpError(r.status, (j && j.reason) || ('HTTP ' + r.status));
+        var he = httpError(r.status, (j && j.reason) || ('HTTP ' + r.status));
+        he.body = j;
+        if (j && j.code) he.code = j.code;
+        throw he;
       }
       if (bad) throw parseError(r.status, 'ответ сервера не JSON');
       if (j && j.ok === false) {
-        throw httpError(r.status, j.reason || ('HTTP ' + r.status));
+        var je = httpError(r.status, j.reason || ('HTTP ' + r.status));
+        je.body = j;
+        if (j.code) je.code = j.code;
+        throw je;
       }
       return j;
     }, function (e) {
@@ -448,8 +464,20 @@
   function handleStart(data) {
     if (!data || !data.seed) return;
     var key = data.seed + '|' + data.size + '|' +
-      (data.players || []).map(function (p) { return p.id; }).join(',');
+      (data.players || []).map(function (p) { return p.id; }).join(',') +
+      '|' + (data.roomId || '') + '|' + (data.epoch || 0);
     if (data.hostId !== undefined) hostId = data.hostId;
+    if (data.roomId) roomId = data.roomId;
+    if (data.epoch !== undefined) roomEpoch = data.epoch;
+    var me = null;
+    for (var i = 0; i < (data.players || []).length; i++) {
+      if (data.players[i] && data.players[i].id === playerId) { me = data.players[i]; break; }
+    }
+    if (me) {
+      if (me.instance) clientInstance = me.instance;
+      if (!clientInstance) clientInstance = 's' + (me.owner || 0) + '-' + String(playerId);
+      if (me.nextClientSequence === undefined && !clientSeq) clientSeq = 0;
+    }
     /* Пока идёт /api/resume, старт по SSE не применяем: в нём ещё нет
        снимка. Дождёмся ответа и склеим их — иначе после F5 хост поднял бы
        пустой остров вместо своего. */
@@ -474,7 +502,7 @@
       '&token=' + encodeURIComponent(token));
     es = source;
     ['hello', 'lobby', 'start', 'snapshot', 'command', 'command-result',
-      'peer-left', 'peer-back', 'host-left', 'host-back'].forEach(function (type) {
+      'peer-left', 'peer-back', 'host-left', 'host-back', 'room-fault'].forEach(function (type) {
       source.addEventListener(type, function (ev) {
         /* Событие старого соединения после reset/create не должно оживлять
            прежнюю партию: проверяем и поколение, и то, что это всё ещё наш
@@ -527,6 +555,7 @@
     clearPending('партия закрыта', 'stale');
     es = null; token = null; code = null; playerId = null; hostId = 0;
     lobby = null; started = null; startKey = null; online = false;
+    roomId = null; roomEpoch = 0; clientInstance = null; clientSeq = 0;
     resuming = false; pendingStart = null;
     cmdSeq = 0; cmdChain = Promise.resolve();
     sendBusy = 0;
@@ -638,7 +667,15 @@
       if (st) {
         /* pendingStart — старт, который SSE успел принести раньше
            /api/resume. Он тоже настоящий, просто без снимка. */
-        if (j.snapshot) st.snapshot = j.snapshot;
+        if (j.baseline) st.baseline = j.baseline;
+        else if (j.snapshot) st.baseline = j.snapshot;
+        if (j.room) st.room = j.room;
+        if (j.session) {
+          st.session = j.session;
+          if (j.session.instance) clientInstance = j.session.instance;
+          if (j.session.epoch !== undefined) roomEpoch = j.session.epoch;
+          if (j.session.roomId) roomId = j.session.roomId;
+        }
         if (j.seq !== undefined) st.lastSeq = j.seq;
         handleStart(st);
       }
@@ -687,8 +724,172 @@
      Повтор после обрыва несёт ТОТ ЖЕ item.n: сервер по паре (from,n) узнает
      повтор и не выполнит действие дважды. Повторов не больше двух, весь POST
      включая повтор укладывается в LIMITS.commandSend. */
+  /* ---------------- команда нового протокола (room-authoritative) ------ *
+   *
+   * Клиент не создаёт «n от часов» и не ждёт хоста: есть устойчивая instance
+   * и строго последовательный clientSequence. HTTP 202 значит `received`;
+   * настоящий результат приходит из /api/command-state по commandId. Повтор
+   * после обрыва несёт тот же commandId и тот же payload — сервер вернёт
+   * прежний результат, а не выполнит действие второй раз.
+   * -------------------------------------------------------------------- */
+  function commandPayload(cmd) {
+    if (cmd.payload && typeof cmd.payload === 'object') return cmd.payload;
+    var out = {};
+    ['buildingType', 'variant', 'rot', 'x', 'y', 'x2', 'y2', 'id', 'action',
+      'campId', 'villagerId', 'ids'].forEach(function (k) {
+      if (cmd[k] !== undefined) out[k] = cmd[k];
+    });
+    return out;
+  }
+
+  function commandDone(res, seq, commandId) {
+    var state = res && res.status ? res.status : 'unknown';
+    return {
+      ok: state === 'applied', n: seq, commandId: commandId,
+      state: state, reason: (res && res.reason) || '',
+      reasonCode: (res && res.reasonCode) || null,
+      ids: (res && res.ids) || [],
+      appliedSeq: (res && res.appliedRevision) || 0,
+      appliedRevision: (res && res.appliedRevision) || 0,
+      appliedTick: res && res.appliedTick,
+      unknown: state === 'unknown',
+      pending: state === 'received'
+    };
+  }
+
+  function waitCommandV4(commandId, seq, first, gen) {
+    if (first && (first.status === 'applied' || first.status === 'rejected' ||
+        first.status === 'expired' || first.status === 'history_expired')) {
+      var done = commandDone(first, seq, commandId);
+      emit('command-result', done);
+      return Promise.resolve(done);
+    }
+    var started = Date.now();
+    return new Promise(function (resolve, reject) {
+      function poll() {
+        if (!isCurrent(gen)) return reject(staleError());
+        if (Date.now() - started > LIMITS.commandResult) {
+          return resolve({
+            ok: false, n: seq, commandId: commandId, state: 'unknown',
+            unknown: true, reason: 'результат уточняется', ids: []
+          });
+        }
+        var q = '/api/command-state?code=' + encodeURIComponent(code) +
+          '&token=' + encodeURIComponent(token) +
+          '&id=' + encodeURIComponent(commandId);
+        apiGet(q, LIMITS.commandState).then(function (j) {
+          if (!isCurrent(gen)) return reject(staleError());
+          if (j && typeof j.nextClientSequence === 'number' &&
+              j.nextClientSequence - 1 > clientSeq) {
+            clientSeq = j.nextClientSequence - 1;
+            saveSession();
+          }
+          var list = j && j.results ? j.results : [];
+          var r = null;
+          for (var i = 0; i < list.length; i++) {
+            if (list[i] && list[i].commandId === commandId) { r = list[i]; break; }
+          }
+          if (r && (r.status === 'applied' || r.status === 'rejected' ||
+              r.status === 'expired' || r.status === 'history_expired')) {
+            var done = commandDone(r, seq, commandId);
+            emit('command-result', done);
+            return resolve(done);
+          }
+          global.setTimeout(poll, 220);
+        }, function () {
+          global.setTimeout(poll, 320);
+        });
+      }
+      global.setTimeout(poll, 160);
+    });
+  }
+
+  function commandV4(cmd) {
+    if (!code || !token) return Promise.reject(makeError('state', 'нет лобби'));
+    var gen = generation;
+    if (!clientInstance) clientInstance = 's0-' + String(playerId);
+    if (!roomId) roomId = code;
+    var seq = ++clientSeq;
+    var commandId = clientInstance + ':' + seq;
+    saveSession();
+    var envelope = {
+      protocol: CLIENT_PROTOCOL,
+      roomId: roomId,
+      epoch: roomEpoch,
+      commandId: commandId,
+      clientSequence: seq,
+      type: cmd.type,
+      payload: commandPayload(cmd)
+    };
+    /* Строго по одной: новый clientSequence уходит только после receipt
+       предыдущего. Иначе сервер справедливо ответит sequence_gap на вторую
+       команду, обогнавшую первую в сети. */
+    var accepted = cmdChain.then(function () {
+      if (!isCurrent(gen)) throw staleError();
+      return api('/api/command', { code: code, token: token, command: envelope },
+        LIMITS.commandSend);
+    });
+    cmdChain = accepted.catch(function () {});
+    var p = accepted.then(function (r) {
+      if (!isCurrent(gen)) throw staleError();
+      if (r && typeof r.nextClientSequence === 'number' &&
+          r.nextClientSequence - 1 > clientSeq) {
+        clientSeq = r.nextClientSequence - 1;
+        saveSession();
+      }
+      return waitCommandV4(commandId, seq, r, gen);
+    }, function (e) {
+      if (!isCurrent(gen)) throw staleError();
+      /* admitted:false — команда НЕ принята, ID не consumed. Это не сетевой
+         сбой: показываем точную причину и разрешаем тот же ID позже. */
+      if (e && e.body && e.body.admitted === false) {
+        /* ID НЕ consumed: возвращаем счётчик, чтобы повтор с тем же ID не
+           получил sequence_gap. */
+        if (clientSeq === seq) {
+          clientSeq = Math.max(0, seq - 1);
+          saveSession();
+        }
+        if (e.body.code === 'stale_epoch' && e.body.epoch !== undefined) {
+          roomEpoch = e.body.epoch;
+          saveSession();
+        }
+        var refused = {
+          ok: false, n: seq, commandId: commandId, state: 'rejected',
+          reason: e.body.reason || e.message, reasonCode: e.body.code || null,
+          admitted: false, ids: []
+        };
+        emit('command-result', refused);
+        return refused;
+      }
+      if (e && typeof e === 'object') {
+        e.commandId = commandId;
+        e.n = seq;
+      }
+      throw e;
+    });
+    p.commandId = commandId;
+    p.n = seq;
+    p.catch(function (e) {
+      if (e && typeof e === 'object') {
+        if (e.commandId === undefined) e.commandId = commandId;
+        if (e.n === undefined) e.n = seq;
+      }
+      emit('command-error', {
+        command: cmd, n: seq, commandId: commandId,
+        kind: (e && e.kind) || 'network',
+        message: (e && e.message) || 'команда не ушла'
+      });
+    });
+    return p;
+  }
+
   function command(cmd) {
     if (!code || !token) return Promise.reject(makeError('state', 'нет лобби'));
+    /* Новый сервер отдаёт roomId и protocol 4 в старте. Старый путь остаётся
+       только для чтения старого лобби; в running-комнате он недостижим. */
+    if (started && started.roomId && (started.protocol || 4) >= 4) {
+      return commandV4(cmd);
+    }
     var gen = generation;
     var item = {}, k;
     for (k in (cmd || {})) {
@@ -782,14 +983,28 @@
 
   /* Один результат по номеру — для приёмки и отладки; игра пользуется
      ожиданием промиса выше. */
-  function commandState(n) {
+  function commandState(ids) {
     if (!code || !token) return Promise.reject(makeError('state', 'нет лобби'));
     var gen = generation;
     var q = '/api/command-state?code=' + encodeURIComponent(code) +
-      '&token=' + encodeURIComponent(token) +
-      (n !== undefined ? '&n=' + encodeURIComponent(n) : '');
+      '&token=' + encodeURIComponent(token);
+    if (Array.isArray(ids)) {
+      ids.forEach(function (id) {
+        if (id !== undefined && id !== null) q += '&id=' + encodeURIComponent(String(id));
+      });
+    } else if (ids !== undefined && ids !== null) {
+      q += '&id=' + encodeURIComponent(String(ids));
+    }
+    if (clientSeq > 0 && started && started.roomId) {
+      q += '&watermark=' + encodeURIComponent(clientSeq);
+    }
     return apiGet(q, LIMITS.commandState).then(function (j) {
       if (!isCurrent(gen)) throw staleError();
+      if (j && typeof j.nextClientSequence === 'number' &&
+          j.nextClientSequence - 1 > clientSeq) {
+        clientSeq = j.nextClientSequence - 1;
+        saveSession();
+      }
       return j;
     }, function (e) {
       if (!isCurrent(gen)) throw staleError();
@@ -826,6 +1041,14 @@
      уходит обычный JSON — приём одинаковый. */
   function snapshot(snap) {
     if (!code || !token || playerId !== hostId) return Promise.resolve(null);
+    /* В комнате нового протокола снимок строит сервер. Клиент, который всё
+       ещё позвал это, получает явный отказ, а не молчаливый 409. */
+    if (started && started.roomId && (started.protocol || 4) >= 4) {
+      var sa = makeError('server-authoritative',
+        'мир считает сервер: клиентский снимок больше не публикуется');
+      sa.code = 'server_authoritative';
+      return Promise.reject(sa);
+    }
     var gen = generation;
     var body;
     try {
@@ -1005,11 +1228,19 @@
        ищется по имени и времени старта, поэтому старая не мешает; браузер
        сам выбрасывает самые старые, когда буфер полон. */
     var t0 = (global.performance && global.performance.now) ? global.performance.now() : Date.now();
+    var t0s = Math.round(t0 * 1000) / 1000;
     return apiGet('/api/ping?code=' + encodeURIComponent(code) +
-      '&token=' + encodeURIComponent(token), LIMITS.ping).then(function (j) {
+      '&token=' + encodeURIComponent(token) +
+      '&c0=' + encodeURIComponent(t0s), LIMITS.ping).then(function (j) {
       if (!isCurrent(gen)) throw staleError();
       var t1 = (global.performance && global.performance.now) ? global.performance.now() : Date.now();
       var wall = Math.max(0, Math.round(t1 - t0));
+      /* Часы комнаты: отдаём клиенту c0/c3 и серверные s1/s2. Число `ms`
+         ниже остаётся сетевым RTT для индикатора; offset считает
+         ServerClock по этим же меткам. */
+      j.c0 = t0s;
+      j.c3 = Math.round(t1 * 1000) / 1000;
+      j.t1 = t1;
       function finish(net) {
         if (!isCurrent(gen)) throw staleError();
         j.msWall = wall;
@@ -1115,6 +1346,12 @@
     playerId: function () { return playerId; },
     hostId: function () { return hostId; },
     code: function () { return code; },
+    roomId: function () { return roomId; },
+    epoch: function () { return roomEpoch; },
+    session: function () {
+      return { sessionId: playerId === null ? null : String(playerId),
+        instance: clientInstance, sequence: clientSeq, epoch: roomEpoch };
+    },
     lobby: function () { return lobby; },
     started: function () { return started; },
     online: function () { return online; },

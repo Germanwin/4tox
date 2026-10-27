@@ -161,8 +161,27 @@
      приходится РОВНО на 5.000 с, и дерево падает на нём: пять секунд рубки —
      это восемь ударов, а не «пять секунд, когда получится». */
   var CHOP_TIME = 5.0;
-  var CHOP_HIT = 0.5;      // фаза кадра удара в анимации работы
+  var CHOP_HIT = 0.5;      // фаза кадра удара в анимации работы (для рисования)
   var CHOP_EPS = 1e-3;     // запас на сложение dt: 5.000 против 4.9999999
+  /* Восемь ударов за пять секунд — игровое правило, а не свойство атласа.
+     Прежде удар наносился по пересечению фазы кадра, и стоило атласу не
+     загрузиться или сменить fps — менялся темп экономики. Теперь удары идут
+     по игровым часам ровно через 0.625 с; анимация подстраивается под них. */
+  var CHOP_HITS = 8;
+  var CHOP_HIT_EVERY = CHOP_TIME / CHOP_HITS;
+
+  /* Сдача брёвен — один проход carry_put. Его длительность берётся из
+     реальных метаданных атласа (4 кадра / 12 к/с = 1/3 с), а не из факта
+     загрузки PNG: логическое состояние drop обязано закончиться по игровому
+     таймеру `dropT`, даже если картинки нет вовсе. */
+  function dropDuration(set) {
+    if (global.GameplayConfig && global.GameplayConfig.dropDuration > 0) {
+      return global.GameplayConfig.dropDuration;
+    }
+    var a = set && set.anims && set.anims.carry_put;
+    if (a && a.frames > 0 && a.fps > 0) return a.frames / a.fps;
+    return 0;
+  }
 
   /* На сколько житель придвигается к стволу, встав под дерево.
 
@@ -649,7 +668,38 @@
   function findPath(world, solid, sx, sy, tx, ty, opts) {
     opts = opts || {};
     var W = world.width, H = world.height, N = W * H;
-    var who = opts.who || null;
+    var who = opts.who || world._navWho || null;
+    /* Порционный A* (simulation/navigation.js). Пока у запроса есть житель и
+       это не служебный поиск с ignoreBudget, путь считается job'ом с общим
+       бюджетом тика. Незавершённый job — 'deferred', а не отказ: вызывающий
+       повторит обращение, и поиск продолжится с того же места. */
+    if (global.Navigation && typeof global.Navigation.requestPath === 'function' &&
+        who && !opts.ignoreBudget) {
+      var nav = global.Navigation.requestPath(world, {
+        entityId: who.id,
+        purpose: opts.purpose || who.state || 'move',
+        sx: sx, sy: sy, tx: tx, ty: ty,
+        solid: solid,
+        limit: opts.limit,
+        passabilityVersion: global.Navigation.versionOf(world)
+      });
+      world._pathStop = nav.status === 'ready' ? '' : nav.status;
+      if (nav.status === 'ready') {
+        markServed(world, who);
+        return nav.path;
+      }
+      if (nav.status === 'deferred') {
+        world._pathBudgetHit = true;
+        if (who && !who.pathWaiting) {
+          who.pathWaiting = true;
+          who.pathWaitStartSeq = world._pathSeq || 0;
+        }
+        if (global.Metrics && global.Metrics.on) global.Metrics.counters.budgetHits++;
+        return null;
+      }
+      markServed(world, who);
+      return null;
+    }
     /* world._pathStop — ЯВНЫЙ результат последнего поиска (PATH-01):
          ''            — путь найден;
          'deferred'    — кончился бюджет КАДРА: это отсрочка, а не отказ.
@@ -2393,6 +2443,11 @@
     v.animWant = want;
     v.frozen = frozen;
     v.phase = 0;
+    /* Логическая смена анимации — для репликации: клиент считает фазу от
+       серверного времени и не перезапускает её на каждом снимке. */
+    if (global.Replication && global.Replication.noteAnim) {
+      global.Replication.noteAnim(v);
+    }
   }
 
   /* Пришёл. Здесь цель достигнута: путь забыт, житель доворачивается на
@@ -2481,6 +2536,12 @@
     var had = tree && keep.length !== objs.length;
     if (had && tree.id !== undefined && world.removedIds) world.removedIds.push(tree.id);
     world.objects = keep;
+    /* Срубленное дерево меняет проходимость. Job'ы, начатые по старой версии,
+       отменятся на следующем Navigation.beginTick. */
+    if (had) {
+      world.navVersion = (world.navVersion || 0) + 1;
+      world.objectRev = (world.objectRev || 0) + 1;
+    }
     if (had && world.stats && world.stats.trees) world.stats.trees--;
     if (tree) tree._spr = null;
     unmark(v, tree);
@@ -2563,34 +2624,73 @@
     v.state = 'drop';
     v.intoYard = false;
     v.path = null;
+    /* Логический таймер жеста. Если атлас не загружен, dropDuration вернёт
+     * ноль — жест закончится следующим тиком, а не будет длиться вечно.
+     * Подставлять 1/3 без метаданных запрещено: это было бы выдуманное
+     * число, а не длительность кадра. */
+    v.dropT = dropDuration(set);
     setAnim(v, 'carry_put', set);
     return true;
   }
 
   /* Шаг по прямой к текущей точке пути. Курс — направление шага: человек
-     повёрнут туда, куда идёт. */
+     повёрнут туда, куда идёт.
+
+     F05: за ОДИН шаг проходится ровно `speed * dt` дистанции, даже если на
+     этом отрезке несколько коротких точек пути. Прежде при `d <= step`
+     человек вставал в точку и останавливался — остаток дистанции пропадал,
+     и маршрут из ста отрезков по 0.07 при dt=0.05 занимал 10 с вместо 7.
+     Теперь остаток переходит на следующий отрезок, пока не кончится или не
+     кончится путь.
+
+     Остаток времени после достижения КОНЕЧНОЙ точки в другое состояние FSM
+     не передаётся: это осознанная дискретизация до одного тика (50 мс),
+     одинаковая при любом FPS. Между внутренними точками маршрута остаток
+     расстояния не теряется никогда. */
   function walk(v, world, set, dt, anim) {
     anim = anim || 'walk';
+    if (typeof dt !== 'number' || !isFinite(dt) || dt < 0) throw new Error('invalid_dt');
+    if (typeof v.speed !== 'number' || !isFinite(v.speed) || v.speed < 0) {
+      throw new Error('invalid_speed');
+    }
     if (!v.path || v.step >= v.path.length) return;
-    var wp = v.path[v.step];
-    var dx = wp.x - v.x, dy = wp.y - v.y;
-    var d = Math.sqrt(dx * dx + dy * dy);
-    var step = v.speed * dt;
-
-    if (d > CORNER) v.rot = deg(Math.atan2(dy, dx));
-
-    if (d <= step) {                   // дошли до точки: она пройдена целиком
-      v.x = wp.x; v.y = wp.y;          // ровно в точку, без «почти доехал»
-      v.walked += d;
-      v.step++;
-      if (v.step >= v.path.length) { arrive(v, { anim: anim }); return; }
-    } else {
-      v.x += dx / d * step;
-      v.y += dy / d * step;
-      v.walked += step;
+    var remaining = v.speed * dt;
+    var limit = v.path.length - v.step;
+    var visited = 0;
+    while (v.path && v.step < v.path.length && visited < limit) {
+      var wp = v.path[v.step];
+      var dx = wp.x - v.x, dy = wp.y - v.y;
+      var distance = Math.hypot(dx, dy);
+      if (!Number.isFinite(distance)) throw new Error('invalid_waypoint');
+      if (distance <= 1e-9) {
+        v.x = wp.x; v.y = wp.y;
+        if (global.Replication && global.Replication.noteMove) {
+          global.Replication.noteMove(v, Math.round((world.time || 0) * 1000), v.x, v.y, v.rot);
+        }
+        v.step++; visited++;
+      } else {
+        if (remaining <= 1e-12) break;
+        if (distance > CORNER) v.rot = deg(Math.atan2(dy, dx));
+        var moved = Math.min(distance, remaining);
+        v.x += dx / distance * moved;
+        v.y += dy / distance * moved;
+        v.walked = (v.walked || 0) + moved;
+        remaining = Math.max(0, remaining - moved);
+        if (moved >= distance - 1e-12) {
+          v.x = wp.x; v.y = wp.y;
+          v.step++; visited++;
+        } else break;
+      }
+      if (v.step >= v.path.length) {
+        arrive(v, { anim: anim });
+        return;                       // arrive ровно один раз
+      }
     }
 
     setAnim(v, anim, set);
+    if (global.Replication && global.Replication.noteMove) {
+      global.Replication.noteMove(v, Math.round((world.time || 0) * 1000), v.x, v.y, v.rot);
+    }
     if (!v.frozen) {
       var a = v.anim, n = Math.max(1, global.Hero.frameCount(set, a));
       v.phase = (v.phase + dt * global.Hero.fps(set, a) / n) % 1;
@@ -2644,24 +2744,21 @@
      честно отвечает «проход кончен» на первом же шаге: застывший кадр и есть
      весь жест. */
   function putStep(v, set, dt, anim) {
-    /* Цикл это или проход, спрашивается про ТОТ КАДР, который и будет нарисован
-       (`animResolve`), а не про имя из заказа: атлас без `carry_put` отдаёт
-       `carry`, а `carry` — цикл (это носка, 8 кадров). Спроси у атласа про
-       `carry_put`, которого в нём нет, — и ответ будет «цикл» про запись,
-       которой не существует.
-
-       Три случая, и каждый занимает ОДИН кадр:
-         * кадра сдачи в атласе нет (`v.frozen`) — жест и есть застывший нулевой
-           кадр `carry` (animFrozen: стойка с брёвнами на руках), а у застывшего
-           кадра прохода нет: играть нечего;
-         * кадр есть и он НЕ цикл (`carry_put`, `loop:false`) — играется ровно
-           один его проход: фаза едет до 1 и там встаёт, второго прохода нет по
-           построению (он начинался бы там же, где кончился первый);
-         * кадр есть, но он ЦИКЛ — таким сдача не играется (в заказе такого
-           кадра нет), и жест тоже равен одному кадру. */
-    var got = animResolve(set, anim);
-    if (v.frozen || global.Hero.loops(set, got)) return true;
-    return passStep(v, set, dt, got);
+    /* Логическое время жеста — `v.dropT`, а не наличие загруженного кадра.
+       Прежде конец drop определялся тем, доиграл ли проход анимации; без
+       атласа сдача становилась мгновенной, а с другим fps — другой. Теперь
+       длительность пришла из метаданных в момент deposit (4 кадра / 12 к/с),
+       и картинка лишь сопровождает её. */
+    setAnim(v, anim, set);
+    if (!v.frozen) {
+      var n = Math.max(1, global.Hero.frameCount(set, v.anim));
+      var fps = global.Hero.fps(set, v.anim);
+      if (v.dropT > 0 && fps > 0) {
+        v.phase = Math.min(1, v.phase + dt * fps / n);
+      }
+    }
+    v.dropT = Math.max(0, (v.dropT || 0) - dt);
+    return v.dropT <= 0;
   }
 
   function idleStep(v, set, dt) {
@@ -2720,7 +2817,8 @@
       var cell = wanderCell(v, world, solid, ax, ay);
       if (!cell) continue;
       if (cell.x === sx && cell.y === sy) continue;
-      var cells = findPath(world, solid, sx, sy, cell.x, cell.y);
+      var cells = findPath(world, solid, sx, sy, cell.x, cell.y,
+        { who: v, purpose: 'wander' });
       if (!cells || cells.length < 2) continue;
       var path = smoothPath(world, solid, cells);
       if (!insideCircle(path, ax, ay, limit)) continue;
@@ -2743,7 +2841,8 @@
        домой не имеет права уводить ещё дальше. */
     var axc = Math.floor(ax), ayc = Math.floor(ay);
     if (walkable(world, solid, axc, ayc) && (sx !== axc || sy !== ayc)) {
-      var homeCells = findPath(world, solid, sx, sy, axc, ayc);
+      var homeCells = findPath(world, solid, sx, sy, axc, ayc,
+      { who: v, purpose: 'home' });
       if (homeCells && homeCells.length >= 2) {
         var homePath = smoothPath(world, solid, homeCells);
         var reach = Math.max(limit, Math.hypot(v.x - ax, v.y - ay)) + 1;
@@ -3668,6 +3767,10 @@
        но ходить и работать он уже не должен. */
     if (v.dead) return;
     v._set = set;
+    /* Кто сейчас ищет путь: findPath зовут вложенные помощники (plan,
+       routeTo, goToCamp), у которых нет параметра жителя. Один указатель на
+       мир на время шага — и все поиски этого шага принадлежат ему. */
+    world._navWho = v;
     /* Пока проявляется — стоит. Ни цели, ни пути, ни шага: единственное, что
        меняется, — прогресс проявления. Закончился — следующий кадр идёт
        обычной прогулкой (state wander, path пуст: его проложит planWander). */
@@ -3979,10 +4082,14 @@
         }
         setAnim(v, 'work', set);
         var nw = Math.max(1, global.Hero.frameCount(set, v.anim));
-        var wasBefore = v.phase;
         v.phase = (v.phase + dt * global.Hero.fps(set, v.anim) / nw) % 1;
+        /* Удары — по игровым часам, не по фазе кадра: восемь ударов за пять
+           секунд (0.625 с между ними). Анимация может не загрузиться вовсе —
+           урон, частота и момент падения дерева от этого не меняются. */
+        var hitBefore = Math.floor((v.chopT + 1e-9) / CHOP_HIT_EVERY);
         v.chopT += dt;
-        if (crossed(wasBefore, v.phase, CHOP_HIT)) strike(v, world);
+        var hitAfter = Math.floor((v.chopT + 1e-9) / CHOP_HIT_EVERY);
+        for (var hitN = hitBefore; hitN < hitAfter; hitN++) strike(v, world);
         return;
       }
 
@@ -4102,7 +4209,7 @@
     appearing: appearing, appear: appear,
     visibility: visibility, visible: visible,
     sprite: sprite, scaleAt: scaleAt, setAnim: setAnim, animResolve: animResolve,
-    findPath: findPath, smoothPath: smoothPath, lineClear: lineClear,
+    findPath: findPath, smoothPath: smoothPath, lineClear: lineClear, walk: walk,
     beginFrame: beginFrame, pathLimit: pathLimit, mapVer: mapVer,
     routeTo: routeTo, plan: plan, treesNear: treesNear, standCells: standCells,
     planWorkSpot: planWorkSpot, keepOrFindSpot: keepOrFindSpot, goToCamp: goToCamp,
@@ -4122,7 +4229,7 @@
     spawnSpot: spawnSpot, landCells: landCells, solidObject: solidObject,
     SPEED: SPEED, SHRINK: SHRINK, ARRIVE: ARRIVE, APPEAR_TIME: APPEAR_TIME,
     TREE_TRIES: TREE_TRIES,
-    CHOP_TIME: CHOP_TIME, CHOP_HIT: CHOP_HIT, STAND_OFF: STAND_OFF,
+    CHOP_TIME: CHOP_TIME, CHOP_HIT: CHOP_HIT, CHOP_HIT_EVERY: CHOP_HIT_EVERY, CHOP_HITS: CHOP_HITS, DROP_TIME: dropDuration, STAND_OFF: STAND_OFF,
     STAND_MAX: STAND_MAX,
     LOGS_PER_TRIP: LOGS_PER_TRIP, TAKE_TIME: TAKE_TIME,
     ANIM_FALLBACK: ANIM_FALLBACK,

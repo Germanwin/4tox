@@ -848,23 +848,25 @@
     if (!spec) { onError(new Error('неизвестный тип постройки: ' + id)); return; }
     opts = opts || {};
     var base = opts.base || 'assets/';
-    var meta = global[spec.meta];
-    if (meta) { loadImage(id, spec, meta, base, onReady, onError); return; }
+    var dir = opts.dir || spec.dir;
+    var metaName = opts.metaName || spec.meta;
+    var meta = global[metaName];
+    if (meta) { loadImage(id, spec, meta, base, dir, onReady, onError); return; }
     if (typeof fetch !== 'function') {
       onError(new Error('нет ни atlas.js ' + spec.name + ', ни fetch'));
       return;
     }
-    fetch(joinPath(base, spec.dir + 'atlas.json')).then(function (r) {
-      if (!r.ok) throw new Error(spec.dir + 'atlas.json: HTTP ' + r.status);
+    fetch(joinPath(base, dir + 'atlas.json')).then(function (r) {
+      if (!r.ok) throw new Error(dir + 'atlas.json: HTTP ' + r.status);
       return r.json();
     }).then(function (json) {
-      global[spec.meta] = json;
-      loadImage(id, spec, json, base, onReady, onError);
+      global[metaName] = json;
+      loadImage(id, spec, json, base, dir, onReady, onError);
     }).catch(onError);
   }
 
-  function loadImage(id, spec, meta, base, onReady, onError) {
-    var src = joinPath(base, spec.dir + meta.atlas);
+  function loadImage(id, spec, meta, base, dir, onReady, onError) {
+    var src = joinPath(base, dir + meta.atlas);
     var img = new Image();
     img.onerror = function () { onError(new Error('не загрузился атлас: ' + src)); };
     img.onload = function () { onReady(build(id, img, meta)); };
@@ -1462,6 +1464,7 @@
        мире: список мог прийти с повтором (двор и пятно делят клетку) или
        со ссылкой на уже убранное. Иначе removedIds рос бы повторами, а
        снимок — нет, и после F5 объектов оставалось бы больше, чем было. */
+    if (gone.length) world.objectRev = (world.objectRev || 0) + 1;
     if (world.removedIds) {
       for (i = 0; i < gone.length; i++) {
         if (gone[i] && gone[i].id !== undefined) world.removedIds.push(gone[i].id);
@@ -1727,6 +1730,11 @@
   function touch(world) {
     if (!world) return 0;
     world._buildRev = (world._buildRev || 0) + 1;
+    /* Версия проходимости для порционного A*: постановка, перенос, поворот и
+       снос меняют клетки, по которым ходят. Job, начатый по старой версии,
+       отменяется и пересчитывается на новой геометрии — иначе человек пойдёт
+       сквозь только что поставленный дом. */
+    world.navVersion = (world.navVersion || 0) + 1;
     return world._buildRev;
   }
 

@@ -94,6 +94,13 @@
 
   function add(kind, o) {
     o = o || {};
+    /* Потолок 60 — это запрет НОВОГО действия, а не вытеснение старого.
+       trim(), который сдвигал list[0], мог выбросить ещё не согласованную
+       операцию и молча освободить её резерв. */
+    if (list.length >= LIMIT) {
+      trace({ kind: 'pending-limit', action: kind, commandId: o.commandId });
+      return null;
+    }
     var act = {
       id: ++seq, kind: kind, commandId: o.commandId, n: o.n,
       owner: o.owner === undefined ? owner : o.owner,
@@ -123,7 +130,6 @@
       if (one) act.made.push(one);
     }
     list.push(act);
-    trim();
     trace({ kind: 'add', commandId: act.commandId, action: kind,
       ids: act.made.map(function (b) { return b.id; }), cost: act.cost });
     return act;
@@ -137,6 +143,11 @@
   function buildings() {
     var out = [];
     for (var i = 0; i < list.length; i++) {
+      /* Визуально согласованное уже нарисовано авторитетным объектом: второй
+         (призрачный) дом в той же клетке не рисуем. Резерв при этом ещё
+         держится до точного результата — resourceSettled и visualSettled
+         разные вещи. */
+      if (list[i].visualSettled) continue;
       for (var j = 0; j < list[i].made.length; j++) out.push(list[i].made[j]);
     }
     return out;
@@ -200,7 +211,8 @@
     if (state === 'applied') {
       act.status = 'applied';
       act.ids = (res.ids || res.buildingIds || []).slice();
-      act.appliedSeq = res.appliedSeq || res.seq || 0;
+      act.appliedSeq = res.appliedRevision || res.appliedSeq || res.seq || 0;
+      act.reasonCode = res.reasonCode || null;
       trace({ kind: 'applied', commandId: commandId, ids: act.ids,
         appliedSeq: act.appliedSeq });
       if (!act.ids.length && (act.kind === 'order' || act.kind === 'hire' ||
@@ -242,20 +254,10 @@
       if (!act) continue;
       if (!snapSeq || snapSeq <= act.sentSeq) continue;   // старый снимок
       /* Поиск, найм, обучение и приказ не имеют объекта, который надо ждать
-         в снимке: их подтверждение — сам результат. Но если результата нет
-         (таймаут), ожидание не должно запирать панель навсегда: два снимка
-         спустя мир уже показал, что случилось, а значка ожидания достаточно. */
-      if (act.kind !== 'build' && act.kind !== 'line') {
-        if (snapSeq > act.sentSeq + 2) { drop(act, 'mark-settled', ''); done++; }
-        continue;
-      }
-      /* Долгий unknown: результат так и не пришёл, а мир давно ушёл вперёд.
-         Снимаем изображение (не команду!) и оставляем след — вечно висящий
-         призрак хуже честного «не знаем». */
-      if (act.status === 'unknown' && nowMs() - act.at > 30000) {
-        drop(act, 'unknown-timeout', act.reason); done++;
-        continue;
-      }
+         в снимке: их подтверждение — ТОЧНЫЙ результат, а не число снимков.
+         Никакого «два снимка спустя» здесь больше нет: потерянный результат
+         остаётся unknown и уточняется через command-state. */
+      if (act.kind !== 'build' && act.kind !== 'line') continue;
 
       /* 1. Результат уже назвал id — сверяем по id. Это главный путь. */
       if (act.ids && act.ids.length) {
@@ -272,8 +274,9 @@
       }
 
       /* 2. Снимок пришёл раньше результата. Ищем РОВНО те постройки, которых
-         не было в прошлом снимке, и только при точном совпадении всех полей.
-         Несколько кандидатов — не угадываем, ждём результат. */
+         не было в прошлом снимке. Это только ВИЗУАЛЬНОЕ согласование: резерв
+         не снимаем и ожидание не закрываем, пока не пришёл точный результат.
+         Иначе поздний rejected не отменил бы уже «согласованное» действие. */
       var cand = [];
       for (j = 0; j < blds.length; j++) {
         b = blds[j];
@@ -283,14 +286,12 @@
           if (sameSpec(b, act.items[k])) { cand.push(b); break; }
         }
       }
-      /* audit: true — кандидаты годятся (уникальны и не заняты другим
-         ожиданием); false — угадывать нельзя, ждём результат. */
       if (!audit(act, cand, blds)) continue;
       if (cand.length === act.items.length) {
-        finish(act, 'spec-visible', snapSeq,
-          cand.map(function (x) { return x.id; }));
-        done++;
-        continue;
+        act.visualSettled = true;
+        act.visualIds = cand.map(function (x) { return x.id; });
+        trace({ kind: 'visual-settled', commandId: act.commandId,
+          ids: act.visualIds, snapSeq: snapSeq });
       }
       /* Часть серии уже видна, а результата нет — ждём: серия атомарна. */
     }

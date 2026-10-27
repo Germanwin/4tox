@@ -32,10 +32,11 @@
     stony: ASSETS + 'textures/stony.png'
   };
 
-  var STEPS = 11;             // текстур сколько угодно, а шагов загрузки одиннадцать:
-                              // текстуры, четыре одиночных атласа (лес, волны,
+  var STEPS = 10;             // текстур сколько угодно, а шагов загрузки десять:
+                              // четыре одиночных атласа (лес, волны,
                               // житель, воин) и пять атласов построек
-                              // (ратуша, дом, лагерь, казарма, военный лагерь)
+                              // (ратуша, дом, лагерь, казарма, военный лагерь),
+                              // плюс текстуры/земля. Завалы — лениво, не шаг.
   var stepsDone = 0;
 
   var last = 0;
@@ -207,12 +208,21 @@
     // Четыре одиночных атласа (лес, волны, житель, рыцарь) плюс по одному на
     // каждый тип постройки. Считать это числом нельзя: разошлось — и партия
     // не начнётся.
+    var mobile = !!(global.Quality && global.Quality.useMobile());
+    function pick(mobileName, deskName) {
+      /* Нет мобильного метаданных — явный fallback desktop, а не пропавшие
+         персонажи. Диагностика в консоль, без всплывашки. */
+      if (mobile && global[mobileName]) return { name: mobileName, mobile: true };
+      if (mobile) console.warn('quality: нет ' + mobileName + ', беру ' + deskName);
+      return { name: deskName, mobile: false };
+    }
     var left = 5 + Object.keys(BUILDING_STEPS).length;
     function one() { if (--left === 0) done(); }
     function guard(run) { try { run(); } catch (e) { one(); } }
 
     guard(function () {
-      global.Sprites.load({ base: ASSETS }, function (set) {
+      var sp = pick('MOBILE_SPRITE_ATLAS', 'SPRITE_ATLAS');
+      global.Sprites.load({ base: ASSETS, metaName: sp.name }, function (set) {
         Play.setSprites(set);
         progress('сажаем лес…');
         one();
@@ -220,7 +230,11 @@
     });
 
     guard(function () {
-      global.Waves.load({ base: ASSETS }, function (set) {
+      var wv = pick('MOBILE_WAVE_ATLAS', 'WAVE_ATLAS');
+      global.Waves.load({
+        base: ASSETS, metaName: wv.name,
+        dir: wv.mobile ? 'waves/mobile/' : 'waves/'
+      }, function (set) {
         Play.renderer().waveSprites = set;
         progress('поднимаем волны…');
         one();
@@ -228,7 +242,11 @@
     });
 
     guard(function () {
-      global.Villagers.load({ base: ASSETS }, function (set) {
+      var vi = pick('MOBILE_VILLAGER_ATLAS', 'VILLAGER_ATLAS');
+      global.Villagers.load({
+        base: ASSETS, metaName: vi.name,
+        dir: vi.mobile ? 'villager/mobile/' : 'villager/'
+      }, function (set) {
         Play.renderer().villagerSprites = set;
         progress('зовём жителя…');
         one();
@@ -239,8 +257,11 @@
        мечом. Он не обязателен: без него воин рисуется обычным жителем, и
        партия не падает. */
     guard(function () {
+      var ar = pick('MOBILE_ARMORED_VILLAGER_ATLAS', 'ARMORED_VILLAGER_ATLAS');
       global.Villagers.load({
-        base: ASSETS, dir: 'armored_villager/', metaName: 'ARMORED_VILLAGER_ATLAS'
+        base: ASSETS,
+        dir: ar.mobile ? 'armored_villager/mobile/' : 'armored_villager/',
+        metaName: ar.name
       }, function (set) {
         Play.renderer().knightSprites = set;
         progress('вооружаем рыцарей…');
@@ -251,7 +272,13 @@
     // Постройки деревни: ратуша, дом жителя, лагерь лесоруба.
     Object.keys(BUILDING_STEPS).forEach(function (type) {
       guard(function () {
-        global.Buildings.load(type, { base: ASSETS }, function (set) {
+        var spec = global.Buildings.TYPES && global.Buildings.TYPES[type];
+        var bm = spec ? pick('MOBILE_' + spec.meta, spec.meta) : { name: null, mobile: false };
+        global.Buildings.load(type, {
+          base: ASSETS,
+          dir: bm.mobile ? spec.dir + 'mobile/' : (spec ? spec.dir : undefined),
+          metaName: bm.name || undefined
+        }, function (set) {
           Play.renderer().setBuildingSet(type, set);
           progress(BUILDING_STEPS[type]);
           one();
@@ -259,19 +286,10 @@
       });
     });
 
-    /* Завалы: один атлас на все типы. Без него бой работает, но разрушенное
-       здание рисуется целым — поэтому атлас необязателен, как и остальные. */
-    guard(function () {
-      if (!global.RUINS_ATLAS) { one(); return; }
-      var img = new Image();
-      img.onload = function () {
-        Play.renderer().setRuins(img, global.RUINS_ATLAS);
-        progress('разбираем завалы…');
-        one();
-      };
-      img.onerror = function () { one(); };
-      img.src = ASSETS + 'ruins/atlas.png';
-    });
+    /* Завалы: один большой атлас на все типы. Он не нужен до первого
+       разрушенного здания, поэтому загружается лениво (Play.maybeLoadRuins)
+       при фактическом появлении rubble — а не в каждой комнате. */
+    guard(function () { one(); });
   }
 
   function start() {
@@ -517,20 +535,23 @@
      секунд МИРА прогнано этим вызовом. Минимум один шаг делается всегда —
      даже если он один тяжелее бюджета: иначе долг не кончится никогда. */
   function drain(budgetMs) {
-    if (!(simDebt > 1e-9)) return 0;
+    if (!(simDebt + 1e-9 >= SIM_STEP)) return 0;
     var M = global.Metrics;
     var measure = !!(M && M.on);
     var started = wallNow();
     var simulated = 0;
+    /* Только ЦЕЛЫЕ шаги ровно SIM_STEP. Остаток меньше шага не исполняется и
+       ждёт следующего вызова. Прежде здесь стоял min(simDebt, SIM_STEP):
+       видимый браузер отдавал ~16,7 мс, мир получал 16,7 мс, а не 50, — то
+       есть «фиксированный шаг» был переменным, и экономика зависела от FPS.
+       Минимум один шаг делается всегда: иначе долг не кончится. */
     do {
-      var step = simDebt > SIM_STEP ? SIM_STEP : simDebt;
-      if (!(step > 1e-9)) break;
       var t0 = measure ? wallNow() : 0;
-      Play.tick(step);
+      Play.tick(SIM_STEP);
       if (measure) M.step(wallNow() - t0);
-      simDebt -= step;
-      simulated += step;
-      if (!(simDebt > 1e-9)) break;
+      simDebt -= SIM_STEP;
+      simulated += SIM_STEP;
+      if (!(simDebt + 1e-9 >= SIM_STEP)) break;
     } while (wallNow() - started < budgetMs);
     if (simulated > 0 && measure && M.counters) M.counters.caughtUp += simulated;
     return simulated;
@@ -717,7 +738,7 @@
   function frame(t) {
     var M = global.Metrics;
     var frameStart = (M && M.frame) ? wallNow() : 0;
-    var dt = Math.min(0.05, (t - last) / 1000) || 0;
+    var dt = Math.max(0, Math.min(0.05, (t - last) / 1000)) || 0;
     last = t;
     lastFrameAt = simNow();
     var P = global.Play;

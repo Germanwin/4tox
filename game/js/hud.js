@@ -306,9 +306,9 @@
       btn.addEventListener('click', function () { editAct(pair[1]); });
     });
 
-    /* Пакетные действия найма: те же canHire/hire/fire, только в цикле. HUD
-       не решает, кого брать и сколько: ответ целиком у движка (Session.hireAll,
-       Session.fireAll), здесь только кнопка и всплывашка. */
+    /* Пакетные действия найма: тот же Play.localCommand в цикле. HUD не
+       решает, кого брать и сколько: owner/state/места проверяет обработчик,
+       здесь только кнопка и всплывашка. */
     if (el.hireAll) {
       el.hireAll.addEventListener('click', function () { hireBatch('hire'); });
     }
@@ -873,10 +873,10 @@
     el.netBadge.classList.toggle('bad', bad);
     if (bad) {
       el.netBadge.textContent = 'нет связи';
-      el.netBadge.title = 'Связь с хостом потеряна — ждём';
-    } else if (P.netRole === 'host') {
-      el.netBadge.textContent = 'хост';
-      el.netBadge.title = 'Мир считается в этой вкладке';
+      el.netBadge.title = 'Обновления с сервера не приходят — ждём';
+    } else if (P.netIsHost) {
+      el.netBadge.textContent = 'организатор';
+      el.netBadge.title = 'Мир считает сервер; вы — организатор лобби';
     } else {
       el.netBadge.textContent = ms ? (ms + ' мс') : 'сеть';
       el.netBadge.title = 'Круг до сервера';
@@ -1848,23 +1848,22 @@
       return;
     }
     var res;
-    if (isTrainMode(camp)) {
-      res = global.Session.train(camp, v, list, st.buildings || []);
-      if (res && res.ok) toast(who + ' пошёл тренироваться в казарму', 5000);
-      else toast((res && res.reason) || 'Не вышло');
-      if (res && res.ok) refreshHireViews();
+    var works = isWorker(camp, list, v);
+    var localType = isTrainMode(camp) ? 'train' : (works ? 'fire' : 'hire');
+    if (global.Play && global.Play.localCommand) {
+      res = global.Play.localCommand({ type: localType, campId: camp.id,
+        villagerId: v.id, owner: st.playerOwner, from: st.playerOwner });
+      if (res.ok) {
+        toast(localType === 'train' ? who + ' пошёл тренироваться в казарму'
+          : (localType === 'fire' ? who + ' больше не работает в лагере'
+            : who + ' нанят в лагерь лесоруба'), localType === 'train' ? 5000 : undefined);
+        refreshHireViews();
+      } else {
+        toast(res.reason || 'Не вышло');
+      }
       return;
     }
-    var api = hireApi();
-    if (!api) return;
-    var works = isWorker(camp, list, v);
-    res = works ? api.S.fire(camp, v) : api.S.hire(camp, v, list);
-    if (res && res.ok) {
-      toast(who + (works ? ' больше не работает в лагере' : ' нанят в лагерь лесоруба'));
-      refreshHireViews();
-    } else {
-      toast((res && res.reason) || 'Не вышло');
-    }
+    toast('команды недоступны: Play.localCommand не загружен');
   }
 
   /* Пакетное действие: у лагеря — наём/роспуск, у казармы — «Тренировать
@@ -1930,26 +1929,50 @@
       toast((kind === 'hire' ? 'Отправлено: ' : 'Распущено: ') + sent);
       return;
     }
-    if (isTrainMode(camp)) {
-      if (kind !== 'hire') return;
-      var tr = global.Session.trainAll(camp, list, campaignBuildings());
-      if (tr && tr.ok) {
-        toast('Отправлено на тренировку: ' + tr.trained);
+    /* Локальный пакет — тот же одиночный обработчик в цикле. Своих правил
+       «сколько и кого» у HUD нет: свободные места и занятость считает движок,
+       а команды проверяют owner/state ещё раз. */
+    if (global.Play && global.Play.localCommand) {
+      var me2 = camp.owner === undefined ? 0 : camp.owner;
+      var sent2 = 0, lastReason = '';
+      var S3 = global.Session, B3 = global.Buildings;
+      if (isTrainMode(camp)) {
+        if (kind !== 'hire') return;
+        var freeTrain3 = B3.trainingSlots(camp) - S3.traineesOf(camp, list).length;
+        list.forEach(function (v) {
+          if (freeTrain3 <= 0 || (v.owner === undefined ? 0 : v.owner) !== me2) return;
+          if (!isFreeCivilian(v, me2)) return;
+          var rr = global.Play.localCommand({ type: 'train', campId: camp.id,
+            villagerId: v.id, owner: me2, from: me2 });
+          if (rr.ok) { sent2++; freeTrain3--; } else lastReason = rr.reason || lastReason;
+        });
+        if (sent2) toast('Отправлено на тренировку: ' + sent2);
+        else toast(lastReason || 'Не вышло');
         refreshHireViews();
-      } else {
-        toast((tr && tr.reason) || 'Не вышло');
+        return;
       }
+      var freeWork3 = B3.workSlots(camp);
+      list.forEach(function (v) {
+        if ((v.owner === undefined ? 0 : v.owner) !== me2) return;
+        var working = isWorker(camp, list, v);
+        if (kind === 'hire') {
+          if (!working && freeWork3 > 0 && isFreeCivilian(v, me2)) {
+            var rh = global.Play.localCommand({ type: 'hire', campId: camp.id,
+              villagerId: v.id, owner: me2, from: me2 });
+            if (rh.ok) { sent2++; freeWork3--; } else lastReason = rh.reason || lastReason;
+          }
+        } else if (kind === 'fire' && working) {
+          var rf = global.Play.localCommand({ type: 'fire', campId: camp.id,
+            villagerId: v.id, owner: me2, from: me2 });
+          if (rf.ok) sent2++; else lastReason = rf.reason || lastReason;
+        }
+      });
+      if (sent2) toast(kind === 'hire' ? 'Нанято ' + sent2 : 'Распущено ' + sent2);
+      else toast(lastReason || 'Не вышло');
+      refreshHireViews();
       return;
     }
-    var api = hireApi();
-    if (!api) return;
-    var res = kind === 'hire' ? api.S.hireAll(camp, list) : api.S.fireAll(camp, list);
-    if (res && res.ok) {
-      toast(kind === 'hire' ? 'Нанято ' + res.hired : 'Распущено ' + res.fired);
-      refreshHireViews();
-    } else {
-      toast((res && res.reason) || 'Не вышло');
-    }
+    toast('команды недоступны: Play.localCommand не загружен');
   }
 
   /* После найма/увольнения/тренировки список собирается сразу, а не ждёт
@@ -2490,7 +2513,11 @@
     var P = global.Play;
     var r = P && P.renderer ? P.renderer() : null;
     economy = !economy;
-    var cap = economy ? 1.5 : (touchUI() ? 2 : 3);
+    /* Один выбор качества: low даёт DPR 1 и мобильные атласы, auto —
+       coarse 1.5 / desktop 2. Ручной high больше 2 не поднимает. */
+    var Q = global.Quality;
+    if (Q && Q.set) Q.set(economy ? 'low' : 'auto');
+    var cap = Q && Q.dprCap ? Q.dprCap() : (economy ? 1 : (touchUI() ? 1.5 : 2));
     if (r && r.setQuality) r.setQuality(economy ? 0.6 : 1, cap);
     if (P && P.setFpsCap) P.setFpsCap(economy ? 30 : 0);
     if (el.btnEconomy) {

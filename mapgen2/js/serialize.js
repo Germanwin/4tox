@@ -626,7 +626,12 @@
       /* Миникарту пересобираем только когда изменился СОСТАВ или место
          построек, либо лес. На обычном снимке (жители идут, HP меняется) она
          не трогается — иначе 12 раз в секунду пересобирался бы холст. */
-      if (renderer.setBuildings) renderer.setBuildings(list, { minimap: structural || removedChanged });
+      /* F13: числа (hp/logs/позиция жителя) не меняют порядок отрисовки.
+         setBuildings инвалидирует его, поэтому зовём только при структурном
+         изменении — иначе 10 снимков/с пересортировывают неизменный список. */
+      if (renderer.setBuildings && (structural || removedChanged)) {
+        renderer.setBuildings(list, { minimap: structural || removedChanged });
+      }
       if (renderer.setVillagers) renderer.setVillagers(vlist);
       /* Выбор и правку не сбрасываем: объекты те же. Убираем только то, чего
          в новом снимке больше нет. */

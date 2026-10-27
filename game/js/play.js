@@ -117,6 +117,11 @@
 
   var view = $('view');
   var renderer = null;
+  /* Сетевое представление комнаты: независимые снимки, часы сервера и
+     последний принятый снимок. Авторитетный мир here не считается. */
+  var netBuffer = null;
+  var netClock = null;
+  var netLatest = null;
 
   /* Состояние партии — одно место, где видно, что сейчас происходит. Оболочка
      (js/boot.js, js/hud.js) читает его, а не свои копии: копия «идёт ли игра»
@@ -396,6 +401,14 @@
     state.netBusy = false;
     state.netForce = false;
     state.netSeq = 0;
+    state.netProtocol = 0;
+    state.netRoomId = null;
+    state.netEpoch = 0;
+    state.netLatest = null;
+    state.netFault = null;
+    netBuffer = null;
+    netClock = null;
+    netLatest = null;
     resetPending();
     state.netAcc = 0;
     state.netEvery = NET_INTERVAL;
@@ -673,7 +686,323 @@
     }
   }
 
+  /* --------------------- серверная комната: клиент --------------------- *
+   *
+   * В новом MP создатель лобби — такой же клиент. Его браузер не считает
+   * мир, не принимает команды гостей и не публикует снимки. Он получает
+   * baseline и поток независимых снимков, рисует их по серверному времени и
+   * отправляет команды в ту же очередь, что и все.
+   * -------------------------------------------------------------------- */
+  function myOwnerFrom(payload) {
+    var myId = global.Net ? global.Net.playerId() : null;
+    for (var i = 0; i < (payload.players || []).length; i++) {
+      var pl = payload.players[i];
+      if (pl && pl.id === myId) return pl.owner === undefined ? i : pl.owner;
+    }
+    return 0;
+  }
+
+  function applyServerBaseline(snap) {
+    if (!snap || !state.world) return null;
+    var res = global.Serialize.apply(state.world, snap, renderer, {
+      owner: state.playerOwner, smooth: false
+    });
+    state.buildings = res.buildings;
+    state.villagers = res.villagers;
+    netLatest = snap;
+    state.netLatest = snap;
+    state.netSeq = snap.revision === undefined ? (snap.seq || 0) : snap.revision;
+    state.netEpoch = snap.epoch === undefined ? state.netEpoch : snap.epoch;
+    state.seconds = (snap.simulationTimeMs || 0) / 1000;
+    state.world.time = state.seconds;
+    var own = state.world.towns && state.world.towns[state.playerOwner];
+    state.logs = own ? (own.logs || 0) : 0;
+    state.deliveries = own ? (own.deliveries || 0) : 0;
+    state.felled = own ? (own.felled || 0) : 0;
+    state.over = !!snap.over;
+    state.winner = snap.winner === undefined ? null : snap.winner;
+    state.spectator = !!(own && own.alive === false);
+    state.netCentered = false;
+    return own && own.townhall ? own.townhall : null;
+  }
+
+  function onRoomFault(ev) {
+    state.netFault = ev && ev.fault ? ev.fault : { phase: 'room', message: 'комната остановлена' };
+    state.netStale = true;
+    emit({ type: 'net-note', text: 'комната остановлена: ' +
+      (state.netFault.message || 'ошибка') });
+  }
+
+  function startServerNet(payload, isHost) {
+    stopNet(false);
+    villageCleanup();
+    var w = WG.generate({ seed: payload.seed, size: payload.size });
+    renderer.world = w;
+    renderer.buildCache();
+    state.world = w;
+    state.buildings = [];
+    state.villagers = [];
+    state.netRole = 'client';
+    state.netIsHost = !!isHost;
+    state.netProtocol = payload.protocol || 4;
+    state.netRoomId = payload.roomId || null;
+    state.netEpoch = payload.epoch || 0;
+    state.netPlayers = payload.players || [];
+    state.playerOwner = myOwnerFrom(payload);
+    state.gameMode = 'mp';
+    state.netOff = [];
+    state.netCmdLast = {};
+    state.netCmdDone = [];
+    state.netRejects = [];
+    state.netSilence = 0;
+    state.netStale = false;
+    state.netHostGone = false;
+    state.netFault = null;
+    state.netPing = 0;
+    state.netPingAt = nowMs();
+    state.netPingBusy = false;
+    state.netCentered = false;
+    state.nextBuildId = 1000;
+    resetPending();
+    resetEvents(w);
+    state.birth = null;
+    state.seconds = 0;
+    state.simDropped = 0;
+
+    netBuffer = global.SnapshotBuffer ? global.SnapshotBuffer.create({
+      protocol: state.netProtocol,
+      roomId: state.netRoomId,
+      epoch: state.netEpoch,
+      max: 32,
+      interpolationDelayMs: 150,
+      maxExtrapolationMs: 100,
+      staleAfterMs: 500
+    }) : null;
+    netClock = global.ServerClock ? global.ServerClock.create({ now: nowMs }) : null;
+    if (netClock) netClock.reset(state.netEpoch);
+
+    var baseline = payload.baseline || payload.snapshot || null;
+    var home = null;
+    if (baseline) {
+      if (netBuffer) netBuffer.push(baseline);
+      home = applyServerBaseline(baseline);
+    } else {
+      w.towns = (payload.players || []).map(function (p, i) {
+        return { id: i, owner: p.owner, name: p.name, color: p.color,
+          alive: true, isBot: false, logs: 0, deliveries: 0, felled: 0,
+          buildings: [], villagers: [], townhall: null };
+      });
+      w.village = w.towns[state.playerOwner] || w.towns[0];
+      renderer.setBuildings([]);
+      renderer.setVillagers([]);
+    }
+
+    if (global.Net && global.Net.on) {
+      state.netOff.push(global.Net.on('snapshot', applyServerSnapshot));
+      state.netOff.push(global.Net.on('room-fault', onRoomFault));
+      state.netOff.push(global.Net.on('net-error', function () {
+        emit({ type: 'net-trouble' });
+      }));
+      state.netOff.push(global.Net.on('command-result', function (res) {
+        if (!res) return;
+        if (global.Pending && res.commandId !== undefined) {
+          global.Pending.result(res.commandId, {
+            state: res.state, reason: res.reason, ids: res.ids,
+            appliedRevision: res.appliedRevision, reasonCode: res.reasonCode
+          });
+          syncPending();
+        }
+        if (res.state === 'rejected' || res.state === 'expired' ||
+            res.state === 'history_expired') {
+          var text = 'приказ не выполнен: ' + (res.reason || res.state);
+          if (global.Events && state.world) {
+            global.Events.refuse(state.world, state.playerOwner,
+              'command-rejected', text, null, null);
+          }
+          emit({ type: 'command-result', state: res.state, text: text,
+            n: res.n, commandId: res.commandId });
+        }
+      }));
+      state.netOff.push(global.Net.on('peer-left', function (ev) {
+        emit({ type: 'net-peer-left', id: ev && ev.id,
+          name: ev && ev.name, owner: ev && ev.owner, host: !!(ev && ev.host) });
+      }));
+      state.netOff.push(global.Net.on('peer-back', function (ev) {
+        emit({ type: 'net-peer-back', id: ev && ev.id,
+          name: ev && ev.name, owner: ev && ev.owner });
+      }));
+    }
+    state.running = !state.over;
+    state.mode = 'play';
+    logsSeen = state.logs;
+    felledSeen = state.felled;
+    warriorSeen = {};
+    if (!home && w.towns && w.towns[state.playerOwner]) {
+      home = w.towns[state.playerOwner].townhall || null;
+    }
+    if (home) {
+      renderer.cam.zoom = Math.min(renderer.maxZoom,
+        Math.max(renderer.minZoom * 2.5, 42));
+      renderer.cam.x = home.x + 1.5;
+      renderer.cam.y = home.y + 1.5;
+      renderer.clampCamera();
+    } else if (renderer.fitIsland) renderer.fitIsland();
+    state.netCentered = !!home;
+    startArrival(home);
+    emit({ type: 'start', world: w, home: home, net: true });
+    if (state.spectator && global.Hud && global.Hud.setSpectator) {
+      global.Hud.setSpectator(true);
+    }
+    if (state.over) {
+      emit({ type: 'defeat', result: state.result, winner: state.winner, over: true });
+    }
+    return null;
+  }
+
+  function applyServerSnapshot(snap) {
+    if (!snap || state.netRole !== 'client' || !state.world || !netBuffer) return;
+    if (state.netProtocol && snap.protocol !== undefined &&
+        snap.protocol !== state.netProtocol) return;
+    var acc = netBuffer.push(snap);
+    if (!acc.accepted && !acc.reset) return;
+    if (acc.reset) {
+      state.netEpoch = acc.epoch;
+      state.netSeq = 0;
+      if (netClock) netClock.reset(acc.epoch);
+    }
+    netLatest = snap;
+    state.netLatest = snap;
+    state.netSeq = snap.revision === undefined ? (snap.seq || 0) : snap.revision;
+    state.netEpoch = snap.epoch === undefined ? state.netEpoch : snap.epoch;
+    state.lastSnapAt = nowMs();
+    state.netSilence = 0;
+    state.netStale = false;
+    state.netFault = null;
+
+    var hold = state.edit && state.edit.building ? state.edit.building : null;
+    var wasSelected = renderer.selected;
+    var wasOver = state.over;
+    var res = global.Serialize.apply(state.world, snap, renderer, {
+      owner: state.playerOwner, smooth: false, hold: hold
+    });
+    state.buildings = res.buildings;
+    state.villagers = res.villagers;
+    state.seconds = (snap.simulationTimeMs || 0) / 1000;
+    state.world.time = state.seconds;
+    maybeLoadRuins();
+    var town = state.world.towns && state.world.towns[state.playerOwner];
+    state.logs = town ? (town.logs || 0) : 0;
+    state.deliveries = town ? (town.deliveries || 0) : 0;
+    state.felled = town ? (town.felled || 0) : 0;
+    setSpectator(!!(town && town.alive === false));
+    state.winner = snap.winner === undefined ? null : snap.winner;
+    if (snap.over !== undefined) {
+      if (snap.over && !wasOver) finishGame(state.winner);
+      else {
+        state.over = !!snap.over;
+        if (state.over) {
+          state.result = state.winner !== null && state.winner === state.playerOwner
+            ? 'win' : 'lose';
+        }
+      }
+    }
+    /* Персональный result-блок: закрываем ожидания точным результатом, а не
+       числом снимков. */
+    var results = snap.commandResults || [];
+    for (var i = 0; i < results.length; i++) {
+      var r = results[i];
+      if (!r || r.owner !== state.playerOwner) continue;
+      if (global.Pending && r.commandId !== undefined) {
+        global.Pending.result(r.commandId, {
+          state: r.status, reason: r.reason, ids: r.ids,
+          appliedRevision: r.appliedRevision, reasonCode: r.reasonCode
+        });
+        syncPending();
+      }
+    }
+    if (global.Pending) {
+      var settled = global.Pending.reconcile({
+        seq: snap.revision === undefined ? state.netSeq : snap.revision,
+        buildings: state.buildings
+      });
+      if (settled) syncPending();
+    }
+    if (state.focus && state.villagers.indexOf(state.focus) < 0) setFocus(null);
+    if (state.edit && state.buildings.indexOf(state.edit.building) < 0) editClose();
+    if (wasSelected && renderer.selected !== wasSelected) selectBuilding(null);
+    detectOwnEvents();
+    if (!state.netCentered && town && town.townhall) {
+      var th = town.townhall;
+      renderer.cam.zoom = Math.min(renderer.maxZoom, Math.max(renderer.minZoom * 2.5, 42));
+      renderer.cam.x = th.x + 1.5;
+      renderer.cam.y = th.y + 1.5;
+      renderer.clampCamera();
+      state.netCentered = true;
+      arrival = null;
+    }
+  }
+
+  function presentNet(dt) {
+    if (!netBuffer || !netClock) return;
+    var latest = netBuffer.latest();
+    if (!latest) return;
+    var c = nowMs();
+    var rt = netClock.renderTime(latest, c, {
+      interpolationDelayMs: 150,
+      frameDeltaMs: Math.max(0, Math.min(100, (dt || 0) * 1000)),
+      maxCorrectionPerFrameMs: 5,
+      clientNow: c
+    });
+    var t = rt.renderTime;
+    state.netRenderTime = t;
+    state.netUnderflow = !!rt.underflow;
+    state.netClockError = rt.errorMs;
+    state.netStale = !!rt.stale;
+    var list = state.villagers || [];
+    for (var i = 0; i < list.length; i++) {
+      var v = list[i];
+      if (!v || v.id === undefined) continue;
+      var p = netBuffer.pose(v.id, t);
+      if (!p) continue;
+      v.x = p.x; v.y = p.y; v.rot = p.rot;
+      if (p.anim) v.anim = p.anim;
+      if (p.animInstance !== undefined) v.animInstance = p.animInstance;
+      if (p.phase !== undefined) v.phase = p.phase;
+      v.hidden = !!p.hidden;
+    }
+    if (t / 1000 > state.seconds) state.seconds = t / 1000;
+    state.netSilence += Math.max(0, dt || 0);
+    if (state.netSilence > NET_SILENCE && !state.netStale) {
+      state.netStale = true;
+      emit({ type: 'net-stale' });
+    }
+    if (!(global.document && global.document.hidden) && global.Net &&
+        !state.netPingBusy && c - state.netPingAt > 2000) {
+      state.netPingBusy = true;
+      state.netPingAt = c;
+      global.Net.ping().then(function (r) {
+        state.netPingBusy = false;
+        state.netPing = r && r.ms ? r.ms : 0;
+        if (r && netClock && isFinite(r.serverReceiveAtMs) &&
+            isFinite(r.serverSendAtMs) && isFinite(r.c0) && isFinite(r.c3)) {
+          netClock.addSample({
+            c0: r.c0, c3: r.c3,
+            s1: r.serverReceiveAtMs, s2: r.serverSendAtMs
+          });
+        }
+        emit({ type: 'net-ping', ms: state.netPing });
+      }, function () {
+        state.netPingBusy = false;
+        state.netPing = 0;
+        emit({ type: 'net-ping', ms: 0 });
+      });
+    }
+  }
+
   function startNet(payload, isHost) {
+    if (payload && payload.roomId && (payload.protocol || 0) >= 4) {
+      return startServerNet(payload, isHost);
+    }
     if (!payload || !payload.players) return null;
     var resumeSnap = payload.snapshot || null;
     stopNet(false);
@@ -1076,6 +1405,7 @@
 
   function applySnapshot(snap) {
     if (!snap || state.netRole !== 'client' || !state.world) return;
+    if (state.netProtocol >= 4) return applyServerSnapshot(snap);
     /* Чужой остров (например, после возврата в лобби) не применяем: карта по
        сиду у каждого своя, и подменять её снимком нельзя. */
     if (snap.seed !== undefined && state.world.seed !== snap.seed) return;
@@ -1636,6 +1966,17 @@
     }
   }
 
+  /* Локальный режим: тот же обработчик, что у серверной команды, но без
+     HTTP и без ожидания снимка. Возвращает `ok` для UI, сохраняя status. */
+  function localCommand(cmd) {
+    var r = applyNetCommandNow(cmd || {});
+    return {
+      ok: r && r.status === 'applied', status: r && r.status,
+      reason: (r && r.reason) || '', count: r && r.count,
+      ids: (r && r.ids) || []
+    };
+  }
+
   function applyNetCommandNow(cmd) {
     var B = global.Buildings, S = global.Session;
     /* owner — номер города в партии, from — id игрока в лобби. Это разные
@@ -1654,13 +1995,14 @@
         state.villagers, cmd.x, cmd.y);
       state.netForce = true;
       if (order && order.ok === false) { netReject(cmd, order.reason); return cmdNo(order.reason); }
-      return cmdYes();
+      return cmdYes({ count: (order && order.count) || 0,
+        skipped: (order && order.skipped) || 0 });
     }
     if (cmd.type === 'stop' && global.Army) {
       var stopIds = cmd.ids ? ownWarriorIds(cmd.ids, who) : ownWarriorIds(null, who);
       global.Army.stop(stopIds, state.villagers);
       state.netForce = true;
-      return cmdYes();
+      return cmdYes({ count: stopIds.length });
     }
     if (cmd.type === 'build') {
       var price = buildPrice(cmd.buildingType);
@@ -1969,6 +2311,12 @@
 
   function tick(dt) {
     if (!renderer || !state.world) return;
+    /* Сетевая партия (и у создателя, и у гостя): НИ ОДНОГО шага симуляции.
+       Только presentation-time, позы из буфера, камера и интерфейс. */
+    if (state.netRole === 'client' && state.netProtocol >= 4) {
+      presentNet(dt);
+      return;
+    }
     /* Сетевой клиент не считает мир: он получает снапшоты и только рисует.
        Часы ему приходят в снапшоте, поэтому state.seconds здесь не растёт.
        Движение между снимками сглаживается здесь же: иначе житель ехал бы
@@ -2072,6 +2420,10 @@
        Продолжать полутранзакцию молча нельзя (LOOP-01). */
     if (state.faulted) return;
     state.seconds += dt;
+    /* Часы мира — те же, что номер шага: Combat больше не двигает
+       world.time сам, иначе серверный тик и игровое время расходились. */
+    state.world.time = state.seconds;
+    maybeLoadRuins();
 
     /* Последний целый мир — для поддерживаемого восстановления. */
     if (!state.checkpoint ||
@@ -2090,6 +2442,7 @@
       global.Combat.tick(state.world, dt, {
         buildings: state.buildings,
         villagers: state.villagers,
+        advanceTime: false,
         onDefeat: function (owner) {
           /* Город выбывает, а не «партия кончается у всех». В 3–4 игроках
              мир должен идти дальше; итог считает Session.standing. */
@@ -2972,35 +3325,28 @@
     }
 
     if (action === 'rotate') {
-      var can = B.canEdit(b, 'rotate');
-      if (!can.ok) return { ok: false, reason: can.reason };
-      /* Поворот проверяет МЕСТО, а не только право править: прямоугольное
-         пятно при развороте на 90° может налезть на соседний дом, жителя или
-         запереть выход. Та же проверка, что у хоста и у переноса. */
-      var turned = B.checkAt(state.world, state.buildings, b, { rot: b.rot + 90 },
-        buildSiteOpts());
-      if (!turned.ok) return { ok: false, reason: turned.reason };
-      /* Поворот — через setSpot: он же нормализует угол и отметит, что пятно
-         переехало. Пятно после поворота другое (3 x 4 вместо 4 x 3), поэтому
-         порядок отрисовки сбрасывается. */
-      B.setSpot(state.world, b, { rot: b.rot + 90 });
-      renderer.setBuildings(state.buildings);
-      state.netForce = true;
+      /* Поворот — общий командный код: право, checkAt и setSpot не должны
+         расходиться у соло и сервера. */
+      var rotRes = applyNetCommandNow({
+        type: 'edit', action: 'rotate', id: b.id,
+        owner: state.playerOwner, from: state.playerOwner
+      });
+      if (rotRes.status !== 'applied') return { ok: false, reason: rotRes.reason };
       editGhost();
       emitEdit();
       return { ok: true, reason: '' };
     }
 
     if (action === 'delete') {
-      /* Сносим вместе с жителями: снесённая казарма или лагерь не должны
-         оставлять работника с employer, которого больше нет. Освобождает
-         движок (Buildings.remove → Session.fire) — общим кодом с «Уволить». */
-      var res = B.remove(state.world, state.buildings, b, { villagers: state.villagers });
-      if (!res.ok) return { ok: false, reason: res.reason };
+      /* Снос — тот же обработчик: ownership, освобождение работы/жилья и
+         renderer.setBuildings живут в одной ветке. */
+      var delRes = applyNetCommandNow({
+        type: 'edit', action: 'delete', id: b.id,
+        owner: state.playerOwner, from: state.playerOwner
+      });
+      if (delRes.status !== 'applied') return { ok: false, reason: delRes.reason };
       editClose();
-      selectBuilding(null);       // снесённой постройки больше нет в мире
-      if (renderer) renderer.setBuildings(state.buildings);
-      state.netForce = true;
+      selectBuilding(null);
       return { ok: true, reason: '' };
     }
 
@@ -3009,6 +3355,18 @@
       // делает то, что игрок и хотел, а не отказывает.
       if (e.mode === 'move') editAction('place');
       if (!e.valid) return { ok: false, reason: e.reason };
+      /* Перенос, уже показанный за курсором, фиксируется тем же командным
+         обработчиком: checkAt/setSpot/touch живут в одной ветке с сервером. */
+      if (e.orig && (b.x !== e.orig.x || b.y !== e.orig.y)) {
+        var mv = applyNetCommandNow({
+          type: 'edit', action: 'move', id: b.id, x: b.x, y: b.y,
+          owner: state.playerOwner, from: state.playerOwner
+        });
+        if (mv.status !== 'applied') {
+          B.restore(state.world, b, e.orig);
+          return { ok: false, reason: mv.reason };
+        }
+      }
       /* Постройка встала окончательно — вот теперь сминается мелочь под ней и
          вокруг (Buildings.crushDecor; двор — его же число, Buildings.YARD).
          Не раньше: ведение дома за курсором места не закрепляет, и «отменить»
@@ -3579,45 +3937,31 @@
       emitBuild();
       return { ok: true, reason: '', pending: true };
     }
-    var B = global.Buildings;
-    var made = B.make({
-      type: e.type, variant: e.variant, rot: e.rot, x: e.x, y: e.y,
-      owner: state.playerOwner, town: state.playerOwner,
-      id: 'p' + state.playerOwner + ':b' + (state.nextBuildId++)
+    /* Локальный режим не пишет мир своей копией правил: он зовёт тот же
+       `applyNetCommandNow`, что и серверная команда. Проверка цены/места,
+       settle, списание и nextBuildId — один код на соло и MP. */
+    var res = applyNetCommandNow({
+      type: 'build', buildingType: e.type, variant: e.variant, rot: e.rot,
+      x: e.x, y: e.y, owner: state.playerOwner, from: state.playerOwner
     });
-    var chk = B.canPlace(state.world, state.buildings, made, buildSiteOpts());
-    if (!chk.ok) {
+    if (res.status !== 'applied') {
       e.ok = false;
-      e.reason = chk.reason;
+      e.reason = res.reason;
       emitBuild();
-      return { ok: false, reason: chk.reason };
+      return { ok: false, reason: res.reason };
     }
-    var info = B.TYPES[e.type] || {};
+    var made = res.ids && res.ids.length ? buildingById(res.ids[0]) : null;
+    var info = (global.Buildings.TYPES[e.type]) || {};
     var name = info.name || e.type;
-    var price = e.price;
-
-    spendLogs(price);
-    /* Постройка ВСТАЛА: мелочь под ней и в клетке вокруг сминается. Деревьев и
-       камней здесь быть не может — их не пропустил canPlace. */
-    B.settle(state.world, made, { clear: false });
-    B.touch(state.world);
-    state.buildings.push(made);
-    renderer.setBuildings(state.buildings);
-    state.netForce = true;
-
-    /* Построили военный лагерь — ждущие во дворах казарм идут туда сами.
-       Это правило заказчика (2026-10-23), а не отдельная кнопка. */
-    if (e.type === 'warcamp' && global.Session.rebalanceGarrison) {
-      global.Session.rebalanceGarrison(state.world, state.buildings, state.villagers);
-    }
-
+    var town = playerTown();
+    if (town) { state.logs = town.logs || 0; logsSeen = state.logs; }
     state.build = null;
     renderer.ghost = null;
     view.classList.remove('placing');
     emitBuild();
     emit({
       type: 'built', building: made, buildingType: e.type, name: name,
-      price: price, logs: villageLogs()
+      price: e.price, logs: villageLogs()
     });
     return { ok: true, reason: '', building: made };
   }
@@ -3665,22 +4009,26 @@
       cancelOrder();
       return true;
     }
-    var res = global.Army.order(state.world, state.order.ids, state.villagers,
-      cell.x + 0.5, cell.y + 0.5);
-    if (res.ok) {
+    /* Локальный приказ — тот же командный обработчик, что у сервера:
+       фильтр своих, Army.order и formation живут в одном месте. */
+    var res = applyNetCommandNow({
+      type: 'order', ids: state.order.ids,
+      x: cell.x + 0.5, y: cell.y + 0.5,
+      owner: state.playerOwner, from: state.playerOwner
+    });
+    if (res.status === 'applied') {
       state.lastOrder = {
         x: cell.x + 0.5, y: cell.y + 0.5, r: global.Army.MIN_R,
         until: state.seconds + 4
       };
-      var note = 'Отряд: ' + res.count + ' воинов идут';
+      var note = 'Отряд: ' + (res.count || 0) + ' воинов идут';
       if (res.skipped) note += '; ' + res.skipped + ' не дойдут: другой берег';
       emit({ type: 'order-note', text: note });
-      state.netForce = true;
     } else {
       emit({ type: 'order-note', text: res.reason || 'приказ не вышел' });
     }
     cancelOrder();
-    return res.ok;
+    return res.status === 'applied';
   }
 
   function stopArmy(ids) {
@@ -3703,10 +4051,10 @@
        здесь уже была, и она расходилась с сетевой командой — у гостя «Стоп»
        не снимал бой, а воин продолжал добивать дом. Армия теперь чистит и
        цель, и режим боя, и ставит holdFire (js/army.js). */
-    list = ownWarriorIds(ids || null, me);
-    n = global.Army ? global.Army.stop(list, state.villagers) : 0;
-    if (n) state.netForce = true;
-    return n;
+    var res = applyNetCommandNow({
+      type: 'stop', ids: ids || null, owner: me, from: me
+    });
+    return res.status === 'applied' ? (res.count || 0) : 0;
   }
 
   /* Воин занят делом? У хоста это его поля приказа/боя, у сетевого клиента
@@ -4272,6 +4620,36 @@
    * Грузит их оболочка (js/boot.js): она показывает полоску загрузки. Здесь
    * только места, куда их положить, — ровно те же поля, что и у генератора. */
 
+  /* Завалы: большой атлас не грузится в каждой комнате. Первое разрушенное
+     здание будит загрузку один раз; до неё бой рисует целую постройку (так же,
+     как раньше при отсутствии атласа), механика не меняется. */
+  var ruinsLoad = 'idle';
+  function maybeLoadRuins() {
+    if (ruinsLoad !== 'idle' || !renderer) { state.ruinsLoad = ruinsLoad; return; }
+    var hasRubble = false;
+    for (var i = 0; i < (state.buildings || []).length; i++) {
+      if (state.buildings[i] && state.buildings[i].rubble) { hasRubble = true; break; }
+    }
+    if (!hasRubble) return;
+    state.ruinsLoad = ruinsLoad;
+    var Q = global.Quality;
+    var mobile = !!(Q && Q.useMobile && Q.useMobile());
+    var metaName = mobile && global.MOBILE_RUINS_ATLAS ? 'MOBILE_RUINS_ATLAS' : 'RUINS_ATLAS';
+    var meta = global[metaName];
+    if (!meta) { ruinsLoad = 'failed'; state.ruinsLoad = ruinsLoad; return; }
+    ruinsLoad = 'loading';
+    var img = new Image();
+    img.onload = function () {
+      try {
+        renderer.setRuins(img, meta);
+        ruinsLoad = 'ready';
+        state.ruinsLoad = ruinsLoad;
+      } catch (e) { ruinsLoad = 'failed'; state.ruinsLoad = ruinsLoad; }
+    };
+    img.onerror = function () { ruinsLoad = 'failed'; state.ruinsLoad = ruinsLoad; };
+    img.src = '../mapgen2/assets/ruins/' + (metaName === 'MOBILE_RUINS_ATLAS' ? 'mobile/' : '') + meta.atlas;
+  }
+
   function setTextures(tex) { renderer.textures = tex; }
 
   function setSprites(set) {
@@ -4403,6 +4781,7 @@
     renderer: function () { return renderer; },
     on: on,
     canCommand: canCommand,
+    localCommand: localCommand,
     handleTownFallen: handleTownFallen,
     finishGame: finishGame,
     /* Сколько держать ЛКМ по постройке, чтобы открыть правку. Наружу — потому

@@ -1,5 +1,16 @@
 # 4tox — правила работы агента
 
+## Мультиплеер с 2026-10-27: мир считает сервер
+
+Создатель лобби больше **не** авторитет: его браузер — обычный клиент. Мир
+живёт в `worker_threads.Worker` комнаты (`game/server/room-worker.js`),
+`game/server/room-runtime.js` ведёт очередь/commit, `game/server/persistence.js`
+— журнал/checkpoint. Команды идут через `POST /api/command`, результат — через
+`/api/command-state`; `/api/snapshot` от браузера отвечает 409. Подробности:
+[docs/MP_IMPLEMENTATION.md](docs/MP_IMPLEMENTATION.md), проверки —
+[docs/MP_VALIDATION.md](docs/MP_VALIDATION.md). Старые разделы AGENTS.md о
+хосте-авторитете (если встретятся ниже) читать как историю.
+
 ## Где что лежит
 
 Пять папок — пять назначений: `game/` игра (меню, HUD, партия), `mapgen2/`

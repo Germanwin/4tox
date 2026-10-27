@@ -1,0 +1,271 @@
+{
+ "atlas": "atlas.png",
+ "ppu": 40.0,
+ "az_deg": 45.0,
+ "el_deg": 35.264389682754654,
+ "res": [
+  256,
+  320
+ ],
+ "variants": {
+  "a": [
+   4,
+   3
+  ],
+  "b": [
+   4,
+   3
+  ],
+  "c": [
+   4,
+   3
+  ]
+ },
+ "mul": 0.7667,
+ "note": "спрайты ратуши: 1 юнит модели = 1 клетка карты, anchorX/anchorY — точка опоры (центр пятна застройки); footprint — пятно в клетках по повороту; ground — наземный контур в клетках от опоры; mul — крупность спрайта",
+ "frames": {
+  "townhall_a_0": {
+   "x": 2,
+   "y": 2,
+   "w": 216,
+   "h": 200,
+   "anchorX": 107.5,
+   "anchorY": 134.0,
+   "variant": "a",
+   "rotation": 0,
+   "footprint": [
+    4,
+    3
+   ],
+   "ground": [
+    -1.805,
+    2.245,
+    -1.321,
+    1.946
+   ]
+  },
+  "townhall_a_90": {
+   "x": 220,
+   "y": 2,
+   "w": 217,
+   "h": 200,
+   "anchorX": 108.0,
+   "anchorY": 134.5,
+   "variant": "a",
+   "rotation": 90,
+   "footprint": [
+    3,
+    4
+   ],
+   "ground": [
+    -1.429,
+    1.928,
+    -1.738,
+    2.239
+   ]
+  },
+  "townhall_a_180": {
+   "x": 439,
+   "y": 2,
+   "w": 216,
+   "h": 199,
+   "anchorX": 108.0,
+   "anchorY": 134.0,
+   "variant": "a",
+   "rotation": 180,
+   "footprint": [
+    4,
+    3
+   ],
+   "ground": [
+    -1.943,
+    2.23,
+    -1.42,
+    1.862
+   ]
+  },
+  "townhall_a_270": {
+   "x": 657,
+   "y": 2,
+   "w": 217,
+   "h": 199,
+   "anchorX": 109.0,
+   "anchorY": 134.0,
+   "variant": "a",
+   "rotation": 270,
+   "footprint": [
+    3,
+    4
+   ],
+   "ground": [
+    -1.502,
+    1.854,
+    -1.665,
+    2.257
+   ]
+  },
+  "townhall_b_0": {
+   "x": 2,
+   "y": 204,
+   "w": 217,
+   "h": 203,
+   "anchorX": 109.0,
+   "anchorY": 134.0,
+   "variant": "b",
+   "rotation": 0,
+   "footprint": [
+    4,
+    3
+   ],
+   "ground": [
+    -0.592,
+    2.245,
+    -1.321,
+    2.792
+   ]
+  },
+  "townhall_b_90": {
+   "x": 221,
+   "y": 204,
+   "w": 239,
+   "h": 200,
+   "anchorX": 118.0,
+   "anchorY": 134.5,
+   "variant": "b",
+   "rotation": 90,
+   "footprint": [
+    3,
+    4
+   ],
+   "ground": [
+    -1.429,
+    2.783,
+    -0.968,
+    2.239
+   ]
+  },
+  "townhall_b_180": {
+   "x": 462,
+   "y": 204,
+   "w": 217,
+   "h": 203,
+   "anchorX": 108.0,
+   "anchorY": 134.0,
+   "variant": "b",
+   "rotation": 180,
+   "footprint": [
+    4,
+    3
+   ],
+   "ground": [
+    -1.943,
+    2.423,
+    -1.42,
+    1.862
+   ]
+  },
+  "townhall_b_270": {
+   "x": 681,
+   "y": 204,
+   "w": 239,
+   "h": 199,
+   "anchorX": 121.0,
+   "anchorY": 134.0,
+   "variant": "b",
+   "rotation": 270,
+   "footprint": [
+    3,
+    4
+   ],
+   "ground": [
+    -1.502,
+    1.854,
+    -1.632,
+    2.257
+   ]
+  },
+  "townhall_c_0": {
+   "x": 2,
+   "y": 409,
+   "w": 216,
+   "h": 200,
+   "anchorX": 107.5,
+   "anchorY": 134.0,
+   "variant": "c",
+   "rotation": 0,
+   "footprint": [
+    4,
+    3
+   ],
+   "ground": [
+    -1.805,
+    2.245,
+    -1.321,
+    1.946
+   ]
+  },
+  "townhall_c_90": {
+   "x": 220,
+   "y": 409,
+   "w": 217,
+   "h": 200,
+   "anchorX": 108.0,
+   "anchorY": 134.5,
+   "variant": "c",
+   "rotation": 90,
+   "footprint": [
+    3,
+    4
+   ],
+   "ground": [
+    -1.429,
+    1.928,
+    -1.738,
+    2.239
+   ]
+  },
+  "townhall_c_180": {
+   "x": 439,
+   "y": 409,
+   "w": 216,
+   "h": 199,
+   "anchorX": 108.0,
+   "anchorY": 134.0,
+   "variant": "c",
+   "rotation": 180,
+   "footprint": [
+    4,
+    3
+   ],
+   "ground": [
+    -1.943,
+    2.23,
+    -1.42,
+    1.862
+   ]
+  },
+  "townhall_c_270": {
+   "x": 657,
+   "y": 409,
+   "w": 217,
+   "h": 199,
+   "anchorX": 109.0,
+   "anchorY": 134.0,
+   "variant": "c",
+   "rotation": 270,
+   "footprint": [
+    3,
+    4
+   ],
+   "ground": [
+    -1.502,
+    1.854,
+    -1.665,
+    2.257
+   ]
+  }
+ },
+ "mobile": true,
+ "mobileScale": 0.5,
+ "sourcePpu": 80.0
+}

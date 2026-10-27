@@ -504,3 +504,47 @@ grep -rl "REPO *=" --include=*.py . | grep -v __pycache__ | wc -l
    решить, чем она отличается от пяти.
 7. Правка в `mapgen2/js/` — это правка **движка**: обе оболочки на нём стоят.
    После неё гоняются и `node mapgen2/tools/game.js`, и `node game/tools/menu.js`.
+
+---
+
+## 9. Серверная комната и чистый движок (2026-10-27)
+
+После миграции мультиплеера авторитетный мир живёт не во вкладке создателя,
+а в `worker_threads.Worker` на каждую активную комнату. Главный поток
+`server.js` обслуживает HTTP, лобби, токены и SSE; физику он не считает.
+Старый host-relay (`/api/snapshot` от браузера, команды в ответе снимка)
+удалён из рабочего пути; `/api/snapshot` отвечает `409 server_authoritative`.
+
+Новые файлы и их назначение:
+
+```
+game/shared/net-config.js          числа протокола, общие для браузера и Node
+game/js/server-clock.js            offset/RTT, renderTime по серверным часам
+game/js/quality.js                 auto/low/high DPR + выбор mobile-атласов
+game/js/atlas-tags.js              ровно один tier atlas.js
+mapgen2/tools/build-mobile-atlases.py  half-resolution PNG/metadata, --check
+game/js/snapshot-buffer.js         не более 32 снимков, поза по ломаной
+game/server/persistence.js         журнал (длина+payload+sha256), checkpoint, rotate
+game/server/room-runtime.js        комната: очередь, тик, commit, snapshot, recover
+game/server/room-worker.js         worker комнаты: init/commands/snapshotAck/...
+mapgen2/js/simulation/gameplay-config.js  СГЕНЕРИРОВАННЫЕ игровые данные
+mapgen2/js/simulation/navigation.js       порционный A*: бюджет, jobs, deferred
+mapgen2/js/simulation/checkpoint.js       полный codec графа SimState
+mapgen2/js/simulation/commands.js         единственный обработчик команд
+mapgen2/js/simulation/simulation.js       фиксированный шаг 50 мс, фазы
+mapgen2/js/simulation/replication.js      DTO снимка + motion-хвост
+mapgen2/tools/build-gameplay-config.js    сборка/--check gameplay-config
+game/tools/tests/                          node:test и mp-acceptance
+research/mp-stabilization/tools/          поддерживаемые probe/analyze/run-scenario
+docs/MP_IMPLEMENTATION.md                  как это работает
+docs/MP_VALIDATION.md                      что проверено и чем
+```
+
+Правила раскладки остались прежними: чистый движок лежит в `mapgen2/js/`,
+оболочка — в `game/js/`, сетевые числа — в `game/shared/`, доказательства —
+в `research/`. В корень ничего не добавлено.
+
+`mapgen2/index.html` (генератор) по-прежнему грузит движок и **не** грузит
+`simulation/`. `game/index.html` грузит `navigation.js` и
+`gameplay-config.js` до `play.js`; серверный worker грузит те же IIFE в том
+же порядке плюс `simulation/checkpoint|commands|simulation|replication`.

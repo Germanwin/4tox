@@ -39,14 +39,15 @@
     opts = opts || {};
     var base = opts.base || 'assets/';
     var dir = opts.dir || 'waves/';
-    var meta = global.WAVE_ATLAS;
+    var metaName = opts.metaName || 'WAVE_ATLAS';
+    var meta = global[metaName];
     if (meta) { loadImage(meta, base, dir, onReady, onError); return; }
     if (typeof fetch !== 'function') { onError(new Error('нет ни atlas.js волн, ни fetch')); return; }
     fetch(joinPath(base, dir + 'atlas.json')).then(function (r) {
       if (!r.ok) throw new Error('waves/atlas.json: HTTP ' + r.status);
       return r.json();
     }).then(function (json) {
-      global.WAVE_ATLAS = json;
+      global[metaName] = json;
       loadImage(json, base, dir, onReady, onError);
     }).catch(onError);
   }
