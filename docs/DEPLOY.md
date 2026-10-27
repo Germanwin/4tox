@@ -1,13 +1,14 @@
 # Прод 4tox: VPS, выкладка и откат
 
-**2026-10-27: протокол 4, мир считает серверная комната.** Порядок ниже
-(backup → staging → rsync → `COMMIT` → рестарт только `4tox.service`) остаётся,
-но перед выкладкой нужен `STATE_DIR` вне web-root (например
-`/opt/4tox-var/rooms`, владелец `4tox`, 0700) и согласованное обновление
-server+client. Старый браузерный снимок нельзя объявлять checkpoint нового
-формата; откат к protocol 3/2 — со старой копией `STATE_DIR`. Подробности —
-[docs/MP_IMPLEMENTATION.md](MP_IMPLEMENTATION.md) §10. Выкладка в этой сессии
-**не выполнялась**.
+**2026-10-28: протокол 4 выложен на прод.** Build `013dd8513c0f`, protocol 4,
+cmdProto 3. Создана `/opt/4tox-var/rooms` (0700, `4tox:4tox`) и drop-in
+`/etc/systemd/system/4tox.service.d/state.conf` с
+`STATE_DIR=/opt/4tox-var/rooms` и `ReadWritePaths=/opt/4tox-var`.
+Бэкап до выкладки: `/root/4tox-backup-20261028-011527.tgz`; файл службы —
+`/root/4tox.service.before-20261028-011527`. Порядок ниже (backup → staging →
+rsync → `COMMIT` → рестарт только `4tox.service`) остаётся; старый браузерный
+снимок нельзя объявлять checkpoint нового формата, откат к protocol 3/2 — со
+старой копией `STATE_DIR`. Подробности — [docs/MP_IMPLEMENTATION.md](MP_IMPLEMENTATION.md) §10.
 
 Игра стоит на VPS **`374412.fornex.cloud` (`213.239.158.37`)**, это тот же
 сервер, что и naive VPN. Наружу игру отдаёт Caddy; Node слушает только
@@ -114,6 +115,21 @@ ssh root@213.239.158.37 '
 
 Старый `COMMIT` вернуть вручную (или удалить файл — тогда `/api/build`
 покажет `dev`). Проверить `/api/build`, `/game/`, журнал службы.
+
+## Факт выкладки 2026-10-28 01:16 MSK
+
+- Было: build `1d842c45423d`, protocol 3, cmdProto 2.
+- Стало: **build `013dd8513c0f`, protocol 4, cmdProto 3**; Node v24.22.1 на VPS.
+- `4tox.service` active, `caddy-naive` active; рестартовал только `4tox.service`.
+- `STATE_DIR=/opt/4tox-var/rooms` (0700), пустой после тестового смоука.
+- Публичный smoke: `/api/build` protocol 4, `/game/` 200, mobile PNG 200;
+  лобби 2 игроков → `/api/start` с baseline, SSE `start`+`snapshot` (gzip),
+  команда гостя 202 received → `/api/command-state` applied (`s1-...:1`,
+  appliedTick 4), `/api/snapshot` 409 `server_authoritative`, ping running.
+- Публичная страница в headless Chrome: `Play` загружен, `NetConfig.protocol=4`,
+  исключений нет.
+- Перед смоуком старый тестовый room был убран; после смоука также убран,
+  `STATE_DIR` пуст — можно создавать новое лобби.
 
 ## Факт выкладки 2026-10-26 22:41 MSK
 
