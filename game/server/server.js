@@ -488,9 +488,6 @@ function makeLobby(max) {
     code: c, max: Math.max(2, Math.min(MAX_PLAYERS, max || 4)),
     players: [], started: false, seed: null, size: 192, streams: new Map(),
     createdAt: now(), hostId: 0, nextId: 0, startPayload: null,
-    /* С какого момента в партии нет ни одного подключённого игрока.
-       0 — партия активна; выставляет sweepInactiveLobbies. */
-    inactiveSince: 0,
     hostGone: false, hostTimer: null, lastSnapAt: 0, lastSnapshot: null,
     /* Команды, ждущие хоста: [{...cmd, from, owner, sn, at}].
        Хост забирает их ответом на снимок (см. CMD_TTL), а не событием SSE.
@@ -545,8 +542,15 @@ const STATE_DIR = process.env.STATE_DIR
 const roomRecords = new Map();   // lobby.code -> record
 let roomGeneration = 0;
 
+/* Одна ось времени на весь сервер. Раньше здесь был process.hrtime (время с
+   загрузки МАШИНЫ), а worker отдавал serverGeneratedAtMs из performance.now
+   (время с старта ПРОЦЕССА). Клиент складывал их в один offset и уезжал на
+   аптайм машины: интерполяция не работала, бейдж «нет связи» горел всегда.
+   В Node performance.now() в главном потоке и в worker_threads имеет один
+   нуль, поэтому источник теперь один. */
 function monoMs() {
-  return Number(process.hrtime.bigint() / 1000000n);
+  return (typeof performance !== 'undefined' && performance.now)
+    ? performance.now() : Date.now();
 }
 
 function roomFor(lobby) {
@@ -610,7 +614,7 @@ function restoreLobbies() {
       return {
         id: p.id, token: p.token, name: p.name || ('Игрок ' + p.id),
         color: p.color, proto: p.proto || PROTOCOL, owner: p.owner,
-        ready: true, online: false, lastSeen: 0, timer: null, goneAt: 0
+        ready: true, online: false, lastSeen: now(), timer: null, goneAt: 0
       };
     });
     n++;
@@ -1673,21 +1677,22 @@ function closeLobby(lobby, reason) {
   console.log('  лобби ' + lobby.code + ': закрыто (' + (reason || 'closed') + ')');
 }
 
-function lobbyActive(lobby, t) {
-  if (!lobby) return false;
-  if (lobby.streams && lobby.streams.size) return true;
+/* Последнее «касание» партии — создание или запрос любого игрока. Окно
+   считается ровно от него: если сначала ждать, пока истечёт lastSeen, а
+   потом ещё одно окно inactiveSince, 30 секунд превращаются в 60. */
+function lobbyLastTouch(lobby) {
+  let last = lobby.createdAt || 0;
   for (const p of lobby.players) {
-    if (t - (p.lastSeen || 0) < INACTIVE_TTL) return true;
+    if ((p.lastSeen || 0) > last) last = p.lastSeen;
   }
-  return false;
+  return last;
 }
 
 function sweepInactiveLobbies() {
   const t = now();
-  for (const [code, lobby] of lobbies) {
-    if (lobbyActive(lobby, t)) { lobby.inactiveSince = 0; continue; }
-    if (!lobby.inactiveSince) { lobby.inactiveSince = t; continue; }
-    if (t - lobby.inactiveSince >= INACTIVE_TTL) closeLobby(lobby, 'inactive');
+  for (const lobby of lobbies.values()) {
+    if (lobby.streams && lobby.streams.size) continue;
+    if (t - lobbyLastTouch(lobby) >= INACTIVE_TTL) closeLobby(lobby, 'inactive');
   }
 }
 
@@ -2690,8 +2695,6 @@ async function handleRequest(req, res) {
       closeStream(old, 'replaced', true);
     }
     lobby.streams.set(p.id, stream);
-    /* Живой поток — партия активна, отсчёт удаления сбрасывается. */
-    lobby.inactiveSince = 0;
     const liveRoom = roomFor(lobby);
     if (liveRoom) roomRequest(liveRoom, 'diagnostics', { empty: false }, 5000).catch(function () {});
 

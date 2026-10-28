@@ -124,7 +124,7 @@ async function main() {
     const aCode = a.json && a.json.code;
     const aTok = a.json && a.json.token;
     check('lobby A created', a.status === 200 && !!aCode, aCode);
-    await sleep(TTL * 3);
+    await sleep(TTL + 900);
     const aStatus = await get(base, '/api/status?code=' + aCode + '&token=' + aTok);
     check('lobby without connection is deleted after TTL', aStatus.status === 403,
       'status ' + aStatus.status + ', TTL ' + TTL + 'ms');
@@ -143,7 +143,7 @@ async function main() {
     check('live SSE keeps the party past TTL', bAlive.status === 200,
       'status ' + bAlive.status);
     bSse.ctrl.abort();
-    await sleep(TTL * 3);
+    await sleep(TTL + 900);
     const bAfter = await get(base, '/api/status?code=' + bCode + '&token=' + bTok);
     check('party is deleted after its last SSE closes', bAfter.status === 403,
       'status ' + bAfter.status + ', dir=' + fs.existsSync(roomDir(bCode)));
