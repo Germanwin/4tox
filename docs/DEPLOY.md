@@ -51,7 +51,10 @@ Caddy проксирует `handle /game/*`, `/mapgen2/*`, `/api/*` на
    STAGE=/tmp/4tox-deploy-$COMMIT
    rm -rf "$STAGE"; mkdir -p "$STAGE/game" "$STAGE/mapgen2"
    cp -a game/README.md game/assets game/css game/index.html game/js \
-         game/server game/Мультиплеер.command "$STAGE/game/"
+         game/server game/shared "game/Мультиплеер.command" "$STAGE/game/"
+   # game/shared/net-config.js нужен серверу и клиенту; без него
+   # rsync --delete снесёт его с прода и служба не поднимется.
+   rm -rf "$STAGE/game/server/var"   # тестовое состояние, на прод не едет
    cp -a mapgen2/PATHFINDING.md mapgen2/README.md mapgen2/assets \
          mapgen2/css mapgen2/index.html mapgen2/js "$STAGE/mapgen2/"
    printf '%s\n' "$COMMIT" > "$STAGE/COMMIT"
