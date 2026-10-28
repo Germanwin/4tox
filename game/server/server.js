@@ -417,6 +417,15 @@ const OFFLINE_GRACE = 45000;
    «выкинуло». */
 const HOST_GRACE = 60000;
 
+/* Неактивная партия живёт 30 секунд (заказчик 2026-10-29). «Активна» —
+   есть живой SSE-поток или игрок обращался к серверу внутри окна.
+   Скрытая вкладка держит SSE, поэтому фон партию не убивает; F5 успевает
+   вернуться. INACTIVE_TTL переопределяется в приёмке, чтобы не ждать 30 с. */
+const INACTIVE_TTL = Math.max(1000,
+  parseInt(process.env.INACTIVE_TTL || '30000', 10) || 30000);
+const INACTIVE_SWEEP = Math.max(250,
+  Math.min(1000, Math.floor(INACTIVE_TTL / 10)));
+
 /* ---- команды клиентов: очередь, а не только SSE ----------------------- *
  *
  * Заказчик 2026-10-25: «у друга огромный пинг, здания ставятся через 30
@@ -479,6 +488,9 @@ function makeLobby(max) {
     code: c, max: Math.max(2, Math.min(MAX_PLAYERS, max || 4)),
     players: [], started: false, seed: null, size: 192, streams: new Map(),
     createdAt: now(), hostId: 0, nextId: 0, startPayload: null,
+    /* С какого момента в партии нет ни одного подключённого игрока.
+       0 — партия активна; выставляет sweepInactiveLobbies. */
+    inactiveSince: 0,
     hostGone: false, hostTimer: null, lastSnapAt: 0, lastSnapshot: null,
     /* Команды, ждущие хоста: [{...cmd, from, owner, sn, at}].
        Хост забирает их ответом на снимок (см. CMD_TTL), а не событием SSE.
@@ -1570,7 +1582,10 @@ function dropPlayer(lobby, p) {
   }
   if (!lobby.players.length) {
     if (lobby.hostTimer) clearTimeout(lobby.hostTimer);
-    lobbies.delete(lobby.code);
+    /* Последний игрок ушёл — партия кончилась. Не просто забываем лобби:
+       останавливаем worker и убираем состояние, иначе комната занимает
+       слот MAX_ACTIVE_ROOMS и воскресает после перезапуска Node. */
+    closeLobby(lobby, 'empty');
     return;
   }
   if (lobby.hostId === p.id && lobby.started) {
@@ -1589,6 +1604,91 @@ function dropPlayer(lobby, p) {
     console.log('  лобби ' + lobby.code + ': хост ушёл, теперь ' + next.name);
   }
   broadcast(lobby, 'lobby', lobbyView(lobby));
+}
+
+/* --------------------- неактивные партии ------------------------------- *
+ *
+ * Заказчик 2026-10-29: «неактивные партии спустя 30 секунд удалялись».
+ * Причина: комната живёт в worker'е и после ухода игроков, занимает
+ * единственный слот MAX_ACTIVE_ROOMS, а после рестарта Node ещё и
+ * поднимается из checkpoint — новая партия получает server_capacity
+ * («на сервере уже идёт другая партия»).
+ *
+ * «Неактивна» — нет живого SSE ни у одного игрока И никто не обращался к
+ * серверу дольше INACTIVE_TTL. Скрытая вкладка держит SSE, поэтому фон
+ * живую партию не убивает; F5 успевает вернуться за окно.
+ * ---------------------------------------------------------------------- */
+
+/* Каталог комнаты удаляется целиком: иначе restoreLobbies() поднимет её
+   после перезапуска, и она снова займёт слот. */
+function removeRoomState(roomId) {
+  const id = String(roomId || '');
+  if (!/^[A-Z0-9]{4,12}$/.test(id)) return;
+  try {
+    fs.rmSync(path.join(STATE_DIR, id), { recursive: true, force: true });
+  } catch (e) {
+    console.error('  комната ' + id + ': состояние не удалено — ' +
+      String(e && e.message || e));
+  }
+}
+
+/* Остановка комнаты: сначала штатный shutdown, чтобы worker дописал
+   checkpoint, потом terminate (если не вышел за 3 с) и удаление каталога. */
+function stopRoom(lobby, reason) {
+  const rec = roomFor(lobby);
+  if (!rec) { removeRoomState(lobby.code); return; }
+  let finished = false;
+  const finish = function () {
+    if (finished) return;
+    finished = true;
+    try { if (rec.worker) rec.worker.terminate(); } catch (e) {}
+    roomRecords.delete(rec.roomId);
+    const t = setTimeout(function () { removeRoomState(rec.roomId); }, 300);
+    if (t.unref) t.unref();
+  };
+  try {
+    rec.worker.postMessage({
+      type: 'shutdown', roomId: rec.roomId,
+      workerGeneration: rec.generation, reason: reason || 'closed'
+    });
+  } catch (e) { /* worker уже вышел */ }
+  try { rec.worker.once('exit', finish); } catch (e) {}
+  const timer = setTimeout(finish, 3000);
+  if (timer.unref) timer.unref();
+}
+
+function closeLobby(lobby, reason) {
+  if (!lobby || lobbies.get(lobby.code) !== lobby) return;
+  lobbies.delete(lobby.code);
+  if (lobby.hostTimer) { clearTimeout(lobby.hostTimer); lobby.hostTimer = null; }
+  lobby.players.forEach(function (p) {
+    if (p.timer) { clearTimeout(p.timer); p.timer = null; }
+  });
+  const streams = Array.from(lobby.streams.values());
+  lobby.streams.clear();
+  streams.forEach(function (st) {
+    try { closeStream(st, 'lobby-closed', true); } catch (e) {}
+  });
+  stopRoom(lobby, reason);
+  console.log('  лобби ' + lobby.code + ': закрыто (' + (reason || 'closed') + ')');
+}
+
+function lobbyActive(lobby, t) {
+  if (!lobby) return false;
+  if (lobby.streams && lobby.streams.size) return true;
+  for (const p of lobby.players) {
+    if (t - (p.lastSeen || 0) < INACTIVE_TTL) return true;
+  }
+  return false;
+}
+
+function sweepInactiveLobbies() {
+  const t = now();
+  for (const [code, lobby] of lobbies) {
+    if (lobbyActive(lobby, t)) { lobby.inactiveSince = 0; continue; }
+    if (!lobby.inactiveSince) { lobby.inactiveSince = t; continue; }
+    if (t - lobby.inactiveSince >= INACTIVE_TTL) closeLobby(lobby, 'inactive');
+  }
 }
 
 function markOffline(lobby, p) {
@@ -2590,6 +2690,8 @@ async function handleRequest(req, res) {
       closeStream(old, 'replaced', true);
     }
     lobby.streams.set(p.id, stream);
+    /* Живой поток — партия активна, отсчёт удаления сбрасывается. */
+    lobby.inactiveSince = 0;
     const liveRoom = roomFor(lobby);
     if (liveRoom) roomRequest(liveRoom, 'diagnostics', { empty: false }, 5000).catch(function () {});
 
@@ -3198,6 +3300,10 @@ function startServer() {
   /* Лобби и токены переживают перезапуск Node: комнаты поднимаются лениво
      по /api/resume из checkpoint+журнала. */
   restoreLobbies();
+  /* Партия, в которой никого нет, удаляется через INACTIVE_TTL: worker
+     останавливается, каталог состояния стирается, слот MAX_ACTIVE_ROOMS
+     освобождается. Проверка частая и дешёвая — обход карты лобби. */
+  setInterval(sweepInactiveLobbies, INACTIVE_SWEEP).unref();
   /* Пустая комната живёт 10 минут: reconnect внутри этого окна не создаёт
      мир заново. Проверка редкая — 30 с, не на каждый HTTP. */
   setInterval(function () {
