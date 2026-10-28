@@ -36,6 +36,11 @@
 
   var LIMIT = 60;               // больше этого ожиданий не держим
   var HISTORY = 120;            // ограниченный след для диагностики
+  /* Сроки, после которых ожидание перестаёт держать резерв. Без них
+     потерянный result + уже видимый дом оставляли резерв навсегда; 60 таких
+     ожиданий — и новые дома молча не ставились. */
+  var VISUAL_SETTLE_MS = 10000;
+  var UNKNOWN_TIMEOUT_MS = 30000;
   var list = [];
   var seq = 0;
   var owner = 0;
@@ -298,6 +303,23 @@
     /* Запоминаем состав снимка: следующий «новый» считается от него. */
     seenIds = Object.create(null);
     for (i = 0; i < blds.length; i++) if (blds[i] && blds[i].id !== undefined) seenIds[blds[i].id] = 1;
+
+    /* Потерянный result не должен держать резерв вечно. Если постройка уже
+       видна в снимке, мир её принял; если результата нет 30 с и объекта нет —
+       команда потерялась. В обоих случаях снимаем ожидание, иначе казна
+       навсегда меньше на цену, а 60-е ожидание блокирует новые действия. */
+    var now = nowMs();
+    for (i = list.length - 1; i >= 0; i--) {
+      var old = list[i];
+      if (!old) continue;
+      var age = now - old.at;
+      if (old.visualSettled && age > VISUAL_SETTLE_MS) {
+        finish(old, 'visual-timeout', snapSeq);
+        done++;
+      } else if (old.status === 'unknown' && age > UNKNOWN_TIMEOUT_MS) {
+        drop(old, 'unknown-timeout', 'результат не пришёл');
+      }
+    }
     return done;
   }
 

@@ -71,3 +71,17 @@ test('T26: 61-е ожидание запрещено, старые не выте
   assert.equal(P.list().length, 60);
   assert.equal(P.list()[0].commandId, 'p0', 'первое ожидание не вытеснено');
 });
+
+test('T27: потерянный result не держит резерв вечно, если дом уже виден', () => {
+  const P = pending();
+  P.addBuild({ commandId: 'lost', cost: 12, spec: spec(50, 20), sentSeq: 0 });
+  P.reconcile(snapshot(1, [{ id: 'visible', x: 50, y: 20 }]));
+  assert.equal(P.reserved(0), 12, 'без точного результата резерв ещё держится');
+  /* Согласование по снимку было 11 секунд назад: дом в мире есть, результат
+     потерян. Ожидание обязано закрыться, иначе казна навсегда меньше, а
+     60-е действие молча не ставится. */
+  P.list()[0].at -= 11000;
+  P.reconcile(snapshot(2, [{ id: 'visible', x: 50, y: 20 }]));
+  assert.equal(P.list().length, 0);
+  assert.equal(P.reserved(0), 0);
+});

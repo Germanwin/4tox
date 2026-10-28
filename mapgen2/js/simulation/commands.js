@@ -131,6 +131,11 @@
 
   function apply(sim, cmd) {
     if (!sim || !cmd) return reason('bad_command', 'нет команды');
+    /* Служебная команда закрытия дыры в clientSequence: ничего не меняет в
+       мире, но сервер двигает nextClientSequence. Клиент шлёт её, когда
+       потерянный POST оставил пропущенный номер, а более высокие номера уже
+       выданы другим действиям. */
+    if (cmd.type === 'noop') return applied();
     if (cmd.type === 'order') {
       if (!global.Army) return reason('unsupported', 'отряд не загружен');
       var whoO = cmd.owner;

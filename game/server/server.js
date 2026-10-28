@@ -724,7 +724,9 @@ function createRoomWorker(lobby) {
       rec.epoch = msg.epoch;
       rec.baseline = msg.baseline;
       rec.latest = msg.baseline;
-      rec.status = 'running';
+      /* Поднятая из checkpoint законченная партия остаётся over, а не
+         притворяется running. */
+      rec.status = (msg.baseline && msg.baseline.roomStatus) || 'running';
       rec.diagnostics = msg.diagnostics;
       lobby.lastSnapshot = msg.baseline;
       lobby.lastSnapAt = now();
@@ -739,8 +741,8 @@ function createRoomWorker(lobby) {
       rec.status = snap.roomStatus || 'running';
       lobby.lastSnapshot = snap;
       lobby.lastSnapAt = now();
-      lobby.lastSnapshotBytes = byteLen(JSON.stringify(snap));
-      broadcast(lobby, 'snapshot', snap);
+      const sent = broadcast(lobby, 'snapshot', snap);
+      lobby.lastSnapshotBytes = sent.bytes;
       try {
         worker.postMessage({
           type: 'snapshotAck', roomId: rec.roomId,
@@ -802,6 +804,17 @@ function createRoomWorker(lobby) {
    фиксируется, worker поднимает мир и только после `ready` лобби объявляет
    старт. Пока worker не готов, пустая running-партия не отдаётся. */
 async function startRoom(lobby) {
+  if (lobby.started && lobby.startPayload) return { ok: true, already: true };
+  /* Два клика «Начать игру» (или повтор после медленного ответа) не должны
+     поднимать два мира на один STATE_DIR. Первый вызов создаёт промис,
+     второй ждёт его же. */
+  if (lobby.startPromise) return lobby.startPromise;
+  lobby.startPromise = startRoomOnce(lobby);
+  try { return await lobby.startPromise; }
+  finally { lobby.startPromise = null; }
+}
+
+async function startRoomOnce(lobby) {
   if (lobby.started && lobby.startPayload) return { ok: true, already: true };
   const block = startBlock(lobby);
   if (block) return { ok: false, reason: block.reason, waiting: block.waiting };
@@ -1210,9 +1223,18 @@ function pushControl(st, text, type, meta) {
 /* Снимок — отдельный слот «последний». Пока предыдущий не записан в gzip,
    новый заменяет его целиком: удалять часть сжатого потока нельзя, а
    показывать друга устаревший кадр, когда есть свежий, незачем. */
-function pushSnapshot(st, text, seq, at) {
+function pushSnapshot(st, text, seq, at, opts) {
   if (st.closed || !text) return false;
+  opts = opts || {};
   var bytes = byteLen(text);
+  /* Baseline — единственный кадр нового epoch, потеря которого
+     невосстановима: клиент отвергнет всё поколение. Поэтому обычный снимок
+     не вытесняет ждущий baseline; следующий кадр доедет после него. */
+  if (st.pendingSnapshot && st.pendingSnapshot.baseline && !opts.baseline) {
+    st.coalesced++;
+    st.dropped++;
+    return false;
+  }
   if (st.pendingSnapshot) {
     /* Счётчики видны в /api/stream-stats и /api/diag; в кольцо журнала
        каждый такой кадр НЕ пишем: при 12 снимках/с и медленном друге это
@@ -1223,6 +1245,7 @@ function pushSnapshot(st, text, seq, at) {
   st.pendingSnapshot = {
     text: text, bytes: bytes,
     seq: seq === undefined ? null : seq,
+    baseline: !!opts.baseline,
     at: at || now()
   };
   requestStreamPump(st, true);
@@ -1462,13 +1485,17 @@ function send(res, type, data) {
 function broadcast(lobby, type, data, exceptId, opts) {
   var text;
   try { text = eventText(type, data); }
-  catch (e) { lobbyLog(lobby, 'event-error', { type: type, message: e.message }); return; }
+  catch (e) { lobbyLog(lobby, 'event-error', { type: type, message: e.message }); return { bytes: 0, streams: 0 }; }
   var seq = data && typeof data.seq === 'number' ? data.seq : null;
   lobby.streams.forEach(function (st, id) {
     if (exceptId !== undefined && id === exceptId) return;
-    if (type === 'snapshot') pushSnapshot(st, text, seq, now());
-    else pushControl(st, text, type);
+    if (type === 'snapshot') {
+      pushSnapshot(st, text, seq, now(), { baseline: !!(data && data.baseline) });
+    } else pushControl(st, text, type);
   });
+  /* Байты уже посчитаны здесь; второй JSON.stringify того же снимка ради
+     диагностики — лишние мегабайты в главном потоке. */
+  return { bytes: byteLen(text), streams: lobby.streams.size };
 }
 
 /* Сколько байт ещё не ушло самому отстающему потоку. В отличие от прежней
@@ -2652,11 +2679,25 @@ async function handleRequest(req, res) {
     };
     if (lobby.started && rec) {
       const ps = rec.lobby.players.find(function (x) { return x.id === p.id; });
+      /* После F5 номер следующей команды обязан прийти с сервера, а не из
+         localStorage: если POST потерялся, локальный номер завышен, и первая
+         же команда получила бы sequence_gap. Отдельный запрос к комнате
+         дешёвый (тот же worker, без снимка). */
+      let nextSeq = null;
+      try {
+        const d = await roomRequest(rec, 'diagnostics', {
+          sessionId: String(p.id), ids: []
+        }, 3000);
+        if (d && d.commandState && typeof d.commandState.nextClientSequence === 'number') {
+          nextSeq = d.commandState.nextClientSequence;
+        }
+      } catch (e) { /* комната занята/поднимается: клиент синхронизируется на первой команде */ }
       resumed.session = {
         sessionId: String(p.id), owner: p.owner === undefined ? 0 : p.owner,
         instance: ps ? ('s' + (p.owner || 0) + '-' + crypto.createHash('sha1').update(String(p.id)).digest('hex').slice(0, 8)) : null,
         epoch: rec.epoch,
-        roomId: rec.roomId
+        roomId: rec.roomId,
+        nextClientSequence: nextSeq
       };
     }
     lobbyLog(lobby, 'resume', {

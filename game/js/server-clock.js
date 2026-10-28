@@ -82,6 +82,7 @@
       var status = latest.roomStatus || 'running';
       var off = offset();
       var simTime;
+      var skew = false;
       if (status === 'faulted' || status === 'suspended' || status === 'over') {
         simTime = latest.simulationTimeMs || 0;
         frozen = true;
@@ -94,6 +95,19 @@
           var serverMono = (c === undefined ? now() : c) + off;
           simTime = (latest.simulationTimeMs || 0) + (serverMono - (latest.serverGeneratedAtMs || 0));
         }
+      }
+      /* Страховка от рассинхронизации двух нулей времени (такое уже было:
+         ping отдавал hrtime, снимок — performance.now, и renderTime уезжал
+         на аптайм машины). Порог — час, а не 5 секунд: законная тишина в
+         снимках бывает и дольше, и её нельзя выдавать за сломанные часы.
+         При настоящем рассинхроне разница — дни. */
+      var base = latest.simulationTimeMs || 0;
+      var MAX_SKEW_MS = 3600000;
+      if (!frozen && samples.length && (!isFinite(simTime) || Math.abs(simTime - base) > MAX_SKEW_MS)) {
+        simTime = base;
+        skew = true;
+        lastRender = -Infinity;
+        lastSim = -Infinity;
       }
       var rt = simTime - delay;
       /* Огромная ошибка, возврат из скрытой вкладки, новый epoch — явный
@@ -122,11 +136,16 @@
       }
       var age = (o.clientNow === undefined ? now() : o.clientNow) -
         ((latest.serverGeneratedAtMs || 0) - off);
-      var stale = !frozen && age > (o.staleAfterMs === undefined ? 500 : o.staleAfterMs);
+      /* При обнаруженном рассинхроне осей возраст снимка по ним не считается:
+         иначе живой клиент навсегда получал бы «нет связи». Настоящую тишину
+         в этом случае ловит netSilence в presentNet. */
+      var stale = !frozen && samples.length && !skew &&
+        age > (o.staleAfterMs === undefined ? 500 : o.staleAfterMs);
       return {
         renderTime: rt,
         simTime: simTime,
         stale: stale,
+        skew: skew,
         underflow: false,
         mode: frozen ? 'frozen' : (samples.length ? 'running' : 'baseline'),
         offset: off,

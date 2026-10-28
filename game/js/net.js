@@ -19,6 +19,10 @@
      переживает F5. Сброс ID на 1 внутри той же instance запрещён — иначе
      сервер не отличит новую команду от повтора старой. */
   var roomId = null, roomEpoch = 0, clientInstance = null, clientSeq = 0;
+  /* Самый большой номер, уже выданный команде в этой сессии. clientSeq можно
+     подтянуть к серверному только если выше него ничего не выдано: иначе
+     следующий ++clientSeq повторил бы ID уже отправленной команды. */
+  var allocatedSeq = 0;
 
   /* Версия формата этого клиента. Сервер отвечает своей (`protocol` в
      /api/build и в старте); расхождение — только предупреждение, не отказ. */
@@ -350,7 +354,9 @@
     roomId = v.roomId || null;
     roomEpoch = v.epoch || 0;
     clientInstance = v.instance || null;
-    clientSeq = v.seq || 0;
+    var savedSeq = Number(v.seq);
+    clientSeq = (Number.isSafeInteger(savedSeq) && savedSeq >= 0) ? savedSeq : 0;
+    allocatedSeq = clientSeq;
     lobby = null; started = null; startKey = null; online = false;
     return true;
   }
@@ -502,7 +508,8 @@
       '&token=' + encodeURIComponent(token));
     es = source;
     ['hello', 'lobby', 'start', 'snapshot', 'command', 'command-result',
-      'peer-left', 'peer-back', 'host-left', 'host-back', 'room-fault'].forEach(function (type) {
+      'peer-left', 'peer-back', 'host-left', 'host-back', 'room-fault',
+      'room-recovered'].forEach(function (type) {
       source.addEventListener(type, function (ev) {
         /* Событие старого соединения после reset/create не должно оживлять
            прежнюю партию: проверяем и поколение, и то, что это всё ещё наш
@@ -556,6 +563,7 @@
     es = null; token = null; code = null; playerId = null; hostId = 0;
     lobby = null; started = null; startKey = null; online = false;
     roomId = null; roomEpoch = 0; clientInstance = null; clientSeq = 0;
+    allocatedSeq = 0;
     resuming = false; pendingStart = null;
     cmdSeq = 0; cmdChain = Promise.resolve();
     sendBusy = 0;
@@ -675,6 +683,16 @@
           if (j.session.instance) clientInstance = j.session.instance;
           if (j.session.epoch !== undefined) roomEpoch = j.session.epoch;
           if (j.session.roomId) roomId = j.session.roomId;
+          /* Сервер знает, какой номер свободен. После F5 берём его, иначе
+             потерянный до перезагрузки POST оставлял бы клиент навсегда на
+             завышенном номере (sequence_gap на каждую команду). */
+          if (typeof j.session.nextClientSequence === 'number' &&
+              j.session.nextClientSequence > 0) {
+            clientSeq = j.session.nextClientSequence - 1;
+            /* Страница перезагружена: команд в полёте нет, можно начать
+               ровно с серверного номера. */
+            allocatedSeq = clientSeq;
+          }
         }
         if (j.seq !== undefined) st.lastSeq = j.seq;
         handleStart(st);
@@ -781,7 +799,10 @@
           if (!isCurrent(gen)) return reject(staleError());
           if (j && typeof j.nextClientSequence === 'number' &&
               j.nextClientSequence - 1 > clientSeq) {
+            /* Только вверх: вниз нельзя, пока выше уже выданы номера. Дыру
+               закрывает sendOnce следующей команды (noop'ы), а не откат. */
             clientSeq = j.nextClientSequence - 1;
+            if (clientSeq > allocatedSeq) allocatedSeq = clientSeq;
             saveSession();
           }
           var list = j && j.results ? j.results : [];
@@ -810,6 +831,7 @@
     if (!clientInstance) clientInstance = 's0-' + String(playerId);
     if (!roomId) roomId = code;
     var seq = ++clientSeq;
+    if (seq > allocatedSeq) allocatedSeq = seq;
     var commandId = clientInstance + ':' + seq;
     saveSession();
     var envelope = {
@@ -821,34 +843,160 @@
       type: cmd.type,
       payload: commandPayload(cmd)
     };
-    /* Строго по одной: новый clientSequence уходит только после receipt
-       предыдущего. Иначе сервер справедливо ответит sequence_gap на вторую
-       команду, обогнавшую первую в сети. */
-    var accepted = cmdChain.then(function () {
-      if (!isCurrent(gen)) throw staleError();
+
+    function post() {
       return api('/api/command', { code: code, token: token, command: envelope },
         LIMITS.commandSend);
+    }
+
+    /* Сервер ждёт ровно следующий номер. Если мы уже выдали более высокие
+       номера, вернуть clientSeq назад нельзя: следующий ++clientSeq повторил
+       бы чужой ID. Вместо этого закрываем дыру безвредными noop-командами —
+       сервер их принимает, двигает nextClientSequence и ничего не меняет в
+       мире. */
+    var MAX_GAP_FILL = 32;
+    function fillGapTo(next) {
+      var s = next;
+      if (seq - next > MAX_GAP_FILL) {
+        var big = makeError('sequence', 'слишком большая дыра в нумерации: ' +
+          (seq - next));
+        big.code = 'gap_too_large';
+        big.nextClientSequence = next;
+        return Promise.reject(big);
+      }
+      return new Promise(function (resolve, reject) {
+        var noopRetry = 0;
+        function step() {
+          if (!isCurrent(gen)) return reject(staleError());
+          if (s >= seq) return resolve();
+          var noop = {
+            protocol: CLIENT_PROTOCOL, roomId: roomId, epoch: roomEpoch,
+            commandId: clientInstance + ':' + s, clientSequence: s,
+            type: 'noop', payload: {}
+          };
+          api('/api/command', { code: code, token: token, command: noop },
+            LIMITS.commandSend).then(function () {
+            noopRetry = 0;
+            s++;
+            step();
+          }, function (e) {
+            var body = e && e.body;
+            if (body && body.code === 'rate_limited' && noopRetry++ < 4) {
+              global.setTimeout(step, 200 + noopRetry * 150);
+              return;
+            }
+            var n2 = body && body.nextClientSequence;
+            if (typeof n2 === 'number' && n2 > s) { s = n2; noopRetry = 0; step(); }
+            else reject(e);
+          });
+        }
+        step();
+      });
+    }
+
+    /* Одна попытка отправки + то, что можно исправить без участия игрока:
+       дыра в нумерации, смена epoch, временный лимит. Повтор идёт с ТЕМ ЖЕ
+       commandId и payload — сервер дедуплицирует его, второго дома не будет. */
+    var admitRetries = 0, epochRetries = 0;
+    function sendOnce() {
+      return post().catch(function (e) {
+        if (!e || !e.body || e.body.admitted !== false) throw e;
+        var codeE = e.body.code;
+        var next = e.body.nextClientSequence;
+        if (codeE === 'sequence_gap') {
+          if (typeof next === 'number' && next > 0 && next <= seq) {
+            /* Дыру всегда закрываем noop'ами, даже если выше ничего не выдано.
+               Откат счётчика назад с последующим повтором того же номера —
+               это гонка с POST, который мог доехать позже и уже занять ID. */
+            return fillGapTo(next).then(function () { return sendOnce(); }).catch(function (gapErr) {
+              if (gapErr && gapErr.code === 'gap_too_large') {
+                clientSeq = Math.max(0, next - 1);
+                allocatedSeq = clientSeq;
+                saveSession();
+              }
+              throw gapErr;
+            });
+          }
+          if (typeof next === 'number' && next > 0) {
+            clientSeq = Math.max(clientSeq, next - 1);
+            allocatedSeq = Math.max(allocatedSeq, clientSeq);
+            saveSession();
+          }
+          throw e;
+        }
+        if (codeE === 'history_expired') {
+          if (typeof next === 'number' && next > 0) {
+            clientSeq = Math.max(clientSeq, next - 1);
+            allocatedSeq = Math.max(allocatedSeq, clientSeq);
+            saveSession();
+          }
+          throw e;
+        }
+        if (codeE === 'command_id_conflict') {
+          /* ID уже занят другим действием (например, POST доехал позже
+             отмены). Сервер теперь отдаёт nextClientSequence: поднимаем
+             счётчик, чтобы следующая команда не повторяла занятый номер. */
+          if (typeof next === 'number' && next > 0) {
+            clientSeq = Math.max(clientSeq, next - 1);
+            allocatedSeq = Math.max(allocatedSeq, clientSeq);
+            saveSession();
+          }
+          throw e;
+        }
+        if (codeE === 'stale_epoch') {
+          if (e.body.epoch !== undefined && epochRetries++ < 2) {
+            roomEpoch = e.body.epoch;
+            envelope.epoch = roomEpoch;
+            saveSession();
+            return sendOnce();
+          }
+        }
+        if (codeE === 'rate_limited' || codeE === 'room_queue_full' ||
+            codeE === 'player_queue_full') {
+          admitRetries++;
+          if (admitRetries <= 4) {
+            return new Promise(function (resolve) {
+              global.setTimeout(resolve, 250 * admitRetries);
+            }).then(function () { return sendOnce(); });
+          }
+          /* Лимит не отпустил: если выше этой команды номеров нет, отдаём
+             номер обратно, чтобы следующее действие не получило дыру. */
+          if (allocatedSeq <= seq && typeof next === 'number' && next > 0) {
+            clientSeq = Math.max(0, next - 1);
+            allocatedSeq = clientSeq;
+            saveSession();
+          }
+        }
+        throw e;
+      });
+    }
+
+    /* Строго по одной: следующий номер уходит только после ответа на
+       предыдущий. Цепочка ждёт именно принятия, а не конечного результата:
+       иначе медленный тик блокировал бы весь ввод. */
+    var accepted = cmdChain.then(function () {
+      if (!isCurrent(gen)) throw staleError();
+      return sendOnce();
     });
     cmdChain = accepted.catch(function () {});
     var p = accepted.then(function (r) {
       if (!isCurrent(gen)) throw staleError();
+      /* Успешный ответ только ПОДНИМАЕТ счётчик. Опускать его здесь нельзя:
+         следующая команда могла быть уже выдана и ждать в цепочке. */
       if (r && typeof r.nextClientSequence === 'number' &&
-          r.nextClientSequence - 1 > clientSeq) {
-        clientSeq = r.nextClientSequence - 1;
+          r.nextClientSequence > 0) {
+        var srv = r.nextClientSequence - 1;
+        if (srv > clientSeq) clientSeq = srv;
+        if (clientSeq > allocatedSeq) allocatedSeq = clientSeq;
         saveSession();
       }
       return waitCommandV4(commandId, seq, r, gen);
     }, function (e) {
       if (!isCurrent(gen)) throw staleError();
-      /* admitted:false — команда НЕ принята, ID не consumed. Это не сетевой
-         сбой: показываем точную причину и разрешаем тот же ID позже. */
+      /* admitted:false — команда НЕ принята. Нумерацию уже привёл в порядок
+         sendOnce (дыра закрыта noop'ами либо счётчик возвращён, если выше
+         ничего не выдано). Здесь только честный отказ игроку. */
       if (e && e.body && e.body.admitted === false) {
-        /* ID НЕ consumed: возвращаем счётчик, чтобы повтор с тем же ID не
-           получил sequence_gap. */
-        if (clientSeq === seq) {
-          clientSeq = Math.max(0, seq - 1);
-          saveSession();
-        }
         if (e.body.code === 'stale_epoch' && e.body.epoch !== undefined) {
           roomEpoch = e.body.epoch;
           saveSession();
@@ -860,6 +1008,15 @@
         };
         emit('command-result', refused);
         return refused;
+      }
+      if (e && e.code === 'gap_too_large') {
+        var gapRefused = {
+          ok: false, n: seq, commandId: commandId, state: 'rejected',
+          reason: 'слишком большой разрыв в нумерации команд; перезайдите в партию',
+          reasonCode: 'gap_too_large', admitted: false, ids: []
+        };
+        emit('command-result', gapRefused);
+        return gapRefused;
       }
       if (e && typeof e === 'object') {
         e.commandId = commandId;
@@ -1003,6 +1160,7 @@
       if (j && typeof j.nextClientSequence === 'number' &&
           j.nextClientSequence - 1 > clientSeq) {
         clientSeq = j.nextClientSequence - 1;
+        if (clientSeq > allocatedSeq) allocatedSeq = clientSeq;
         saveSession();
       }
       return j;
@@ -1296,6 +1454,20 @@
     });
   }
 
+  /* Восстановление комнаты после логической ошибки. Разрешено организатору;
+     клиент зовёт это сам после room-fault, затем resume() получает новый
+     baseline/epoch. */
+  function recover(reason) {
+    if (!code || !token) return Promise.reject(makeError('state', 'нет лобби'));
+    var gen = generation;
+    return api('/api/recover', {
+      code: code, token: token, reason: reason || 'client-auto'
+    }, 20000).then(function (j) {
+      if (!isCurrent(gen)) throw staleError();
+      return j;
+    });
+  }
+
   function leave() {
     var c = code, t = token;
     clearSaved();
@@ -1338,6 +1510,7 @@
     clearSaved: clearSaved,
     serverInfo: serverInfo,
     diag: diag,
+    recover: recover,
     ping: ping,
     leave: leave,
     reset: reset,

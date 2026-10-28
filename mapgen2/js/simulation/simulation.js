@@ -274,7 +274,12 @@
       simulationTimeMs: state.tick * tickMs(),
       events: events,
       commandResults: results,
-      structureVersion: state.structureVersion
+      structureVersion: state.structureVersion,
+      /* Итог партии — данные шага: комната по нему закрывает мир и пишет
+         terminal. Без этих двух полей проверка в room-runtime никогда не
+         срабатывала, и комната продолжала тикать после победы. */
+      over: !!state.over,
+      winner: state.winner
     };
     sim._lastEvents = events;
     return out;

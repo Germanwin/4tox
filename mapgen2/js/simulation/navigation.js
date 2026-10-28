@@ -8,10 +8,13 @@
 
    Здесь живёт очередь job'ов. Job — это НЕЗАВЕРШЁННЫЙ A*: своя куча, свои
    `g/came/closed`, свой счётчик снятий. Он продолжается на следующем тике с
-   того же места, а не начинается заново. Бюджет (4096 снятий) один на мир и
-   тик; одному job'у за очередь достаётся не больше 256 снятий. Незавершённый
-   поиск — это 'deferred', а НЕ «пути нет»: unreachable доказывается только
-   пустой кучей.
+   того же места, а не начинается заново. Бюджет — один на мир и тик: 4096
+   снятий на малых картах и 8192 на картах от 128 клеток (там и жителей
+   больше); одному job'у за очередь достаётся не больше 256/512 снятий.
+   Рабочие массивы job'а выделяются ТОЛЬКО при активации: ожидающий job
+   хранит параметры, иначе 600 ожидающих жителей держали сотни мегабайт,
+   которые ещё и уезжали в checkpoint. Незавершённый поиск — это 'deferred',
+   а НЕ «пути нет»: unreachable доказывается только пустой кучей.
 
    Модуль чистый: ни DOM, ни Canvas, ни PNG. Проходимость спрашивает у
    Villagers.walkable — той же функции, что и ходьба, поэтому «путь есть» и
@@ -38,22 +41,34 @@
 
   function versionOf(world) {
     if (!world) return 0;
+    /* Версия — только геометрия ДОМОВ (Buildings.touch). Дерево при рубке
+       ОТКРЫВАЕТ клетку, поэтому старый поиск не становится неверным. Раньше
+       здесь был fallback на Villagers.mapVer, а он меняется с длиной
+       objects: на свежем мире без navVersion каждый срубленный ствол отменял
+       все незавершённые A* — и длинные пути не доживали до конца. */
     if (typeof world.navVersion === 'number') return world.navVersion;
-    if (global.Villagers && global.Villagers.mapVer) return global.Villagers.mapVer(world);
     return 0;
   }
 
   function ensure(world, opts) {
     if (!world) return null;
+    if (typeof world.navVersion !== 'number') world.navVersion = 0;
     var s = world._navigation;
     if (s && s.schema === 1) return s;
+    /* На больших картах путь длиннее, а жителей больше. Прежние 4096 снятий
+       на мир и 8 активных поисков давали очередь в 10–15 секунд уже на 600
+       работниках: часть жителей стояла, часть работала. 8192 и 16 активных
+       держат 20 тиков/с (замер: p95 шага 20 мс на 3×200), а очереди ожидания
+       сокращаются вдвое. Маленькие карты и приёмки остаются на прежних
+       числах. */
+    var big = (world.width || 0) >= 128;
     s = world._navigation = {
       schema: 1,
       tick: 0,
-      budget: DEFAULTS.maxPopsPerTick,
-      maxPopsPerTick: (opts && opts.maxPops) || DEFAULTS.maxPopsPerTick,
-      quantum: (opts && opts.quantum) || DEFAULTS.quantum,
-      maxActive: DEFAULTS.maxActive,
+      budget: big ? 8192 : DEFAULTS.maxPopsPerTick,
+      maxPopsPerTick: (opts && opts.maxPops) || (big ? 8192 : DEFAULTS.maxPopsPerTick),
+      quantum: (opts && opts.quantum) || (big ? 512 : DEFAULTS.quantum),
+      maxActive: big ? 16 : DEFAULTS.maxActive,
       maxWaiting: DEFAULTS.maxWaiting,
       maxCompleted: DEFAULTS.maxCompleted,
       maxPerEntity: DEFAULTS.maxPerEntity,
@@ -148,12 +163,16 @@
       status: 'active',           // active | waiting | ready | unreachable | limit | invalid | cancelled
       W: W, H: H, N: N,
       gen: 1,
-      gGen: new Int32Array(N),
-      g: new Float64Array(N),
-      came: new Int32Array(N),
-      closedGen: new Int32Array(N),
-      heap: new Int32Array(2048),
-      hf: new Float64Array(2048),
+      /* Рабочие массивы поиска создаются ТОЛЬКО при активации (startSearch).
+         В очереди ожидания их нет: каждый job держал 20 байт на клетку
+         (737 КБ на 192-й карте), и 600 ожидающих жителей давали сотни
+         мегабайт, которые ещё и целиком уезжали в checkpoint. */
+      gGen: null,
+      g: null,
+      came: null,
+      closedGen: null,
+      heap: null,
+      hf: null,
       hn: 0,
       pops: 0,
       limit: req.limit > 0 ? req.limit : 0,
@@ -161,13 +180,35 @@
       finishedTick: 0,
       read: false
     };
-    var start = req.sy * W + req.sx;
-    var goal = req.ty * W + req.tx;
-    job.goal = goal;
-    job.gGen[start] = job.gen;
-    job.g[start] = 0;
-    job.came[start] = -1;
-    heapPush(job, start, heuristic(job, start));
+    job.startIndex = req.sy * W + req.sx;
+    job.goal = req.ty * W + req.tx;
+    return job;
+  }
+
+  /* Активация job'а: только здесь появляются массивы на всю карту и стартовая
+     клетка кладётся в кучу. Ожидающий job хранит лишь параметры запроса. */
+  function startSearch(job) {
+    if (!job) return job;
+    if (job.gGen && job.heap) return job;
+    /* Частично выделенные массивы (исключение в середине) не должны
+       выглядеть как «поиск уже начат»: иначе heap пуст и job станет
+       unreachable. Начинаем заново. */
+    job.gGen = null; job.g = null; job.came = null;
+    job.closedGen = null; job.heap = null; job.hf = null;
+    job.hn = 0;
+    job.pops = 0;
+    var N = job.N;
+    job.gGen = new Int32Array(N);
+    job.g = new Float64Array(N);
+    job.came = new Int32Array(N);
+    job.closedGen = new Int32Array(N);
+    job.heap = new Int32Array(2048);
+    job.hf = new Float64Array(2048);
+    job.hn = 0;
+    job.gGen[job.startIndex] = job.gen;
+    job.g[job.startIndex] = 0;
+    job.came[job.startIndex] = -1;
+    heapPush(job, job.startIndex, heuristic(job, job.startIndex));
     return job;
   }
 
@@ -218,6 +259,7 @@
       s.stats.deferred++;
       return 'deferred';
     }
+    startSearch(job);
     var pops = 0;
     while (job.hn > 0 && pops < budget && s.budget > 0) {
       var cur = heapPop(job);

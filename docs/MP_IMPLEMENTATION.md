@@ -66,7 +66,9 @@
 3. записать `tickCommit` (tick, revision, команды, результаты, события) и
    **fsync**;
 4. только после fsync объявить tick/revision committed, обновить ledger,
-   опубликовать снимок каждые 2 тика и checkpoint каждые 40.
+   опубликовать снимок каждые 2 тика и checkpoint каждые 200 тиков (10 с).
+   Снятие состояния синхронно на границе тика, запись/fsync — в фоне; тик не
+   ждёт записи. Ошибка записи checkpoint'а не роняет комнату.
 
 `applied` не отдаётся до fsync. Незавершённый тик не публикуется. Если
 исключение внутри step — комната останавливается (`room-fault`), последний
@@ -247,7 +249,7 @@ heartbeatMs 2000, commandBodyMaxBytes 16384, commandMaxIds 200,
 buildLineMaxItems 64, commandQueuePerPlayer 64, commandQueuePerRoom 256,
 commandsPerTick 64, pendingMax 60, controlQueueMaxBytes 262144,
 streamQueueMaxBytes 2097152, slowClientTimeoutMs 5000,
-checkpointEveryTicks 40, emptyRoomGraceMs 600000
+checkpointEveryTicks 200, emptyRoomGraceMs 600000
 ```
 
 `MAX_ACTIVE_ROOMS` (env, по умолчанию 1) — предел комнат, не игроков. Отказ

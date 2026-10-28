@@ -81,6 +81,10 @@ function Persistence(options) {
   this.handle = null;
   this.chain = Promise.resolve();
   this.closed = false;
+  this.writeSeq = 0;
+  /* Уникальность tmp на процесс И на экземпляр: два Persistence на одном
+     STATE_DIR не должны писать в один tmp. */
+  this.instanceTag = Math.random().toString(36).slice(2, 10);
   this.stats = {
     records: 0, bytes: 0, fsyncs: 0, checkpoints: 0,
     checkpointBytes: 0, rotations: 0, loadMs: 0
@@ -202,7 +206,9 @@ Persistence.prototype.writeCheckpoint = async function (simDto, meta) {
   const revision = meta.revision || tick;
   const epoch = meta.epoch || 1;
   const name = 'checkpoint-' + pad(tick, 10) + '-' + pad(revision, 10) + '-' + pad(epoch, 6) + '.json';
-  const tmp = this.checkpointPath(name + '.tmp-' + process.pid);
+  /* Уникальный tmp: два checkpoint'а на один тик (terminal/suspend и обычный)
+     не должны писать в один файл. */
+  const tmp = this.checkpointPath(name + '.tmp-' + process.pid + '-' + this.instanceTag + '-' + (++this.writeSeq));
   const final = this.checkpointPath(name);
   const body = {
     checkpointSchema: 1,
@@ -220,10 +226,17 @@ Persistence.prototype.writeCheckpoint = async function (simDto, meta) {
     room: meta.room || null
   };
   const text = JSON.stringify(body);
-  await fsp.writeFile(tmp, text, { mode: 0o600 });
-  const h = await fsp.open(tmp, 'r+');
-  try { await h.sync(); } finally { await h.close(); }
-  await fsp.rename(tmp, final);
+  try {
+    await fsp.writeFile(tmp, text, { mode: 0o600 });
+    const h = await fsp.open(tmp, 'r+');
+    try { await h.sync(); } finally { await h.close(); }
+    await fsp.rename(tmp, final);
+  } catch (e) {
+    /* Не оставляем .tmp после неудачной записи: они копятся и мешают
+       разбирать каталог комнаты. */
+    try { await fsp.unlink(tmp); } catch (x) { /* уже нет */ }
+    throw e;
+  }
   await this.fsyncDir();
   this.stats.checkpoints++;
   this.stats.checkpointBytes += Buffer.byteLength(text);

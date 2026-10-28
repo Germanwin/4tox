@@ -52,6 +52,7 @@ const RoomRuntime = require('./room-runtime').RoomRuntime;
 const roomId = workerData && workerData.roomId;
 const generation = (workerData && workerData.workerGeneration) || 1;
 let runtime = null;
+let initPromise = null;
 let snapshotInFlight = false;
 let pendingSnapshot = null;
 let closed = false;
@@ -74,7 +75,15 @@ function shipSnapshot(snap) {
   send('snapshot', { snapshot: snap });
 }
 
-async function init(msg) {
+function init(msg) {
+  /* Повторный init (второй клик старта, гонка HTTP) не создаёт второй мир на
+     том же журнале и не отвечает ready раньше первого: оба вызова ждут один
+     и тот же старт. */
+  if (!initPromise) initPromise = initOnce(msg);
+  return initPromise;
+}
+
+async function initOnce(msg) {
   try {
     runtime = new RoomRuntime({
       roomId: roomId,

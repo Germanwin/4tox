@@ -108,6 +108,30 @@ test('ServerClock: RTT/offset, неубывающее время и rebase но�
   assert.ok(isFinite(r3.renderTime));
 });
 
+test('T28: до первого ping нет ложного stale; тишина 6 с — stale; скачок осей — clamp', () => {
+  const c = SC.create({ now: () => 0 });
+  const latest = { simulationTimeMs: 1000, serverGeneratedAtMs: 1000, roomStatus: 'running' };
+  const start = c.renderTime(latest, 20, { frameDeltaMs: 16 });
+  assert.equal(start.stale, false, 'нет проб — это baseline, а не потеря связи');
+
+  c.addSample({ c0: 0, c3: 0, s1: 0, s2: 0 });
+  const ok = c.renderTime(latest, 20, { frameDeltaMs: 16, clientNow: 20 });
+  assert.equal(ok.stale, false);
+  /* Снимков нет 6 секунд: renderTime ушёл вперёд, но это не рассинхрон осей
+     (порог — час), поэтому stale обязан стать true. */
+  const silent = c.renderTime(latest, 6020, { frameDeltaMs: 16, clientNow: 6020 });
+  assert.equal(silent.stale, true, 'тишина > 500 мс — нет связи');
+  assert.equal(silent.skew, false, '6 секунд тишины — не сломанные часы');
+
+  const skewClock = SC.create({ now: () => 0 });
+  skewClock.addSample({ c0: 0, c3: 100, s1: 4 * 86400000, s2: 4 * 86400000 + 100 });
+  const skew = skewClock.renderTime(latest, 1100, { frameDeltaMs: 16, clientNow: 1100 });
+  assert.equal(skew.skew, true);
+  assert.equal(skew.stale, false, 'сломанные часы не должны выглядеть как потеря связи');
+  assert.ok(Math.abs(skew.simTime - latest.simulationTimeMs) < 1e-9,
+    'вместо аптайма сервера показываем момент снимка: ' + skew.simTime);
+});
+
 test('E05: задержка 150 мс + jitter 50 мс не ломает монотонность', () => {
   const c = SC.create({ now: () => 0 });
   for (let i = 0; i < 20; i++) {

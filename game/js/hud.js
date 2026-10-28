@@ -869,7 +869,8 @@
     var P = global.Play && global.Play.state;
     if (!P || !P.netRole) { el.netBadge.classList.add('hidden'); return; }
     el.netBadge.classList.remove('hidden');
-    var bad = !!(state && (state.hostGone || state.stale));
+    var bad = !!(state && (state.hostGone || state.stale ||
+      state.netHostGone || state.netStale));
     el.netBadge.classList.toggle('bad', bad);
     if (bad) {
       el.netBadge.textContent = 'нет связи';

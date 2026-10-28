@@ -19,7 +19,7 @@
 
 ```bash
 node --test game/tools/tests/*.test.js
-# tests 66, pass 66, fail 0
+# tests 68, pass 68, fail 0 (2026-10-29: добавлены T27/T28)
 
 node game/tools/tests/mp-acceptance.js
 # 15/15 PASS, exit 0
@@ -287,7 +287,7 @@ node --test game/tools/tests/mobile-quality.test.js  # 5 PASS
   `/tmp/final4-place.log`, `/tmp/final-combat2.log` — полные логи прогонов
   этой сессии (вне репозитория; в отчёте приведены команды и итоги).
 * `research/mp-stabilization/tools/` — поддерживаемые probe/analyze/run-scenario;
-  `game/tools/tests/` — 66 node:test.
+  `game/tools/tests/` — 68 node:test.
 
 ## 8. Ограничения измерений
 
@@ -318,3 +318,37 @@ node game/tools/tests/mp-inactive.js
 Приёмка `mp-acceptance.js` на загруженной машине может дать 14/15 по
 тайминг-проверке E03 («snapshots in 1.5s»): на чистом HEAD она падает так же
 (2–4 снимка вместо 5), к правилу неактивных партий отношения не имеет.
+
+## 8. 3×200: середина партии (2026-10-29)
+
+Сценарий `game/tools/tests/mp-midround.js`: настоящий `Simulation.create`
+(192, 3 игрока), настоящий `RoomRuntime` (journal/fsync, снимки 10/с,
+checkpoint каждые 10 с), 40 лагерей лесоруба + 2 военных лагеря на игрока,
+360 нанятых рабочих, 180 гуляющих, 60 воинов, 960 деревьев, 3 команды
+постройки через `runtime.submit` и 3 приказа отряду. Игроки по 200 жителей.
+
+```bash
+node game/tools/tests/mp-midround.js
+# MIDROUND PASS, 30.0 с
+# 19.95 тика/с; 9.96 снимка/с; p95 интервала 111 мс
+# шаг p50/p95/p99/max = 14.1 / 27.3 / 33.1 / 74.8 мс
+# снимок 259 915 B (gzip 54 002 B), checkpoint 12.0 МБ (3 шт., 96.8 мс)
+# 360 рабочих: 101 рубит, 94 несёт, 435 с путём, 27 стоят
+# бой: 101 тик попаданий, 302 HP урона ратушам, 1 ратуша пала
+# 3/3 постройки applied и видны в снимке; 9/9 команд applied; 0 fault
+```
+
+Проверки, которые ловят именно жалобы «жители стоят и двигаются раз в
+2–7 секунд»:
+
+* тики/с и снимки/с не падают с ростом числа жителей (20/10 — штатные);
+* шаг не превышает 50 мс, иначе мир не успевает за стеной;
+* checkpoint < 30 МБ и не блокирует тик;
+* бой и стройка доходят до результата, команды не отклоняются.
+
+Отдельно проверено: `mp-acceptance.js` 15/15, `mp.js` PASS, `menu.js` PASS,
+`mapgen2/tools/game.js` PASS, `mp-inactive.js` PASS, `node --test
+game/tools/tests/*.test.js` 68/68. На загруженной машине (loadavg ≈ 3)
+`stepP99Ms` может подняться до 45–52 мс — это хвост синхронного снятия
+checkpoint и волн планирования, а не зависание; тики/снимки при этом
+остаются 20/10.

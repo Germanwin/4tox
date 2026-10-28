@@ -731,6 +731,34 @@
     state.netStale = true;
     emit({ type: 'net-note', text: 'комната остановлена: ' +
       (state.netFault.message || 'ошибка') });
+    /* Раньше fault оставлял комнату мёртвой навсегда: команды отклонялись,
+       F5 возвращал ту же ошибку, а слот MAX_ACTIVE_ROOMS не освобождался.
+       Организатор сам поднимает комнату из checkpoint; остальные участники
+       получат room-recovered и переподключатся. */
+    if (global.Net && global.Net.isHost && global.Net.isHost() &&
+        Date.now() - (state.netRecoverAt || 0) > 10000) {
+      state.netRecoverAt = Date.now();
+      global.Net.recover('auto-room-fault').then(function () {
+        /* room-recovered мог уже прийти по SSE и запустить resume; второй
+           заход в ту же секунду не нужен. */
+        if (Date.now() - (state.netResumeAt || 0) < 2000) return null;
+        state.netResumeAt = Date.now();
+        return global.Net.resume();
+      }).then(function () {
+        emit({ type: 'net-note', text: 'комната восстановлена' });
+      }, function (e) {
+        emit({ type: 'net-note', text: 'восстановить комнату не удалось: ' +
+          ((e && e.message) || 'ошибка') });
+      });
+    }
+  }
+
+  function onRoomRecovered() {
+    /* Гость после восстановления обязан взять новый epoch и baseline; иначе
+       его буфер навсегда отвергает кадры нового поколения. */
+    if (!global.Net || Date.now() - (state.netResumeAt || 0) < 2000) return;
+    state.netResumeAt = Date.now();
+    global.Net.resume().catch(function () {});
   }
 
   function startServerNet(payload, isHost) {
@@ -800,6 +828,7 @@
     if (global.Net && global.Net.on) {
       state.netOff.push(global.Net.on('snapshot', applyServerSnapshot));
       state.netOff.push(global.Net.on('room-fault', onRoomFault));
+      state.netOff.push(global.Net.on('room-recovered', onRoomRecovered));
       state.netOff.push(global.Net.on('net-error', function () {
         emit({ type: 'net-trouble' });
       }));
@@ -864,7 +893,17 @@
     if (state.netProtocol && snap.protocol !== undefined &&
         snap.protocol !== state.netProtocol) return;
     var acc = netBuffer.push(snap);
-    if (!acc.accepted && !acc.reset) return;
+    if (!acc.accepted && !acc.reset) {
+      /* Единственный кадр нового epoch мог не доехать (baseline вытеснен
+         медленным потоком). Без перезапроса клиент отвергал бы ВСЁ новое
+         поколение и мир замирал до F5. Resume отдаёт свежий baseline. */
+      if (acc.reason === 'epoch_without_baseline' && global.Net &&
+          Date.now() - (state.netResumeAt || 0) > 2000) {
+        state.netResumeAt = Date.now();
+        global.Net.resume().catch(function () {});
+      }
+      return;
+    }
     if (acc.reset) {
       state.netEpoch = acc.epoch;
       state.netSeq = 0;
@@ -876,7 +915,9 @@
     state.netEpoch = snap.epoch === undefined ? state.netEpoch : snap.epoch;
     state.lastSnapAt = nowMs();
     state.netSilence = 0;
-    state.netStale = false;
+    /* netStale здесь НЕ сбрасываем: иначе «связь вернулась» не испустит
+       net-ok, а бейдж будет менять только следующий ping. Переход делает
+       presentNet по одному признаку. */
     state.netFault = null;
 
     var hold = state.edit && state.edit.building ? state.edit.building : null;
@@ -957,7 +998,16 @@
     state.netRenderTime = t;
     state.netUnderflow = !!rt.underflow;
     state.netClockError = rt.errorMs;
-    state.netStale = !!rt.stale;
+    var wasStale = state.netStale;
+    state.netSilence += Math.max(0, dt || 0);
+    /* Пропажа и возврат связи — переходы, а не постоянное состояние. Раньше
+       флаг ставился из rt.stale ДО проверки тишины, условие «ещё не stale»
+       было ложно, и событие net-stale не приходило вовсе. */
+    state.netStale = !!state.netFault || !!rt.stale ||
+      state.netSilence > NET_SILENCE;
+    if (state.netStale !== wasStale) {
+      emit({ type: state.netStale ? 'net-stale' : 'net-ok' });
+    }
     var list = state.villagers || [];
     for (var i = 0; i < list.length; i++) {
       var v = list[i];
@@ -971,11 +1021,6 @@
       v.hidden = !!p.hidden;
     }
     if (t / 1000 > state.seconds) state.seconds = t / 1000;
-    state.netSilence += Math.max(0, dt || 0);
-    if (state.netSilence > NET_SILENCE && !state.netStale) {
-      state.netStale = true;
-      emit({ type: 'net-stale' });
-    }
     if (!(global.document && global.document.hidden) && global.Net &&
         !state.netPingBusy && c - state.netPingAt > 2000) {
       state.netPingBusy = true;
@@ -1235,7 +1280,10 @@
     if (state.netRole !== 'client' || !state.netHostGone) return;
     state.netHostGone = false;
     state.netSilence = 0;
-    state.netStale = false;
+    if (state.netStale) {
+      state.netStale = false;
+      emit({ type: 'net-ok' });
+    }
     // Экран «Меню» — не остановка мира, поэтому вернувшийся хост поднимает
     // время и за открытой доской; в главном меню сессия уже оставлена.
     if (!state.over && (state.mode === 'play' || state.mode === 'paused')) {

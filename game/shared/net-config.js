@@ -32,7 +32,7 @@
     controlQueueMaxBytes: 262144,
     streamQueueMaxBytes: 2097152,
     slowClientTimeoutMs: 5000,
-    checkpointEveryTicks: 40,
+    checkpointEveryTicks: 200,
     emptyRoomGraceMs: 600000,
     /* Производные величины. Считаются от tickMs, чтобы ни у кого не было
        собственного «0.05» рядом с конфигом. */

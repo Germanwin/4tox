@@ -27,6 +27,12 @@ function canonicalJson(v) {
   }).join(',') + '}';
 }
 
+/* Повтор команды опознаётся по типу И payload. Без типа тот же commandId с
+   другим действием считался бы повтором и молча терялся. */
+function commandFingerprint(cmd) {
+  return canonicalJson({ type: cmd && cmd.type, payload: cmd && cmd.payload });
+}
+
 function hashText(s) {
   let h = 2166136261 >>> 0;
   for (let i = 0; i < s.length; i++) {
@@ -44,6 +50,16 @@ function defaultDir() {
 
 function sessionInstance(sessionId, owner) {
   return 's' + owner + '-' + hashText(String(sessionId));
+}
+
+/* Результат принятой, но ещё не исполненной команды. Fingerprint обязателен:
+   после рестарта повтор того же commandId должен опознаваться как duplicate,
+   а не как command_id_conflict. */
+function receivedResult(cmd) {
+  const out = makeResult(cmd, 'received', null, '');
+  out.fingerprint = cmd.fingerprint || commandFingerprint(cmd);
+  out.fingerprintVersion = cmd.fingerprintVersion || 2;
+  return out;
 }
 
 function makeResult(cmd, status, code, reason, extra) {
@@ -104,7 +120,14 @@ function RoomRuntime(options) {
   this.latest = null;
   this.baselinePending = true;
   this.snapshotEvery = (options.snapshotEveryTicks || 2);
-  this.checkpointEvery = (options.checkpointEveryTicks || 40);
+  /* Checkpoint — не кадр: он не нужен каждые 2 секунды. 10 секунд дают
+     достаточную точку восстановления (журнал после неё и так durability),
+     а мир перестаёт стоять на многосекундной записи. */
+  this.checkpointEvery = (options.checkpointEveryTicks ||
+    (global.NetConfig && global.NetConfig.checkpointEveryTicks) || 200);
+  this.checkpointBusy = false;
+  this.checkpointPending = 0;
+  this.checkpointPromise = null;
   this.commandsPerTick = options.commandsPerTick || 64;
   this.queuePerPlayer = options.commandQueuePerPlayer || 64;
   this.queuePerRoom = options.commandQueuePerRoom || 256;
@@ -168,11 +191,15 @@ RoomRuntime.prototype.start = async function () {
     if (body.room) this.restoreRoom(body.room);
     if (global.Replication) global.Replication.reset();
     await this.replayJournal(restore.journal || []);
-    this.status = 'running';
+    /* Партия, законченная до рестарта, не начинается заново: journal
+       содержит terminal, а state.over — итог. Иначе комната писала бы второй
+       terminal и снова тикала. */
+    const ended = this.sim.state.over || this.status === 'over';
+    this.status = ended ? 'over' : 'running';
     this.baselinePending = true;
     this.lastActivity = this.clock.now();
     this.lastPump = this.clock.now();
-    this.schedulePump(1);
+    if (!ended) this.schedulePump(1);
     const baseline = this.makeSnapshot({ baseline: true });
     this.latest = baseline;
     return baseline;
@@ -232,7 +259,7 @@ RoomRuntime.prototype.restoreRoom = function (room) {
   if (room.queue) {
     for (const c of room.queue) {
       this.queue.push(c);
-      this.byId.set(c.commandId, makeResult(c, 'received', null, ''));
+      this.byId.set(c.commandId, receivedResult(c));
       const p = this.playerBySession.get(c.sessionId);
       if (p) p.queue.push(c);
     }
@@ -247,7 +274,7 @@ RoomRuntime.prototype.replayJournal = async function (records) {
       /* accept после checkpoint: команда принята, но ещё не исполнена (если
          ниже нет её tickCommit). Восстановление НЕ исполняет её здесь. */
       if (!this.byId.has(r.command.commandId)) {
-        this.byId.set(r.command.commandId, makeResult(r.command, 'received', null, ''));
+        this.byId.set(r.command.commandId, receivedResult(r.command));
         this.queue.push(r.command);
         const p = this.playerBySession.get(r.command.sessionId);
         if (p) {
@@ -382,8 +409,20 @@ RoomRuntime.prototype.submitNow = async function (auth) {
   }
   const known = this.byId.get(cmd.commandId);
   if (known) {
-    const same = known.fingerprint === canonicalJson(cmd.payload);
-    if (!same) return { admitted: false, status: 'rejected', reasonCode: 'command_id_conflict' };
+    /* Версия 2 — тип+payload. В старых checkpoint'ах fingerprint считался
+       только по payload; такие результаты принимаем по старой форме, иначе
+       после обновления кодa повтор уже применённой команды стал бы
+       command_id_conflict. */
+    const same = known.fingerprint === commandFingerprint(cmd) ||
+      ((known.fingerprintVersion || 1) < 2 &&
+        known.fingerprint === canonicalJson(cmd.payload));
+    if (!same) {
+      return {
+        admitted: false, status: 'rejected', reasonCode: 'command_id_conflict',
+        reason: 'тот же номер команды уже занят другим действием',
+        nextClientSequence: p.nextClientSequence
+      };
+    }
     return {
       admitted: true, status: known.status, duplicate: true,
       commandId: cmd.commandId, epoch: known.epoch,
@@ -415,15 +454,19 @@ RoomRuntime.prototype.submitNow = async function (auth) {
       nextClientSequence: p.nextClientSequence };
   }
   if (this.queue.length >= this.queuePerRoom) {
-    return { admitted: false, status: 'rejected', reasonCode: 'room_queue_full' };
+    return { admitted: false, status: 'rejected', reasonCode: 'room_queue_full',
+      nextClientSequence: p.nextClientSequence };
   }
   if (p.queue.length >= this.queuePerPlayer) {
-    return { admitted: false, status: 'rejected', reasonCode: 'player_queue_full' };
+    return { admitted: false, status: 'rejected', reasonCode: 'player_queue_full',
+      nextClientSequence: p.nextClientSequence };
   }
   cmd.roomOrder = ++this.roomOrder;
-  cmd.fingerprint = canonicalJson(cmd.payload);
+  cmd.fingerprint = commandFingerprint(cmd);
+  cmd.fingerprintVersion = 2;
   const accepted = makeResult(cmd, 'received', null, '');
   accepted.fingerprint = cmd.fingerprint;
+  accepted.fingerprintVersion = 2;
   accepted.roomOrder = cmd.roomOrder;
   const record = {
     type: 'accept', roomId: this.roomId, epoch: this.epoch,
@@ -517,7 +560,10 @@ RoomRuntime.prototype.pendingResultBlock = function () {
   return out.reverse();
 };
 
-RoomRuntime.prototype.writeCheckpoint = async function (tick) {
+/* Снять checkpoint НЕМЕДЛЕННО (синхронно) на границе тика. Дальше его можно
+   писать в фоне: мир уже не меняется задним числом, а очередь тиков не ждёт
+   fsync и rename. */
+RoomRuntime.prototype.captureCheckpoint = function () {
   const dto = this.sim.exportState();
   const room = {
     roomOrder: this.roomOrder,
@@ -532,16 +578,83 @@ RoomRuntime.prototype.writeCheckpoint = async function (tick) {
     results: this.recentResults.slice(-600),
     queue: this.queue.slice()
   };
-  const started = this.clock.now();
   const loc = this.lastJournal || { segment: this.persistence.segment, offset: 0 };
-  const journalOffset = loc.offset + (loc.bytes || 0);
-  const written = await this.persistence.writeCheckpoint(dto, {
-    tick: this.tick, revision: this.revision, epoch: this.epoch,
-    journalSegment: loc.segment, journalOffset: journalOffset,
-    room: room
-  });
-  this.stats.ioMs += this.clock.now() - started;
+  return {
+    dto: dto,
+    started: this.clock.now(),
+    meta: {
+      tick: this.tick, revision: this.revision, epoch: this.epoch,
+      journalSegment: loc.segment,
+      journalOffset: loc.offset + (loc.bytes || 0),
+      room: room
+    }
+  };
+};
+
+RoomRuntime.prototype.writeCaptured = async function (cap) {
+  const written = await this.persistence.writeCheckpoint(cap.dto, cap.meta);
+  this.stats.ioMs += this.clock.now() - cap.started;
   return written;
+};
+
+RoomRuntime.prototype.writeCheckpoint = async function (tick) {
+  return this.writeCaptured(this.captureCheckpoint());
+};
+
+/* Поставить checkpoint в очередь, не останавливая тики. Пока предыдущий
+   пишется, храним только НОМЕР последнего нужного тика: промежуточные точки
+   не нужны, следующая запись снимет актуальное состояние. */
+RoomRuntime.prototype.requestCheckpoint = function (tick) {
+  if (this.closed || this.status !== 'running') return;
+  if (this.checkpointBusy) {
+    this.checkpointPending = Math.max(this.checkpointPending || 0, tick || this.tick);
+    return;
+  }
+  let cap;
+  try {
+    cap = this.captureCheckpoint();
+  } catch (e) {
+    this.enterFault(e, 'checkpoint-capture');
+    return;
+  }
+  this.checkpointBusy = true;
+  const self = this;
+  let failed = false;
+  const p = this.writeCaptured(cap).catch(function (e) {
+    failed = true;
+    /* Ошибка ЗАПИСИ checkpoint'а — не ошибка мира. Журнал уже durable, тик
+       committed; из-за кончившегося места или таймаута fsync нельзя
+       останавливать всю партию (раньше это и был «мир встал навсегда»).
+       Запоминаем причину и попробуем на следующем интервале. */
+    self.stats.checkpointErrors = (self.stats.checkpointErrors || 0) + 1;
+    self.lastCheckpointError = {
+      message: String(e && e.message || e),
+      tick: cap.meta.tick,
+      at: self.clock.now()
+    };
+  }).then(function () {
+    if (!failed) self.lastCheckpointError = null;
+    self.checkpointBusy = false;
+    self.checkpointPromise = null;
+    if (self.closed || self.status !== 'running') return;
+    if (self.checkpointPending) {
+      const next = self.checkpointPending;
+      self.checkpointPending = 0;
+      self.requestCheckpoint(next);
+    }
+  });
+  this.checkpointPromise = p;
+};
+
+RoomRuntime.prototype.flushCheckpoint = async function () {
+  /* Ждём не один промис, а всю очередь: requestCheckpoint мог поставить
+     следующий, пока мы ждали предыдущий. */
+  let guard = 0;
+  while (this.checkpointPromise && guard++ < 8) {
+    const p = this.checkpointPromise;
+    try { await p; } catch (e) { /* ошибка уже записана */ }
+    if (this.checkpointPromise === p) break;
+  }
 };
 
 RoomRuntime.prototype.executeAndCommitOneTick = async function () {
@@ -569,6 +682,7 @@ RoomRuntime.prototype.executeAndCommitOneTick = async function () {
     });
     terminal.epoch = this.epoch;
     terminal.fingerprint = cmd ? cmd.fingerprint : (r.fingerprint || null);
+    terminal.fingerprintVersion = cmd && cmd.fingerprintVersion ? cmd.fingerprintVersion : 2;
     results.push(terminal);
   }
   const record = {
@@ -604,17 +718,24 @@ RoomRuntime.prototype.executeAndCommitOneTick = async function () {
   this.trimResults();
   this.lastActivity = this.clock.now();
 
+  /* Статус over ставим ДО снимка: клиент должен получить roomStatus='over',
+     а не кадр с over:true и running. */
+  const justOver = out.over && this.status === 'running';
+  if (justOver) this.status = 'over';
   const snapshotDue = (this.tick % this.snapshotEvery === 0) ||
     out.over || this.baselinePending;
   if (snapshotDue) this.publishSnapshot({});
 
   if (this.tick % this.checkpointEvery === 0) {
-    try { await this.writeCheckpoint(this.tick); }
-    catch (e) { this.enterFault(e, 'checkpoint'); throw e; }
+    /* Не await: снятие состояния синхронно, запись/fsync — в фоне. Иначе
+       каждый checkpoint останавливал мир на всё время записи (на 600
+       жителях это были сотни миллисекунд, а с раздутым навигатором — 0.6 с
+       каждые 2 с). */
+    this.requestCheckpoint(this.tick);
   }
-  if (out.over && this.status === 'running') {
-    this.status = 'over';
+  if (justOver) {
     try {
+      await this.flushCheckpoint();
       await this.persistence.append({
         type: 'control', roomId: this.roomId, epoch: this.epoch,
         action: 'terminal', status: 'over', tick: this.tick, revision: this.revision,
@@ -627,7 +748,7 @@ RoomRuntime.prototype.executeAndCommitOneTick = async function () {
 };
 
 RoomRuntime.prototype.schedulePump = function (delay) {
-  if (this.closed || this.status === 'faulted' || this.status === 'suspended') return;
+  if (this.closed || this.status !== 'running') return;
   const self = this;
   if (this.timer) { this.clock.clearTimeout(this.timer); this.timer = null; }
   this.timer = this.clock.setTimeout(function () { self.pump(); }, Math.max(1, delay | 0));
@@ -635,7 +756,7 @@ RoomRuntime.prototype.schedulePump = function (delay) {
 
 RoomRuntime.prototype.pump = function () {
   const self = this;
-  if (this.closed || this.status === 'faulted' || this.status === 'suspended') return;
+  if (this.closed || this.status !== 'running') return;
   if (this.pumping) return;
   this.pumping = true;
   const now = this.clock.now();
@@ -659,7 +780,7 @@ RoomRuntime.prototype.pump = function () {
     } finally {
       self.pumping = false;
     }
-    if (self.closed || self.status === 'faulted' || self.status === 'suspended') return;
+    if (self.closed || self.status !== 'running') return;
     if (self.debtMs >= self.tickMs) self.clock.setImmediate(function () { self.pump(); });
     else {
       const elapsed = self.clock.now() - self.lastPump;
@@ -711,6 +832,9 @@ RoomRuntime.prototype.acknowledgeSnapshot = function (generation) {
    durable rejected/recovery_interrupted, остальные received ждут в очереди. */
 RoomRuntime.prototype.recover = async function (reason) {
   if (this.status !== 'faulted') return { ok: false, reason: 'not_faulted' };
+  /* Не начинаем восстановление, пока в фоне пишется checkpoint упавшего
+     поколения: иначе старый файл мог бы лечь поверх нового. */
+  await this.flushCheckpoint();
   const loaded = await this.persistence.loadLatest();
   if (!loaded || !loaded.checkpoint) return { ok: false, reason: 'no_checkpoint' };
   const body = loaded.checkpoint;
@@ -747,7 +871,7 @@ RoomRuntime.prototype.recover = async function (reason) {
   this.trimResults();
   this.interrupted = [];
   this.fault = null;
-  this.status = 'running';
+  this.status = this.sim.state.over ? 'over' : 'running';
   this.baselinePending = true;
   this.lastPump = this.clock.now();
   this.debtMs = 0;
@@ -764,7 +888,7 @@ RoomRuntime.prototype.recover = async function (reason) {
     return { ok: false, reason: String(e && e.message || e) };
   }
   this.publishSnapshot({ baseline: true });
-  this.schedulePump(1);
+  if (this.status === 'running') this.schedulePump(1);
   return { ok: true, epoch: this.epoch, tick: this.tick, revision: this.revision };
 };
 
@@ -834,6 +958,12 @@ RoomRuntime.prototype.diagnostics = function () {
       debtMs: this.debtMs,
       lastActivityAgeMs: this.clock.now() - this.lastActivity
     }),
+    checkpoint: {
+      busy: !!this.checkpointBusy,
+      everyTicks: this.checkpointEvery,
+      pendingTick: this.checkpointPending || 0,
+      lastError: this.lastCheckpointError || null
+    },
     fault: this.fault,
     sim: this.sim ? this.sim.diagnostics() : null,
     persistence: this.persistence ? this.persistence.diagnostics() : null
@@ -851,6 +981,7 @@ RoomRuntime.prototype.close = async function (reason) {
         action: 'close', reason: reason || 'closed', tick: this.tick, revision: this.revision
       });
     } catch (e) { /* закрытие не должно падать из-за журнала */ }
+    await this.flushCheckpoint();
     try { await this.writeCheckpoint(this.tick); } catch (e) { /* последний шанс */ }
     await this.persistence.close();
   }
@@ -875,9 +1006,11 @@ RoomRuntime.prototype.markEmpty = function (empty) {
     this.status = 'suspended';
     if (this.timer) { try { this.clock.clearTimeout(this.timer); } catch (e) {} this.timer = null; }
     const self = this;
-    this.persistence.append({
-      type: 'control', roomId: this.roomId, epoch: this.epoch,
-      action: 'suspend', tick: this.tick, revision: this.revision
+    Promise.resolve(self.flushCheckpoint()).then(function () {
+      return self.persistence.append({
+        type: 'control', roomId: self.roomId, epoch: self.epoch,
+        action: 'suspend', tick: self.tick, revision: self.revision
+      });
     }).then(function () { return self.writeCheckpoint(self.tick); }).catch(function () {});
   }
 };

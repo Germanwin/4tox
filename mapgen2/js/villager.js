@@ -1387,6 +1387,13 @@
     var anim = opts.anim || 'walk';
     var want = opts.state || 'toward';
     var ref = opts.ref || null;
+    /* После отсрочки планировщика не переспрашиваем каждый тик. Job уже стоит
+       в очереди и продолжится сам; повторный вызов только меняет ключ,
+       отменяет job и создаёт новый. Часы — v._planClock, их двигает шаг
+       жителя (dt), а не world.time: генератор и прямые приёмки время мира
+       не трогают. */
+    var planNow = v._planClock || 0;
+    if (planNow < (v._planHoldUntil || 0)) return false;
     var sx = Math.floor(v.x), sy = Math.floor(v.y);
 
     /* Стоящий на СВОЁМ месте двора не застрял: клетка пятна непроходима, но
@@ -1465,9 +1472,12 @@
        быть, и «недостижимо» — свойство пары, а не дерева. */
     var ver = mapVer(world);
     var hereKey = ver + '@' + sx + ',' + sy;
-    /* Карта сменилась — продолжать перебор с середины нельзя: ближние деревья
-       могли стать достижимыми. Указатель живёт на версии, на которой посчитан. */
-    if (v.planSkipVer !== ver) v.planSkip = 0;
+    /* Указатель перебора двигается только при смене ГЕОМЕТРИИ ДОМОВ:
+       срубленное дерево не отменяет уже начатый поиск и не должно сбрасывать
+       прогресс перебора на первое дерево. */
+    var navVer = (global.Navigation && typeof global.Navigation.versionOf === 'function')
+      ? global.Navigation.versionOf(world) : ver;
+    if (v.planSkipVer !== navVer) v.planSkip = 0;
     /* С чего продолжать перебор, если прошлая попытка упёрлась в бюджет
        кадра. Без этого житель у дальнего леса мог вечно перебирать первые
        два недостижимых дерева, каждый раз обрываясь на бюджете, и никогда
@@ -1503,7 +1513,12 @@
         var stop = world._pathStop;
         pathPairResult(v, sx, sy, spots[j].cx, spots[j].cy, stop);
         if (!cells || cells.length < 2) {
-          if (stop === 'deferred') treeFrame = true;
+          /* Бюджет планировщика кончился — это ответ на ВЕСЬ перебор, а не
+             на одну стоянку. Раньше здесь стоял continue, и каждый рабочий
+             за тик успевал запросить до TREE_TRIES*4 путей: 600 рабочих
+             давали тысячи job'ов, отмен и полных карт памяти на каждый, а
+             мир тикал 4.8 раза в секунду вместо 20. Ждём этот же поиск. */
+          if (stop === 'deferred') { treeFrame = true; break; }
           else if (stop === 'limit') treeLimit = true;
           continue;
         }
@@ -1513,15 +1528,36 @@
           treeBest = { spot: spots[j], cells: cells };
         }
       }
-      /* Бюджет КАДРА кончился, а дерева ещё нет: перебор продолжится со
-         следующего. Это отсрочка, а не «пути нет»: причину не выдумываем. */
-      if (!treeBest && treeFrame && !best) {
-        v.planSkip = i + 1;
-        v.planSkipVer = ver;
-        if (v.planSkip >= trees.length) v.planSkip = 0;
-        v.jobWhy = '';
-        if (global.Metrics && global.Metrics.on) global.Metrics.counters.planFails++;
-        return false;
+      /* Бюджет КАДРА кончился, а дерева ещё нет: это отсрочка, а не «пути
+         нет». Ждём тот же поиск, а не начинаем со следующего дерева: иначе
+         один рабочий за тик создаёт десятки job'ов и весь мир стоит. */
+      if (treeFrame) {
+        /* Если хоть одна стоянка ЭТОГО дерева уже дала путь, отсрочка
+           следующей не отменяет найденное. Иначе рабочий выбрасывал
+           достижимую дорогу из-за дальней стоянки и стоял без дела. */
+        if (!best && treeBest) {
+          best = { tree: tree, spot: treeBest.spot, cells: treeBest.cells };
+          bestCost = treeCost;
+        }
+        if (!best) {
+          /* Если первая же стоянка не досчиталась за разумное время, а рядом
+             есть другое дерево, ждать её вечно нельзя: через секунду
+             отсрочек двигаемся к следующему. */
+          if (!v._planDeferSince) v._planDeferSince = planNow;
+          if (planNow - v._planDeferSince > 1.0 && i + 1 < trees.length) {
+            v.planSkip = i + 1;
+            v.planSkipVer = navVer;
+            v._planDeferSince = 0;
+            v._planHoldUntil = 0;
+            v.jobWhy = '';
+            return false;
+          }
+          v.jobWhy = '';
+          v._planHoldUntil = planNow + 0.25;
+          if (global.Metrics && global.Metrics.on) global.Metrics.counters.planFails++;
+          return false;
+        }
+        break;   // уже есть достижимое дерево — его и берём
       }
       /* Кэшируем только ДОКАЗАННУЮ недостижимость: перебрали область, и ни
          одна стоянка не достижима. Упор в предел одного поиска ничего не
@@ -1537,11 +1573,17 @@
     }
     if (!best) {
       planReason(v, trees.length ? 'no-path' : 'no-forest');
+      /* Деревьев/дороги нет — это не меняется за один тик. Не перебирать
+         весь лес 20 раз в секунду. */
+      v._planHoldUntil = planNow + 0.5;
+      v._planDeferSince = 0;
       return false;
     }
     v.planSkip = 0;
     v.planSkipVer = null;
     v.jobWhy = '';
+    v._planHoldUntil = 0;
+    v._planDeferSince = 0;
 
     mark(v, best.tree);
     v.tree = best.tree;
@@ -2236,6 +2278,9 @@
          сменилась — начинаем с ближних деревьев, а не с середины списка. */
       planSkip: 0,
       planSkipVer: null,
+      _planClock: 0,
+      _planHoldUntil: 0,
+      _planDeferSince: 0,
       /* Попытки поиска к одной паре клеток: при упоре в предел одного поиска
          предел наращивается, но только для той же пары. */
       pathTryKey: null,
@@ -2536,10 +2581,13 @@
     var had = tree && keep.length !== objs.length;
     if (had && tree.id !== undefined && world.removedIds) world.removedIds.push(tree.id);
     world.objects = keep;
-    /* Срубленное дерево меняет проходимость. Job'ы, начатые по старой версии,
-       отменятся на следующем Navigation.beginTick. */
+    /* Срубленное дерево НЕ меняет версию проходимости для поиска пути.
+       Оно только ОТКРЫВАЕТ клетку: старый job, который его обходил, не
+       станет неверным, а вот отмена всех поисков на каждом дереве (в
+       комнате на 600 рабочих — почти каждый тик) не давала длинным путям
+       дойти до конца. Карта занятости (blockedMap) обновляется по длине
+       objects сама, а _buildRev отвечает за дома. */
     if (had) {
-      world.navVersion = (world.navVersion || 0) + 1;
       world.objectRev = (world.objectRev || 0) + 1;
     }
     if (had && world.stats && world.stats.trees) world.stats.trees--;
@@ -3766,6 +3814,10 @@
     /* Убитый боем из списка ещё не вынут (это делает оболочка после кадра),
        но ходить и работать он уже не должен. */
     if (v.dead) return;
+    /* Часы плана — свои у жителя и идут от dt шага, а не от world.time:
+       генератор карт и прямые приёмочные циклы время мира не двигают, а
+       держать паузу после отсрочки всё равно нужно. */
+    v._planClock = (v._planClock || 0) + Math.max(0, dt || 0);
     v._set = set;
     /* Кто сейчас ищет путь: findPath зовут вложенные помощники (plan,
        routeTo, goToCamp), у которых нет параметра жителя. Один указатель на
@@ -3795,6 +3847,7 @@
       /* Мир другой: вчерашние причины простоя и указатели перебора к нему не
          относятся. */
       v.jobWhy = ''; v.planSkip = 0; v.planSkipVer = null; v.noPathKey = null;
+      v._planClock = 0; v._planHoldUntil = 0; v._planDeferSince = 0;
       /* Брёвна старого мира в новый не переезжают: казна у нового мира своя. */
       v.carrying = false;
       if (v.trainee) v.state = 'toBarracks';
