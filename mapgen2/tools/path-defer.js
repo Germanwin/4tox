@@ -12,6 +12,13 @@
    освобождение слота ученика и те же правила для входа в казарму, рабочего
    места и точки атаки.
 
+   Разделы 7–8 — про прогулку: временный отказ планировщика НЕ означает «идти
+   к двери дома». Прежде planWander сворачивал deferred в «пути нет» и уводил
+   всех жильцов к общему якорю — двери дома; у двери запасной путь уже некуда
+   вести, и четверо стояли в одной клетке («жители не двигаются, сливаются в
+   одного»). Теперь поиск прогулки короткий и идёт мимо общей очереди, а
+   возвращение к двери — только для того, кого круг потерял, и на СВОЮ клетку.
+
    Запуск: node mapgen2/tools/path-defer.js */
 const fs = require('fs');
 const path = require('path');
@@ -281,6 +288,217 @@ console.log('\n== 6. Точка атаки при deferred ==');
   check(!a.noPathKey, 'кеш недостижимой цели не записан');
   check(a.combatMode === 'chase' || a.combatMode === 'attack',
     'режим боя сохранён: ' + a.combatMode);
+}
+
+/* ================== 7. Прогулка при голодном бюджете ================== *
+ * Жалоба заказчика: «жители не двигаются и встают рядом со своими домами…
+ * возвращаются к дому и все встают в одну точку, 4 жителя в одного сливаются».
+ *
+ * Причина — не сам голод бюджета, а то, что прогулка делила его с работой:
+ * её поиск получал 'deferred', planWander считал это «пути нет» и уводил
+ * жителя к якорю — двери дома, ОДНОЙ на всех жильцов. У двери запасной путь
+ * уже некуда вести, новые цели снова откладывались — все четверо сходились в
+ * одну клетку и стояли там. Проверяем не «стало быстрее», а что временный
+ * отказ планировщика больше НЕ уводит к двери и не сливает людей. */
+console.log('\n== 7. Голодный бюджет: прогулка не сгоняет к двери ==');
+{
+  const world = worldOf(64, 64);
+  const anchor = { x: 30.5, y: 30.5 };
+  const list = [];
+  const start = [[28.5, 30.5], [30.5, 28.5], [32.5, 30.5], [30.5, 32.5]];
+  for (let i = 0; i < 4; i++) {
+    /* index/rngKey у каждого свой: ГПСЧ жителя — его собственный, иначе это
+       была бы не проверка движка, а четыре копии одного жителя. */
+    const v = V.blank(world, { id: i + 1, index: i, rngKey: i + 1,
+      x: start[i][0], y: start[i][1], owner: 0, town: 0 });
+    v.anchor = { x: anchor.x, y: anchor.y };
+    v.state = 'wander';
+    v.path = null;
+    list.push(v);
+  }
+  world._villagers = list;
+  const from = list.map(v => [v.x, v.y]);
+  const frames = 4 * 60 * 20;
+  /* Считаем не мгновения, а НЕПРЕРЫВНЫЕ отрезки: разойтись в проходе или
+     пересечь одну клетку по пути — это не «слились». Баг выглядел как
+     «стоят в одной точке», поэтому и мера — сколько кадров подряд. */
+  let atAnchorMost = 0;
+  let pairRun = 0, pairMax = 0, standFrames = 0;
+  const standRun = list.map(() => 0), standMax = list.map(() => 0);
+  for (let t = 0; t < 60; t += DT) {
+    V.beginFrame(world);
+    world._pathFrame.left = 0;          // весь бюджет съели «лесорубы»
+    for (let i = 0; i < list.length; i++) V.update(list[i], world, SET, DT, { buildings: [] });
+    let here = 0, pair = 0;
+    for (let i = 0; i < list.length; i++) {
+      const v = list[i];
+      if (v.state === 'stand') {
+        standFrames++;
+        standRun[i]++;
+        if (standRun[i] > standMax[i]) standMax[i] = standRun[i];
+      } else standRun[i] = 0;
+      if (Math.floor(v.x) === Math.floor(anchor.x) &&
+          Math.floor(v.y) === Math.floor(anchor.y)) here++;
+    }
+    for (let a = 0; a < list.length; a++) for (let b = a + 1; b < list.length; b++) {
+      const d = Math.hypot(list[a].x - list[b].x, list[a].y - list[b].y);
+      if (d < 0.2) pair++;
+    }
+    if (here > atAnchorMost) atAnchorMost = here;
+    pairRun = pair ? pairRun + 1 : 0;
+    if (pairRun > pairMax) pairMax = pairRun;
+  }
+  const walked = list.map((v, i) => Math.hypot(v.x - from[i][0], v.y - from[i][1]));
+  const trips = list.map(v => v.trips || 0);
+  const RUN_LIMIT = 2 * 20;             // 2 с подряд — уже «застрял», а не прошёл
+  check(trips.every(n => n >= 3), 'все четверо выбирали новые цели: переходов ' + trips.join(', '));
+  check(walked.filter(d => d > 2).length >= 3,
+    'жители ходят, а не стоят: прошли ' + walked.map(d => d.toFixed(1)).join(', '));
+  check(standFrames < frames * 0.35,
+    'доля стояния в норме, а не «стоят всё время»: ' + standFrames + ' кадров из ' + frames);
+  check(Math.max.apply(null, standMax) < RUN_LIMIT,
+    'ни один не стоит дольше 2 с подряд: худшее ' +
+    (Math.max.apply(null, standMax) / 20).toFixed(1) + ' с');
+  check(pairMax < RUN_LIMIT, 'никто не слился с соседом надолго: худшее ' +
+    (pairMax / 20).toFixed(1) + ' с подряд ближе 0.2 клетки');
+  /* Общий якорь — одна клетка на всех. Два и больше в ней одновременно и
+     есть «слились в одного»: именно это видел заказчик. */
+  check(atAnchorMost <= 1, 'в клетке двери не больше одного жителя разом: ' +
+    'худшее ' + atAnchorMost);
+}
+
+/* ================== 8. Настоящая общая очередь: прогулка не голодает ================== *
+ * Здесь загружается порционный A* (`simulation/navigation.js`) — тот же, что
+ * в игре. Бюджет тика делается ничтожным (1 снятие), как будто всё съели
+ * лесорубы. Раньше прогулка была обычным job'ом этой очереди: её поиск
+ * откладывался, planWander уводил жителя к двери, а «домой» доезжало из
+ * готового результата — четверо сходились в одну клетку. Теперь поиск
+ * прогулки короткий и идёт мимо очереди: проверяем и людей, и то, что общий
+ * бюджет они не трогают вовсе. */
+console.log('\n== 8. Общая очередь навигации: прогулка не голодает ==');
+{
+  new Function(fs.readFileSync(path.join(JS, 'simulation', 'navigation.js'), 'utf8') +
+    '\n//# sourceURL=navigation.js')();
+  const N = globalThis.Navigation;
+  const world = worldOf(64, 64);
+  const anchor = { x: 30.5, y: 30.5 };
+  const list = [];
+  const start = [[28.5, 30.5], [30.5, 28.5], [32.5, 30.5], [30.5, 32.5]];
+  for (let i = 0; i < 4; i++) {
+    const v = V.blank(world, { id: i + 1, index: i, rngKey: i + 1,
+      x: start[i][0], y: start[i][1], owner: 0, town: 0 });
+    v.anchor = { x: anchor.x, y: anchor.y };
+    v.state = 'wander';
+    v.path = null;
+    list.push(v);
+  }
+  world._villagers = list;
+  N.ensure(world, { maxPops: 1, quantum: 1 });
+  const from = list.map(v => [v.x, v.y]);
+  const frames = 4 * 60 * 20;
+  let atAnchorMost = 0, standFrames = 0, standRunMax = 0, pairMax = 0, pairRun = 0;
+  const standRun = list.map(() => 0), standMax = list.map(() => 0);
+  for (let t = 0; t < 60; t += DT) {
+    N.beginTick(world);                 // весь бюджет — одно снятие
+    for (let i = 0; i < list.length; i++) V.update(list[i], world, SET, DT, { buildings: [] });
+    let here = 0, pair = 0;
+    for (let i = 0; i < list.length; i++) {
+      const v = list[i];
+      if (v.state === 'stand') {
+        standFrames++; standRun[i]++;
+        if (standRun[i] > standMax[i]) standMax[i] = standRun[i];
+      } else standRun[i] = 0;
+      if (Math.floor(v.x) === Math.floor(anchor.x) &&
+          Math.floor(v.y) === Math.floor(anchor.y)) here++;
+    }
+    for (let a = 0; a < list.length; a++) for (let b = a + 1; b < list.length; b++) {
+      if (Math.hypot(list[a].x - list[b].x, list[a].y - list[b].y) < 0.2) pair++;
+    }
+    if (here > atAnchorMost) atAnchorMost = here;
+    pairRun = pair ? pairRun + 1 : 0;
+    if (pairRun > pairMax) pairMax = pairRun;
+    if (Math.max.apply(null, standMax) > standRunMax) standRunMax = Math.max.apply(null, standMax);
+  }
+  const walked = list.map((v, i) => Math.hypot(v.x - from[i][0], v.y - from[i][1]));
+  const trips = list.map(v => v.trips || 0);
+  const RUN_LIMIT = 2 * 20;
+  check(trips.every(n => n >= 3), 'при голодной очереди все выбирают новые цели: переходов ' +
+    trips.join(', '));
+  check(walked.filter(d => d > 2).length >= 3,
+    'при голодной очереди жители ходят: прошли ' + walked.map(d => d.toFixed(1)).join(', '));
+  check(standRunMax < RUN_LIMIT, 'никто не стоит дольше 2 с подряд: худшее ' +
+    (standRunMax / 20).toFixed(1) + ' с');
+  check(atAnchorMost <= 1, 'в клетке двери не больше одного жителя разом: худшее ' +
+    atAnchorMost);
+  check(pairMax < RUN_LIMIT, 'никто не слился с соседом надолго: ' +
+    (pairMax / 20).toFixed(1) + ' с подряд');
+  /* Прогулка не брала общий бюджет: он остался тем, что выдал beginTick. */
+  check(world._navigation.budget === 1,
+    'общий бюджет тика прогулка не трогала: осталось ' + world._navigation.budget);
+  check(world._navigation.active.length === 0 && world._navigation.waiting.length === 0,
+    'прогулка не оставила job`ов в общей очереди: active ' +
+    world._navigation.active.length + ', waiting ' + world._navigation.waiting.length);
+}
+
+/* ================== 9. Якорь прогулки идёт за домом ================== *
+ * Вторая половина той же жалобы: «после переноса/поворота дома жители
+ * возвращаются к старому месту». Якорь прогулки считается от двери
+ * (Buildings.frontSpot(v.home)) и раньше оставался снимком на момент
+ * рождения: дом уехал — дверь уехала, а круг прогулки и «возвращение домой»
+ * остались у прежнего места. Теперь якорь пересчитывается, когда меняются
+ * постройки (Buildings.touch → world._buildRev). */
+console.log('\n== 9. Якорь прогулки идёт за домом ==');
+{
+  const world = worldOf(64, 64);
+  const house = B.make({ type: 'house', variant: 'a', rot: 90, x: 20, y: 20, owner: 0, id: 'h1' });
+  const buildings = [house];
+  world._buildings = buildings;
+  const list = [];
+  for (let i = 0; i < 2; i++) {
+    const v = V.blank(world, { id: i + 1, index: i, rngKey: i + 1,
+      x: 23.5 + i, y: 22.5, owner: 0, town: 0, home: house });
+    v.state = 'wander';
+    list.push(v);
+  }
+  world._villagers = list;
+  const door0 = B.frontSpot(house);
+  check(list.every(v => v.anchor.x === door0.x + 0.5 && v.anchor.y === door0.y + 0.5),
+    'на старте якорь — дверь своего дома: ' + JSON.stringify(list[0].anchor));
+
+  /* Дом переехал далеко: жители остались за кругом (20 клеток от двери). */
+  B.setSpot(world, house, { x: house.x + 24, y: house.y + 4 });
+  const door1 = B.frontSpot(house);
+  V.beginFrame(world);
+  for (const v of list) V.update(v, world, SET, DT, { buildings });
+  check(list.every(v => v.anchor.x === door1.x + 0.5 && v.anchor.y === door1.y + 0.5),
+    'после переезда якорь пересчитан от НОВОЙ двери: ' + JSON.stringify(list[0].anchor));
+
+  /* Жители возвращаются к новому дому, и каждый встаёт на свою клетку. */
+  let pairMax = 0, pairRun = 0;
+  const near = [];
+  for (let t = 0; t < 60; t += DT) {
+    V.beginFrame(world);
+    for (const v of list) V.update(v, world, SET, DT, { buildings });
+    const d = Math.hypot(list[0].x - list[1].x, list[0].y - list[1].y);
+    pairRun = d < 0.2 ? pairRun + 1 : 0;
+    if (pairRun > pairMax) pairMax = pairRun;
+  }
+  for (const v of list) {
+    near.push(Math.hypot(v.x - (door1.x + 0.5), v.y - (door1.y + 0.5)));
+  }
+  check(near.every(d => d <= V.WANDER_R + 0.6),
+    'вернулись к новому дому, а не к старому месту: от новой двери ' +
+    near.map(d => d.toFixed(1)).join(', '));
+  check(pairMax < 2 * 20, 'и не встали в одну точку вдвоём: худшее ' +
+    (pairMax / 20).toFixed(1) + ' с подряд');
+
+  /* Поворот двигает дверь на другую сторону — якорь обязан уехать за ней. */
+  B.setSpot(world, house, { rot: house.rot + 90 });
+  const door2 = B.frontSpot(house);
+  V.beginFrame(world);
+  for (const v of list) V.update(v, world, SET, DT, { buildings });
+  check(list.every(v => v.anchor.x === door2.x + 0.5 && v.anchor.y === door2.y + 0.5),
+    'после поворота якорь у новой двери: ' + JSON.stringify(list[0].anchor));
 }
 
 /* ================== итог ================== */

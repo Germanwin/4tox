@@ -242,6 +242,13 @@
   var WANDER_PICKS = 8;    // проб на одну цель: в круге бывает и море, и дом
   var WANDER_TRIES = 12;   // сколько целей перебрать, если путь не нашёлся
   var WANDER_RETRY = 1.0;  // с: так часто запертый пробует снова
+  /* Предел ОДНОГО поиска прогулки, в снятиях с кучи. Круг прогулки — 10
+     клеток, это не больше ~320 клеток; 900 — с запасом на обход дома и на
+     повторные записи в кучу. Поиск идёт БЕЗ общего бюджета кадра
+     (`ignoreBudget`), как аварийный выход из пятна: он короткий, а стоять в
+     общей очереди за походами лесорубов прогулке нельзя — именно из-за этой
+     очереди жители и «возвращались к дому» (см. planWander). */
+  var WANDER_LIMIT = 900;
 
   var STAND_OFF = 0.30;
   var STAND_MAX = 0.45;    // дальше — уже чужая клетка (клетка дерева), туда нельзя
@@ -2170,6 +2177,22 @@
     return false;
   }
 
+  /* Что уже занято у других: их тела и КУДА ОНИ ИДУТ. Одних тел мало — двое,
+     отправленных к двери в один кадр, стоят далеко и оба выбрали бы одну и ту
+     же свободную клетку; поэтому цель (`goal`) идёт в тот же список.
+     Используется запасным путём прогулки (чтобы жильцы не вставали в один
+     пиксель) — `taken` понимает и жителя, и пару координат одинаково. */
+  function occupiedCells(self, world) {
+    var out = [], list = (world && world._villagers) || [], i;
+    for (i = 0; i < list.length; i++) {
+      var o = list[i];
+      if (!o || o === self) continue;
+      out.push(o);
+      if (o.goal && isFinite(o.goal.x) && isFinite(o.goal.y)) out.push(o.goal);
+    }
+    return out;
+  }
+
   /* Список клеток суши — площадь острова для отчёта теста. Лежит на мире:
      мир перегенерировали — список другой, и это правильно. */
   function landCells(world) {
@@ -2847,7 +2870,20 @@
 
   /* Точка прогулки и путь к ней: случайная проходимая и ДОСТИЖИМАЯ клетка в
      круге якоря. Путь считается тем же поиском и распрямлением, что и дорога к
-     дереву: «гуляет» — это не другая ходьба, а другая цель. */
+     дереву: «гуляет» — это не другая ходьба, а другая цель.
+
+     ПРОГУЛКА НЕ СТОИТ В ОБЩЕЙ ОЧЕРЕДИ ПОИСКА. Прежде каждый её поиск был
+     job'ом порционного A* и делил бюджет тика с рабочими: лесорубы, которые
+     перебирают деревья, выбирали его целиком, и прогулке доставалось
+     'deferred'. А отказ поиска ниже превращался в «идём к двери дома» — и
+     ВСЕ жители деревни, у которых якорь один (дверь СВОЕГО дома), сходились
+     в одну клетку и вставали там навсегда: у самой двери запасной путь уже
+     некуда вести, а новые цели снова откладывались. Это и был баг «жители
+     не двигаются и сливаются в одного у дома».
+
+     Поэтому поиск прогулки короткий, ограниченный WANDER_LIMIT и идёт мимо
+     общей очереди (`ignoreBudget`, как аварийный выход из пятна). Он не
+     может ни занять кадр, ни быть вытесненным чужой работой. */
   function planWander(v, world, solid) {
     if (!v.anchor) return false;
     var sx = Math.floor(v.x), sy = Math.floor(v.y);
@@ -2861,13 +2897,27 @@
     }
     var ax = v.anchor.x, ay = v.anchor.y;
     var limit = Math.max(WANDER_R, Math.sqrt(dist2(v.x, v.y, ax, ay)));
+    var deferred = false, hard = 0;
     for (var i = 0; i < WANDER_TRIES; i++) {
       var cell = wanderCell(v, world, solid, ax, ay);
       if (!cell) continue;
       if (cell.x === sx && cell.y === sy) continue;
+      /* `ignoreBudget` + предел: короткий локальный поиск, см. шапку. */
       var cells = findPath(world, solid, sx, sy, cell.x, cell.y,
-        { who: v, purpose: 'wander' });
-      if (!cells || cells.length < 2) continue;
+        { who: v, purpose: 'wander', ignoreBudget: true, limit: WANDER_LIMIT });
+      if (!cells || cells.length < 2) {
+        /* Отсрочка — это НЕ «пути нет»: поиск продолжится, и уходить из-за
+           неё к двери нельзя. При кратком локальном поиске её быть не
+           должно; ветка остаётся сторожем на случай, если поиск снова
+           начнут звать через общую очередь. */
+        if (world._pathStop === 'deferred') { deferred = true; break; }
+        /* Упор в предел локального поиска — дорогая попытка (разбор
+           до WANDER_LIMIT клеток). Три подряд — и на этот раз хватит:
+           стоять секунду и повторить со свежим жребием дешевле, чем
+           перебирать весь круг разом. */
+        if (world._pathStop === 'limit' && ++hard >= 3) break;
+        continue;
+      }
       var path = smoothPath(world, solid, cells);
       if (!insideCircle(path, ax, ay, limit)) continue;
       v.tree = null;
@@ -2881,34 +2931,46 @@
       setAnim(v, 'walk');
       return true;
     }
+    /* Не смогли выбрать цель из-за отсрочки — стоим, где стоим, и попробуем
+       снова. Возвращение домой здесь было бы ложью: пути никто не искал. */
+    if (deferred) return false;
 
-    /* Запасной путь: ни одна случайная точка не дала маршрута внутри круга —
-       идём к якорю (двери дома). Это не прогулка, а возвращение: житель,
-       оказавшийся за кругом (ушёл за деревом, его оттуда уволили), не должен
-       стоять навсегда. Предел здесь — текущее расстояние плюс клетка: путь
-       домой не имеет права уводить ещё дальше. */
+    /* Запасной путь — только ДЛЯ ТОГО, КОГО КРУГ ПОТЕРЯЛ. Это не прогулка, а
+       возвращение: житель, оказавшийся за кругом (его унесло аварийным
+       выходом, дом переехал), не должен стоять навсегда. Жителю ВНУТРИ круга
+       идти к двери некуда: он и так гуляет вокруг дома, а «вернуться к
+       якорю» означало бы собрать всех в одну клетку перед дверью — та самая
+       куча, из которой баг и состоял. */
+    if (Math.sqrt(dist2(v.x, v.y, ax, ay)) <= WANDER_R) return false;
     var axc = Math.floor(ax), ayc = Math.floor(ay);
-    if (walkable(world, solid, axc, ayc) && (sx !== axc || sy !== ayc)) {
-      var homeCells = findPath(world, solid, sx, sy, axc, ayc,
+    if (!walkable(world, solid, axc, ayc)) return false;
+
+    /* Куда именно встать у дома. Не в саму точку двери: она ОДНА на всех
+       жильцов, и все они встали бы в один пиксель. Своя свободная клетка
+       рядом, а сама дверь — только если рядом всё занято. */
+    var stand = spawnSpot(world, solid, ax, ay, occupiedCells(v, world), 2) ||
+      { x: ax, y: ay };
+    var stx = Math.floor(stand.x), sty = Math.floor(stand.y);
+    if (!walkable(world, solid, stx, sty)) return false;
+    if (sx === stx && sy === sty) return false;
+    var homeCells = findPath(world, solid, sx, sy, stx, sty,
       { who: v, purpose: 'home' });
-      if (homeCells && homeCells.length >= 2) {
-        var homePath = smoothPath(world, solid, homeCells);
-        var reach = Math.max(limit, Math.hypot(v.x - ax, v.y - ay)) + 1;
-        if (insideCircle(homePath, ax, ay, reach)) {
-          v.tree = null;
-          v.goal = { x: ax, y: ay };
-          v.path = homePath;
-          v.step = firstStep(v, world, solid);
-          v.close = false;
-          v.seen = world._villagerBlocked ? world._villagerBlocked.version : null;
-          v.state = 'wander';
-          v.trips++;
-          setAnim(v, 'walk');
-          return true;
-        }
-      }
-    }
-    return false;
+    if (!homeCells || homeCells.length < 2) return false;
+    var homePath = smoothPath(world, solid, homeCells);
+    /* Предел возвращения — текущее расстояние плюс клетка: путь домой не
+       имеет права уводить ещё дальше. */
+    var reach = Math.max(limit, Math.hypot(v.x - ax, v.y - ay)) + 1;
+    if (!insideCircle(homePath, ax, ay, reach)) return false;
+    v.tree = null;
+    v.goal = { x: stx + 0.5, y: sty + 0.5 };
+    v.path = homePath;
+    v.step = firstStep(v, world, solid);
+    v.close = false;
+    v.seen = world._villagerBlocked ? world._villagerBlocked.version : null;
+    v.state = 'wander';
+    v.trips++;
+    setAnim(v, 'walk');
+    return true;
   }
 
   /* ----------------------- ученик и воин казармы -------------------------- *
@@ -3840,6 +3902,24 @@
     }
     var solid = blockedMap(world, opts && opts.buildings);
     if (opts && opts.buildings) world._buildings = opts.buildings;
+
+    /* ЯКОРЬ ПРОГУЛКИ ИДЁТ ЗА ДОМОМ. Он считается от двери (blank:
+       Buildings.frontSpot(v.home)), и до сих пор оставался снимком на момент
+       рождения: дом перенесли или повернули — дверь уехала, а жители
+       продолжали гулять вокруг СТАРОГО места и возвращались к двери, которой
+       там уже нет. Пересчитываем, когда изменились постройки вообще
+       (`_buildRev` — его ставит Buildings.touch на постановку, перенос,
+       поворот и снос), а не каждый кадр. */
+    if (v.home && global.Buildings) {
+      var homeRev = world._buildRev || 0;
+      if (v.anchorRev !== homeRev) {
+        v.anchorRev = homeRev;
+        var homeDoor = global.Buildings.frontSpot(v.home);
+        if (homeDoor && isFinite(homeDoor.x) && isFinite(homeDoor.y)) {
+          v.anchor = { x: homeDoor.x + 0.5, y: homeDoor.y + 0.5 };
+        }
+      }
+    }
 
     // Мир сменился (нажали «Сгенерировать»): путь считан по старому острову.
     if (v.world !== world) {
