@@ -27,3 +27,5 @@ art/tools/model-stand/tools/out/
 
 # Состояние серверных комнат: журнал, checkpoint, lobby.json (секреты токенов)
 game/server/var/
+config.bat
+node_modules
