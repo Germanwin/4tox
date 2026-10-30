@@ -2289,8 +2289,9 @@
          неудачи подряд значат «туда не дойти», и приказ снимается, а не
          повторяется до победы. */
       routeFail: 0,
-      /* То же для боя: цель за водой/в закрытом кармане не должна заставлять
-         воина искать путь по всему острову каждый кадр. */
+      /* Счётчик неудач боя оставлен для диагностики/старых снимков; решение
+         об отказе от цели принимается по ЯВНОМУ результату A* (см.
+         combatMove), а не по числу кадров. */
       combatFail: 0,
       /* Почему работы нет: '' — работа есть или ещё не решали, 'no-forest' —
          рядом нет леса, 'no-path' — лес есть, но ни до одного дерева не дойти.
@@ -2316,9 +2317,22 @@
       combatCell: null,
       combatCellFor: null,
       /* Ключ «к этой цели отсюда не дойти»: версия карты @ клетка > цель.
-         Пишется после двух неудачных попыток боя, читается Combat/HUD. */
+         Пишется после ДОКАЗАННОГО отказа боя (`unreachable`/`invalid`) и
+         читается тем же `Combat.targetKey`, что и у Combat. */
       noPathKey: null,
       noPathTarget: null,
+      /* Временный игнор цели после упора A* в предел: предел не доказал
+         недостижимость, поэтому кеш навсегда был бы ложью. */
+      giveUpTarget: null,
+      giveUpUntil: 0,
+      /* Поиск пути в бою: отложен очередью (`routePending`) или идёт с этой
+         клетки (`chaseCell`). Нужны, чтобы повтор не начинал поиск заново и
+         не менял ключ задачи каждый кадр. */
+      routePending: false,
+      chaseCell: null,
+      chaseFor: null,
+      /* Ключ места двора казармы: переехала — место пересчитать. */
+      stationKey: null,
       dead: false,
       hidden: false,       // растворён в казарме: не рисуется
       vanishT: 0,          // с: сколько ещё растворяться
@@ -2838,6 +2852,18 @@
     v.phase = (v.phase + dt * global.Hero.fps(set, 'idle') / n) % 1;
   }
 
+  /* Удар воина. До этого в бою стояло прямое `v.anim = 'idle'` и фаза не
+     двигалась: воин наносил урон, но выглядел застывшим, а в сети получал
+     длительность прошлой походки. `work` — удар мечом в атласе воина; фаза
+     идёт по кругу, потому что удары повторяются, а кадр один и тот же. */
+  function attackStep(v, set, dt) {
+    setAnim(v, 'work', set);
+    if (v.frozen || !global.Hero) return;
+    var a = v.anim, n = Math.max(1, global.Hero.frameCount(set, a));
+    var fps = global.Hero.fps(set, a);
+    if (fps > 0) v.phase = (v.phase + dt * fps / n) % 1;
+  }
+
   function dist2(x0, y0, x1, y1) {
     var dx = x1 - x0, dy = y1 - y0;
     return dx * dx + dy * dy;
@@ -3120,6 +3146,13 @@
     v.entering = false;
     v.exiting = false;
     v.warrior = true;
+    /* HP — свойство типа: до тренировки житель носил 15, у воина по таблице
+       боя 25. Без пересчёта обученный воин умирал с третьего удара, а полоса
+       показывала «15 / 15», то есть полное здоровье. */
+    if (global.Combat && global.Combat.maxHpOf) {
+      v.maxHp = global.Combat.maxHpOf(v);
+      v.hp = v.maxHp;
+    }
     /* Куда идти. Раньше без лагеря воин просто стоял (`stand`); теперь у него
        есть двор казармы. Место могло измениться за пять секунд обучения,
        поэтому спрашиваем Session заново, а не верим v.warcamp из `train`. */
@@ -3378,6 +3411,16 @@
       idleStep(v, set, dt);
       return;
     }
+    /* Казарму переехали или повернули — двор уехал вместе с ней. Без ключа
+       воин оставался стоять на СТАРОМ месте (state='garrison' выходил сразу)
+       и был глух к деревне: якорем двора служит центр НОВОЙ казармы. */
+    var sk = b.x + ':' + b.y + ':' + b.rot;
+    if (v.stationKey !== sk) {
+      v.stationKey = sk;
+      v.path = null;
+      v.garrisonSpot = null;
+      v.state = 'toBarracksYard';
+    }
     /* Воин во дворе казармы тоже может оказаться под новым домом. state
        garrison раньше сразу уходил в idleStep — человек стоял в стене, пока
        его не снесут (замер: 40 с внутри дома). */
@@ -3449,11 +3492,18 @@
     if (!C || !t || t.dead || t.rubble || (t.hp !== undefined && t.hp <= 0)) {
       v.target = null;
       v.combatMode = null;
+      v.attackTarget = null;
       v.path = null;
       v.combatFail = 0;
-      v.noPathKey = null;
-      v.noPathTarget = null;
+      /* Кеш недостижимости НЕ стираем: Combat только что мог записать его
+         для этой цели, а следующий think иначе снова взял бы её и воин
+         остался бы на месте. Кеш снимает новый приказ/другая цель/карта. */
+      v.routePending = false;
+      v.chaseCell = null;
       freeCombatCell(world, v);
+      if (global.Navigation && global.Navigation.cancelEntity && v.id !== undefined) {
+        global.Navigation.cancelEntity(world, v.id, null, 'toBattle');
+      }
       v.state = 'stand';
       return;
     }
@@ -3462,6 +3512,7 @@
       v.noPathTarget = null;
     }
     if (v.combatCellFor && v.combatCellFor !== t) freeCombatCell(world, v);
+    if (v.chaseFor && v.chaseFor !== t) { v.chaseCell = null; v.chaseFor = null; }
     /* Своё место перезанимаем КАЖДЫЙ кадр: оболочка чистит карту брони перед
        боем (Play.tick), и без перезанятия двое могли заново выбрать одну
        клетку. Если клетку уже занял другой, своя бронь снимается. */
@@ -3485,8 +3536,7 @@
       v.noPathKey = null;
       v.noPathTarget = null;
       v.state = 'attack';
-      v.anim = 'idle';
-      v.animWant = 'idle';
+      attackStep(v, set, dt);
       var cx = t.kind === 'building' ? B.center(t).x : t.x;
       var cy = t.kind === 'building' ? B.center(t).y : t.y;
       v.rot = deg(Math.atan2(cy - v.y, cx - v.x));
@@ -3503,10 +3553,14 @@
     if (!v.path || v.chaseT <= 0) {
       tried = true;
       v.chaseT = 0.6;
-      var ok = false, i, dup, deferStop = false;
+      var ok = false, i, dup, deferStop = false, searched = false, definitive = 0;
       var cand = [];
-      /* Своё уже забронированное место — первым: если мы сошли с него в бою,
-         возвращаемся туда, а не ищем новое. */
+      /* Клетка, к которой уже идёт ОТЛОЖЕННЫЙ поиск, — первой: повтор с тем
+         же ключом продолжает ту же задачу очереди, а новая клетка отменяла
+         бы её и начинала поиск заново (именно так отряд и застревал). */
+      if (v.chaseCell) cand.push(v.chaseCell);
+      /* Своё уже забронированное место — следующим: если мы сошли с него в
+         бою, возвращаемся туда, а не ищем новое. */
       if (v.combatCell) cand.push(v.combatCell);
       if (t.kind === 'building') {
         var cellsB = C.approachCells(world, t, v.x, v.y);
@@ -3533,15 +3587,44 @@
         var cl = cand[i];
         /* Чужую клетку подхода не занимаем: иначе пятеро сходятся в одну, и
            бой читается как «воины слиплись». */
-        if (cellTakenByOther(world, cl, v)) continue;
-        if (!walkable(world, loose, cl.x, cl.y)) continue;
+        if (cellTakenByOther(world, cl, v)) {
+          if (v.chaseCell && v.chaseCell.x === cl.x && v.chaseCell.y === cl.y) {
+            v.chaseCell = null;
+            v.chaseFor = null;
+          }
+          continue;
+        }
+        if (!walkable(world, loose, cl.x, cl.y)) {
+          if (v.chaseCell && v.chaseCell.x === cl.x && v.chaseCell.y === cl.y) {
+            v.chaseCell = null;
+            v.chaseFor = null;
+          }
+          continue;
+        }
+        /* Запоминаем клетку ДО запроса: при deferred следующий повтор пойдёт
+           с тем же ключом и продолжит поиск, а не начнёт новый. */
+        v.chaseCell = { x: cl.x, y: cl.y };
+        v.chaseFor = t;
+        searched = true;
         if (routeTo(v, world, loose, cl.x + 0.5, cl.y + 0.5,
                     { state: 'toBattle', anim: 'walk' })) {
+          v.chaseCell = null;
+          v.chaseFor = null;
+          v.routePending = false;
           if (reserveCell(world, cl, v)) { v.combatCellFor = t; ok = true; }
         } else if (v.routeStatus === 'deferred' || v.routeStatus === 'limit') {
-          /* Бюджет кадра кончился: остальные клетки вернут то же самое.
+          /* Бюджет кадра/очередь: остальные клетки вернут то же самое.
              Цель не бросаем, в кеш недостижимости не пишем. */
+          v.routePending = true;
           deferStop = true;
+        } else {
+          v.routePending = false;
+          v.chaseCell = null;
+          v.chaseFor = null;
+          /* Три доказанных отказа за кадр — достаточно. Каждый такой поиск
+             перебирает целую связную область, и двадцать клеток подхода
+             подряд — это двадцать полных A* в одном кадре. */
+          if (++definitive >= 3) deferStop = true;
         }
       }
       if (ok) { v.noPathKey = null; v.noPathTarget = null; }
@@ -3553,33 +3636,63 @@
       if (!v.path) v.state = 'attack';
       return;
     }
-    /* Отсрочка планировщика: это не «до цели не дойти». Держим цель и
-       сбрасываем счётчик неудач; Combat.tick не должен считать это
-       chaseGiveUp (см. noPathT). */
-    if (v.routeStatus === 'deferred' || v.routeStatus === 'limit') {
+    /* Отсрочка планировщика: это не «до цели не дойти». Держим цель;
+       Combat.tick не должен считать это chaseGiveUp (см. noPathT).
+       `limit` — НЕ отсрочка: A* упёрся в предел и не доказал ни путь, ни его
+       отсутствие. Его считаем неудачной попыткой, иначе «limit → сброс
+       счётчика → снова limit» не кончается никогда (замер: 12 воинов стояли
+       50 с, перезапуская один и тот же поиск). */
+    if (v.routeStatus === 'deferred') {
       v.noPathT = 0;
-      v.combatFail = 0;
-      v.chaseT = 0;
+      /* НЕ ноль: повтор каждый кадр менял клетку подхода и ключ задачи,
+         отменяя незавершённый поиск. 0.35 с — это смена цели не позже
+         обычного think, но без шквала запросов. */
+      v.chaseT = 0.35;
       idleStep(v, set, dt);
       return;
     }
-    /* Дойти нечем. Считаем ПОПЫТКИ, а не кадры: одна неудачная попытка —
-       это девять A* по всему острову, и повторять её до пяти секунд нельзя.
-       Две попытки подряд — цель за водой/в закрытом кармане, отпускаем. */
-    if (tried) v.combatFail = (v.combatFail || 0) + 1;
-    idleStep(v, set, dt);
-    if (v.combatFail >= 2) {
-      v.combatFail = 0;
-      v.stuck = 0;
-      /* Ключ «отсюда к этой цели не дойти» — для Combat и HUD. Версия карты в
-         ключе: срубленное дерево/снесённый дом меняют ответ. */
-      v.noPathKey = mapVer(world) + '@' + Math.floor(v.x) + ',' + Math.floor(v.y) +
-        '>' + targetKey(t);
-      v.noPathTarget = t;
-      freeCombatCell(world, v);
-      v.target = null;
-      v.combatMode = null;
+    /* Дойти нечем. `unreachable`/`invalid` — доказанный отказ, `limit` — упор
+       в предел. Ждать второго «того же» отказа нельзя: счётчик попыток
+       сбрасывался найденным и сразу потерянным путём, и цикл «limit →
+       unreachable → снова цель» не кончался (замер: 12 воинов стояли 50 с).
+       Поэтому цель отпускаем сразу: доказанную — в кеш, упёршуюся в предел —
+       в короткий трёхсекундный игнор. Если же ни одна клетка подхода даже не
+       проверялась (все заняты товарищами), это очередь, а не «не дойти»:
+       цель держим. */
+    if (!tried) { idleStep(v, set, dt); return; }
+    if (!searched) {
+      v.chaseT = 0.35;
+      idleStep(v, set, dt);
+      return;
     }
+    var stop = v.routeStatus;
+    v.chaseCell = null;
+    v.chaseFor = null;
+    v.routePending = false;
+    v.combatFail = 0;
+    v.stuck = 0;
+    if (stop === 'limit') {
+      v.noPathKey = null;
+      v.noPathTarget = null;
+      v.giveUpTarget = t;
+      v.giveUpUntil = (world && world.time ? world.time : 0) + 3;
+    } else {
+      v.noPathKey = (C && C.targetKey) ? C.targetKey(world, v, t)
+        : (mapVer(world) + '@' + Math.floor(v.x) + ',' + Math.floor(v.y) + '>' + targetKey(t));
+      v.noPathTarget = t;
+    }
+    freeCombatCell(world, v);
+    if (global.Navigation && global.Navigation.cancelEntity && v.id !== undefined) {
+      global.Navigation.cancelEntity(world, v.id, null, 'toBattle');
+    }
+    v.target = null;
+    v.combatMode = null;
+    v.attackTarget = null;
+    v._fightAnchor = null;
+    v.noPathT = 0;
+    /* Пусть ближайший think сразу выберет другую цель или вернёт приказ. */
+    v.thinkT = 0;
+    idleStep(v, set, dt);
   }
 
   /* Приказ отряду: идти на СВОЁ место в круге вокруг клика. Места разные,
@@ -3614,6 +3727,8 @@
         if (v.routeFail >= 3) {
           v.routeFail = 0;
           v.order = null;
+          v.garrisonSpot = null;
+          v.stationKey = null;
           v.state = 'stand';
         }
         return;
@@ -3674,7 +3789,9 @@
           v.routeFail = 0;
           v.stuck = 0;
           v.noPathT = 0;
-          v.routeT = 0;
+          /* Не каждый кадр: очередь A* одна на мир, и шквал одинаковых
+             запросов не ускоряет путь, а отнимает бюджет у других. */
+          v.routeT = 0.2;
           idleStep(v, set, dt);
           return;
         }
@@ -3689,6 +3806,8 @@
           v.routeFail = 0;
           v.stuck = 0;
           v.order = null;
+          v.garrisonSpot = null;
+          v.stationKey = null;
           v.state = 'stand';
         }
         return;

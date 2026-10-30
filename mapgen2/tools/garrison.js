@@ -4,7 +4,8 @@
 
    Проверяется без браузера, на настоящем мире и настоящих атласах:
    1) на старте три постройки, военного лагеря нет;
-   2) казарма учит и без лагеря — воин выходит и встаёт во двор казармы;
+   2) казарма учит и без лагеря — воин выходит и встаёт во двор казармы,
+      а его HP — 25 (таблица боя), а не 15 жителя;
    3) двор вмещает 10, одиннадцатый не учится, пока место не освободится;
    4) построили лагерь — все ждущие уходят в него сами (rebalanceGarrison);
    5) лагерь вмещает 20; 21-й снова встаёт во двор казармы;
@@ -28,7 +29,7 @@ globalThis.Image = function () {
     set: function (v) { this._src = v; if (this.onload) this.onload(); }
   });
 };
-for (const f of ['noise.js', 'rng.js', 'worldgen.js', 'buildings.js', 'hero.js', 'villager.js', 'session.js']) {
+for (const f of ['noise.js', 'rng.js', 'worldgen.js', 'buildings.js', 'hero.js', 'villager.js', 'session.js', 'combat.js']) {
   new Function(fs.readFileSync(path.join(JS, f), 'utf8') + '\n//# sourceURL=' + f)();
 }
 for (const [type, meta] of [
@@ -100,9 +101,12 @@ for (let i = 0; i < 3; i++) check(trainOne(), 'обучен воин ' + (i + 1)
 check(warriors().length === 3, 'три воина: ' + warriors().length);
 check(warriors().every(v => v.station === bar && !v.warcamp),
   'все трое приписаны к двору казармы');
+check(warriors().every(v => v.maxHp === globalThis.Combat.HP.warrior && v.hp === v.maxHp),
+  'обученный воин получил HP воина (' + globalThis.Combat.HP.warrior + '), а не жителя');
 stepUntil(function () { return warriors().every(v => v.state === 'garrison'); }, 60);
 check(warriors().every(v => v.state === 'garrison'),
   'все стоят во дворе: ' + warriors().map(v => v.state).join(','));
+
 
 /* 2. Двор вмещает 10. */
 while (warriors().length < 10) {

@@ -290,7 +290,25 @@
     var assigned = 0;
     for (i = 0; i < list.length; i++) {
       var v = list[i], s = slots[i];
-      if (!s) { skipped++; continue; }
+      /* Новый приказ отменяет старый ДЛЯ ВСЕХ выбранных, даже если места в
+         круге не нашлось. Иначе «пропущенный» воин продолжал идти к прошлой
+         метке, и игрок видел, что часть войск не идёт к новой. */
+      v.order = null;
+      v.path = null;
+      v.goal = null;
+      v.target = null;
+      v.combatMode = null;
+      v.attackTarget = null;
+      v.state = 'stand';
+      /* Старые поиски пути (прогулка, работа, прошлый приказ) больше не
+         нужны: иначе они занимают слоты очереди A* и задерживают новый. */
+      if (global.Navigation && global.Navigation.cancelEntity && v.id !== undefined) {
+        global.Navigation.cancelEntity(world, v.id, null);
+      }
+      if (!s) {
+        skipped++;
+        continue;
+      }
       v.target = null;
       v.combatMode = null;
       v.attackTarget = null;
@@ -306,6 +324,13 @@
       v.noPathKey = null;
       v.noPathT = 0;
       v._fightAnchor = null;
+      v.routePending = false;
+      v.chaseCell = null;
+      v.chaseFor = null;
+      v.garrisonSpot = null;
+      v.stationKey = null;
+      v.giveUpTarget = null;
+      v.giveUpUntil = 0;
       /* Первые шаги путей разносятся по кадрам: иначе 128 A* стартуют в
          одном кадре и дают заметный столб на 0.3–1 с. */
       v.routeT = (i % 16) * 0.04;
@@ -346,6 +371,16 @@
       list[i].routeFail = 0;
       list[i].combatFail = 0;
       list[i].stuck = 0;
+      /* Двор казармы — не «место, где его застал Стоп»: после остановки
+         воин обязан вернуться на СВОЁ место у (возможно, переехавшей)
+         казармы, а не объявить старую точку двором. */
+      list[i].garrisonSpot = null;
+      list[i].stationKey = null;
+      list[i].giveUpTarget = null;
+      list[i].giveUpUntil = 0;
+      list[i].routePending = false;
+      list[i].chaseCell = null;
+      list[i].chaseFor = null;
       list[i].state = 'stand';
     }
     return list.length;

@@ -1545,9 +1545,23 @@
     }
     /* Куда денется обученный. Раньше без лагеря тренировка запрещалась; теперь
        есть двор казармы, и запрет только один — мест нет нигде. Если список
-       построек не передан, проверку пропускаем: это вызов движка без мира. */
-    if (buildings && buildings.length && !destinationFor(buildings, villagers, camp.x, camp.y, camp.owner)) {
-      return { ok: false, reason: 'военный лагерь и двор казармы заполнены' };
+       построек не передан, проверку пропускаем: это вызов движка без мира.
+       МЕСТА, УЖЕ ОБЕЩАННЫЕ УЧЕНИКАМ, считаются занятыми: иначе пакет из трёх
+       человек при одном свободном месте выпускал двоих «в никуда». */
+    if (buildings && buildings.length) {
+      var dest = destinationFor(buildings, villagers, camp.x, camp.y, camp.owner);
+      if (!dest) {
+        return { ok: false, reason: 'военный лагерь и двор казармы заполнены' };
+      }
+      var promised = 0;
+      for (var ti = 0; ti < (villagers || []).length; ti++) {
+        var tv = villagers[ti];
+        if (!tv || !tv.trainee || tv === v) continue;
+        if (ownerId(tv) === ownerId(camp)) promised++;
+      }
+      if (armyRoom(buildings, villagers, camp.owner) - promised <= 0) {
+        return { ok: false, reason: 'военный лагерь и двор казармы заполнены' };
+      }
     }
     return { ok: true, reason: '' };
   }

@@ -1691,7 +1691,10 @@ const getJSON = (u) => new Promise((res, rej) => {
     await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: p.x, y: p.y });
     await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: p.x, y: p.y, button: 'left', clickCount: 1 });
     const t0 = Date.now();
-    const open = await waitFor(`!!window.__game.Play.state.edit`, 5000);
+    /* 60 с, а не 5: под чужой нагрузкой (рендер, другой Chrome) таймер
+       удержания 500 мс может сработать позже на десятки секунд. Проверяем
+       ПОВЕДЕНИЕ, а не скорость машины; предел всё равно есть. */
+    const open = await waitFor(`!!window.__game.Play.state.edit`, 60000);
     const ms = Date.now() - t0;
     await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: p.x, y: p.y, button: 'left', clickCount: 1 });
     await sleep(200);
@@ -1730,7 +1733,10 @@ const getJSON = (u) => new Promise((res, rej) => {
   // Настоящее удержание: держим ЛКМ и не двигаем мышь — постройка идёт за курсором.
   const holdT0 = Date.now();
   await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: pressPt.x, y: pressPt.y, button: 'left', clickCount: 1 });
-  const held = await waitFor(`!!window.__game.Play.state.edit`, 5000);
+  /* Та же терпимость к чужой нагрузке, что и в holdOn: проверяем, что
+     удержание открывает правку, а не что таймер 500 мс успел при пустой
+     машине. Под load average 70–100 он срабатывает через ~23 с. */
+  const held = await waitFor(`!!window.__game.Play.state.edit`, 60000);
   const heldMs = Date.now() - holdT0;
   const opened = await js(`(() => {
     const P = window.__game.Play, r = P.renderer(), st = P.state, B = window.Buildings;
@@ -2044,7 +2050,13 @@ const getJSON = (u) => new Promise((res, rej) => {
     !!rotSpot, rotSpot ? rotSpot.x + ',' + rotSpot.y : 'нет свободного места');
   const rotated = await (async () => {
     const at = await js(`(() => { const b = ${findHouse}; return [b.x, b.y]; })()`);
-    await holdOn(at[0] + 1, at[1]);
+    /* Удержание — настройка сценария, а не проверка: если кадр оказался
+       занят, повторяем один раз и говорим об этом отдельной строкой. Иначе
+       промах удержания валил бы проверку поворота и весь дальнейший разбор. */
+    let rotHold = await holdOn(at[0] + 1, at[1]);
+    if (!rotHold.open) rotHold = await holdOn(at[0] + 1, at[1]);
+    check('правка у повёрнутого дома открывается удержанием', rotHold.open,
+      rotHold.open ? rotHold.ms + ' мс' : 'не открылась');
     await edgeClickOn('#editRotate');
     await sleep(250);
     return js(`(() => {

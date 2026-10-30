@@ -438,23 +438,41 @@
   }
 
   /* Можно ли вообще взять это в цель: чужой, живой, в той же связной области
-     (для юнита), с достижимым кольцом (для постройки), не в закрытой клетке
-     чужого пятна и не в кеше недостижимого. Прямая проверяется отдельно —
-     на выбор цели для юнитов и на самом ударе. */
-  function canTarget(v, o, world, solid) {
+     (для юнита), с достижимым кольцом (для постройки), не в кеше
+     недостижимого. Закрытая клетка чужого пятна защищает ГРАЖДАНСКОГО;
+     воин в ней — законная цель (иначе он бил бы снаружи и был неуязвим).
+     Прямая проверяется отдельно — на выбор цели и на самом ударе.
+     `opts.retaliate` — ответ на удар: кеш недостижимости его не отменяет. */
+  function canTarget(v, o, world, solid, opts) {
     if (!o || o === v) return false;
     if (ownerOf(o) === ownerOf(v)) return false;
     if (isBuilding(o)) {
       if (!aliveBuilding(o)) return false;
     } else if (!aliveVillager(o)) {
       return false;
+    } else if (world && !townAlive(world, o)) {
+      /* Выбывший по ратуше — наблюдатель. Его нельзя добивать: у него нет
+         права отвечать (Combat.tick его пропускает), и это превращало
+         добивание в избиение беспомощного. */
+      return false;
     }
     var map = solid || (world && global.Villagers ? solidMap(world, world._buildings) : null);
-    if (v.noPathKey && v.noPathKey === targetKey(world, v, o)) return false;
+    /* Ответ на удар не имеет права отменяться кешем «отсюда не дойти»:
+       ударивший стоит вплотную, и его надо бить, даже если раньше мы не
+       нашли к нему путь. */
+    var retaliate = !!(opts && opts.retaliate);
+    if (!retaliate && v.noPathKey && v.noPathKey === targetKey(world, v, o)) return false;
+    /* Короткий отказ после упора в предел A*: недостижимость не доказана,
+       поэтому кеш не пишем, но и не берём ту же цель следующим think. */
+    if (!retaliate && o === v.giveUpTarget && world &&
+        (world.time || 0) < (v.giveUpUntil || 0)) return false;
     if (isBuilding(o)) {
       if (world && !canReachBuilding(world, v, o, map)) return false;
     } else {
-      if (world && inClosedCell(world, o)) return false;
+      /* Закрытая клетка защищает ГРАЖДАНСКОГО (работника во дворе, ученика в
+         дверях), а не воина. Иначе воин, оказавшийся в пятне, бил бы снаружи
+         и был бы неуязвим: снаружи его «в закрытой клетке» не брали в цель. */
+      if (world && !o.warrior && inClosedCell(world, o)) return false;
       if (world && !sameArea(world, v, o, map)) return false;
     }
     return true;
@@ -575,7 +593,7 @@
     if (v.holdFire) {
       v.targetWhy = 'hold';
       var att = v.attacker;
-      if (att && v.attackerT > 0 && canTarget(v, att, world, solid) &&
+      if (att && v.attackerT > 0 && canTarget(v, att, world, solid, { retaliate: true }) &&
           withinSelfDefense(v, att) &&
           clearShot(world, solid, v, att)) {
         return att;
@@ -591,7 +609,8 @@
       v._fightAnchor = null;
     }
 
-    if (v.attacker && v.attackerT > 0 && canTarget(v, v.attacker, world, solid) &&
+    if (v.attacker && v.attackerT > 0 &&
+        canTarget(v, v.attacker, world, solid, { retaliate: true }) &&
         withinSelfDefense(v, v.attacker) && v.attacker.warrior &&
         clearShot(world, solid, v, v.attacker)) {
       if (t && isBuilding(t) && v.prevTarget !== t) v.prevTarget = t;
@@ -638,6 +657,9 @@
   function killVillager(v, world) {
     if (!v || v.dead) return;
     v.dead = true;
+    if (global.Navigation && global.Navigation.cancelEntity && v.id !== undefined) {
+      global.Navigation.cancelEntity(world, v.id, null);
+    }
     v.hp = 0;
     v.hpUntil = 0;
     v.hidden = true;
@@ -772,6 +794,8 @@
         v.combatMode = null;
         v.attackTarget = null;
         v._fightAnchor = null;
+        v.routePending = false;
+        v.chaseCell = null;
         v.order = null;
         continue;
       }
@@ -781,6 +805,8 @@
         v.combatMode = null;
         v.attackTarget = null;
         v._fightAnchor = null;
+        v.routePending = false;
+        v.chaseCell = null;
         continue;
       }
 
@@ -796,11 +822,17 @@
       }
 
       t = v.target;
-      if (!t || !canTarget(v, t, world, solid)) {
+      /* Цель-ответ на удар проверяется тем же ослабленным правилом, что и
+         выбор: иначе кеш «сюда не дойти» снова отменял ответ, хотя воин уже
+         выбрал обидчика. */
+      if (!t || !canTarget(v, t, world, solid,
+          t === v.attacker ? { retaliate: true } : null)) {
         v.target = null;
         v.combatMode = null;
         v.attackTarget = null;
         v._fightAnchor = null;
+        v.routePending = false;
+        v.chaseCell = null;
         v.noPathT = 0;
         continue;
       }
@@ -831,6 +863,8 @@
           v.combatMode = null;
           v.attackTarget = null;
           v._fightAnchor = null;
+          v.routePending = false;
+          v.chaseCell = null;
           v.path = null;
           continue;
         }
@@ -847,8 +881,9 @@
         /* Цель жива, а воин не идёт: пути нет уже chaseGiveUp секунд —
            значит, недостижима (за водой, в закрытом кармане, за стеной из
            домов). В кеш, чтобы не гонять A* по кругу. Путь есть — идёт, и
-           это не «недостижима», даже если далеко. */
-        if (v.path) {
+           это не «недостижима», даже если далеко. `routePending` — поиск
+           ОТЛОЖЕН очередью, а не «пути нет»: ждём его, счётчик не растёт. */
+        if (v.path || v.routePending) {
           v.noPathT = 0;
         } else {
           v.noPathT = (v.noPathT || 0) + dt;
@@ -859,6 +894,8 @@
             v.combatMode = null;
             v.attackTarget = null;
             v._fightAnchor = null;
+            v.routePending = false;
+            v.chaseCell = null;
             v.noPathT = 0;
           }
         }
