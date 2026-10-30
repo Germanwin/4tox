@@ -119,6 +119,25 @@ ssh root@213.239.158.37 '
 Старый `COMMIT` вернуть вручную (или удалить файл — тогда `/api/build`
 покажет `dev`). Проверить `/api/build`, `/game/`, журнал службы.
 
+## Факт выкладки 2026-10-30 14:36 MSK
+
+- Было: build `fc21ace32fd8`. Стало: **build `a3b56fcee671`**, protocol 4,
+  cmdProto 3; Node v24.22.1 на VPS.
+- Что выложено: фикс зависания воинов — `mapgen2/js/{villager,combat,army,session}.js`,
+  `mapgen2/README.md`; `game/` по содержимому не менялся (только метки
+  каталогов). Новые приёмки `mapgen2/tools/warrior-stall.js` и правки
+  `game/tools/menu.js` остаются в репозитории и на прод не копируются.
+- Бэкап до выкладки: `/root/4tox-backup-20261030-143631.tgz`.
+- Активных комнат перед выкладкой не было (`/opt/4tox-var/rooms` пуст).
+  Рестартовал только `4tox.service`; `caddy-naive` active и не трогался.
+- Проверка: `/api/build` — `a3b56fcee671`, protocol 4, cmdProto 3; `/game/` и
+  `/game/js/pending.js` — 200; в отданных `combat.js`/`villager.js` есть
+  `giveUpTarget`/`retaliate`/`chaseCell`/`attackStep`; служба active, в
+  журнале после рестарта ошибок нет.
+- Smoke комнаты на сервере (loopback 8787): лобби на двух, оба ready,
+  `/api/start`, SSE за 6 с — 4 события, `start` и 2 снимка (16 КБ);
+  `/api/leave` обоих, комната закрыта `empty`, `STATE_DIR` снова пуст.
+
 ## Факт выкладки 2026-10-29 17:46 MSK
 
 - Было: build `f8faa98de9c7`. Стало: **build `fc21ace32fd8`**, protocol 4,
