@@ -21,9 +21,13 @@
   } catch (e) { /* приватный режим */ }
 
   function coarse() {
-    try {
-      if (global.matchMedia && global.matchMedia('(pointer: coarse)').matches) return true;
-    } catch (e) { /* старый браузер */ }
+    /* Решает ТОЛЬКО медиа-запрос указателя. `maxTouchPoints > 0` есть и у
+       тач-ноутбука с мышью: он получал половинные атласы и DPR 1.5 при
+       мышином интерфейсе. Запасной признак — лишь если matchMedia нет. */
+    var mq = null;
+    try { mq = global.matchMedia ? global.matchMedia('(pointer: coarse)') : null; }
+    catch (e) { mq = null; }
+    if (mq) return !!mq.matches;
     return !!(global.navigator && global.navigator.maxTouchPoints > 0);
   }
 

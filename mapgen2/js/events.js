@@ -66,8 +66,16 @@
     var key = kind + ':' + owner;
     list(world);
     var agg = world._evAgg;
+    var arr = world.events;
     var now = world.time || 0;
     var last = agg[key];
+    /* Событие могло быть вытеснено из кольца (MAX), а агрегат всё ещё
+       указывает на него: повтор тогда правил мёртвый объект, и журнал молчал
+       до конца восьмисекундного окна. */
+    if (last && last.ev && arr.indexOf(last.ev) < 0) {
+      delete agg[key];
+      last = null;
+    }
     if (last && last.ev && now - last.t < (gap || ATTACK_GAP)) {
       last.t = now;
       last.ev.count = (last.ev.count || 1) + 1;

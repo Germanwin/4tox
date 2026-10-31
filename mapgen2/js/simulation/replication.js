@@ -115,7 +115,14 @@
     return Math.round(Math.min(simNowMs + max, simNowMs + ms));
   }
 
-  function worldgenHash(seed, size) {
+  function worldgenHash(world) {
+    /* Полный отпечаток карты и объектов; fallback — старый seed|size, если
+       WorldGen.hashWorld почему-то нет (старый движок в тесте). */
+    if (world && global.WorldGen && global.WorldGen.hashWorld) {
+      return global.WorldGen.hashWorld(world);
+    }
+    var seed = world && world.seed;
+    var size = world && (world.islandSize || world.width);
     var s = '4tox-worldgen-1|' + seed + '|' + size;
     var h = 2166136261 >>> 0;
     for (var i = 0; i < s.length; i++) {
@@ -174,7 +181,7 @@
       simulationTimeMs: (simState.tick || 0) * ((global.NetConfig && global.NetConfig.tickMs) || 50),
       serverGeneratedAtMs: now,
       worldgenVersion: 'v1',
-      worldgenHash: worldgenHash(world.seed, world.islandSize || simState.size),
+      worldgenHash: worldgenHash(world),
       gameplayConfigHash: (global.GameplayConfig && global.GameplayConfig.hash) || null,
       seed: world.seed,
       size: world.islandSize || simState.size,

@@ -102,7 +102,7 @@
      трогать DOM (Events.sinceId считает то же на стороне движка). Ни один
      показ здесь не всплывашка: журнал — часть интерфейса, он живёт и в сети,
      где всплывашек нет вовсе. */
-  var evLog = { open: false, lastId: 0, items: [], threat: null };
+  var evLog = { open: false, lastId: 0, sig: '', items: [], threat: null };
 
   /* Обзор свёрнут игроком (кнопка «обзор») — отдельно от временного
      сворачивания на время постановки (#hud.placing). */
@@ -469,6 +469,13 @@
     if (el.btnEconomy) {
       el.btnEconomy.addEventListener('click', function () { toggleEconomy(); });
     }
+    /* Сохранённый tier='low' (прошлая сессия) применяем целиком: DPR и
+       атласы уже выбраны при загрузке, а кнопка, fpsCap и волны оставались
+       «обычными» — настройка выглядела наполовину сломанной. */
+    if (global.Quality && global.Quality.tier && global.Quality.tier() === 'low') {
+      economy = true;
+      applyEconomy();
+    }
 
     /* Клик по карте убирает меню построек: место выбирают глазами по карте, и
        панель не должна закрывать её в этот момент. Панель сведений так не
@@ -503,6 +510,9 @@
          открывалась. */
       var k = global.Keys ? global.Keys.name(e) : String(e.key || '').toLowerCase();
       if (k === 't') {
+        /* T — игровая клавиша: за доской «Меню» и на экране итога она молчит,
+           иначе первый Esc закрывал невидимый ящик вместо меню. */
+        if (global.Play && global.Play.isPlaying && !global.Play.isPlaying()) return;
         toggleDrawer();
         e.preventDefault();
         return;
@@ -1033,6 +1043,7 @@
     /* Журнал прошлой партии — прошлый мир: его события к новому острову не
        относятся. Метка угрозы тоже снимается. */
     evLog.lastId = 0;
+    evLog.sig = '';
     evLog.items = [];
     evLog.threat = null;
     if (el.threatGo) el.threatGo.classList.add('hidden');
@@ -1386,6 +1397,11 @@
 
   function openHire(camp) {
     if (!el.hirePanel || spectator) return;
+    /* Панели левого края не должны стоять друг на друге: ящик «Деревня» и
+       «Войска» занимают те же пиксели, а панель найма — ещё ниже. */
+    closeDrawer();
+    closeSquad();
+    closeBuildMenu();
     hire.camp = camp;
     hire.mode = isTrainMode(camp) ? 'train' : 'work';
     hire.sig = '';                 // состав строк соберётся заново
@@ -2003,6 +2019,13 @@
     var me = global.Play.state.playerOwner || 0;
     if (v && (v.owner === undefined ? 0 : v.owner) !== me) return;
     if (ev.first) toast('Житель срубил первое дерево');
+    /* В соло и генераторе обзор пересобирался только при смене построек:
+       срубленные деревья оставались точками. В сети это делал
+       removedChanged, здесь — сам факт рубки. */
+    var r = global.Play.renderer && global.Play.renderer();
+    if (r && r.setBuildings) {
+      r.setBuildings(global.Play.state.buildings, { minimap: true });
+    }
   }
 
   /* ------------------------- сдача брёвен ------------------------------ *
@@ -2342,10 +2365,18 @@
     }
     evLog.threat = threat;
     if (el.threatGo) el.threatGo.classList.toggle('hidden', !threat);
-    var last = list.length ? (list[list.length - 1].id || 0) : 0;
-    if (last === evLog.lastId) return;
-    evLog.lastId = last;
-    evLog.items = list.slice(-8).reverse();   // новые сверху
+    /* Подпись — ВСЕ видимые события, а не только последний id: повтор атаки
+       не создаёт новый id, он увеличивает count и меняет t/x/y у того же
+       события. Сравнение по id оставляло в журнале старые «×1» и координаты. */
+    var tail = list.slice(-8);
+    var sig = tail.map(function (e) {
+      return [e.id, e.count || 1, Math.round((e.t || 0) * 100),
+        e.x === undefined ? '' : e.x, e.y === undefined ? '' : e.y].join(':');
+    }).join('|');
+    if (sig === evLog.sig) return;
+    evLog.sig = sig;
+    evLog.lastId = tail.length ? (tail[tail.length - 1].id || 0) : 0;
+    evLog.items = tail.reverse();             // новые сверху
     paintEventLog(st);
   }
 
@@ -2511,9 +2542,15 @@
      DPR до 1.5 и реже волны. Это единственная настройка качества, которую
      видит игрок; на компьютере она тоже работает, но не включается сама. */
   function toggleEconomy() {
+    economy = !economy;
+    applyEconomy();
+  }
+
+  /* Применить выбор к рендеру и кадру. Отдельно от переключения: сохранённый
+     tier='low' после F5 должен включать экономию целиком, а не половину. */
+  function applyEconomy() {
     var P = global.Play;
     var r = P && P.renderer ? P.renderer() : null;
-    economy = !economy;
     /* Один выбор качества: low даёт DPR 1 и мобильные атласы, auto —
        coarse 1.5 / desktop 2. Ручной high больше 2 не поднимает. */
     var Q = global.Quality;

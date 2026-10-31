@@ -704,6 +704,10 @@
       else s.water++;
     }
     w.landBounds = landBounds(isLandNow, W, H);
+    /* Отпечаток считается ДО деревни: Session потом рубит деревья и сминает
+       мелочь, и ленивый хеш после этого не совпал бы с только что
+       сгенерированным миром клиента. */
+    w._worldgenHash = hashWorld(w);
     return w;
   }
 
@@ -1291,6 +1295,44 @@
     }
   }
 
+  /* Отпечаток мира для сверки клиента с сервером. Раньше в снимок ехал хеш
+     только от seed|size: две карты с разными параметрами генерации давали
+     один хеш, и клиент молча рисовал «чужой остров». Считаем по тайлам и
+     объектам один раз и запоминаем на мире. */
+  function hashWorld(world) {
+    if (!world) return '00000000';
+    if (world._worldgenHash) return world._worldgenHash;
+    var h = 2166136261 >>> 0;
+    function mix(n) {
+      h ^= (n >>> 0);
+      h = Math.imul(h, 16777619);
+    }
+    function mixStr(s) {
+      s = String(s === undefined ? '' : s);
+      mix(s.length);
+      for (var i = 0; i < s.length; i++) mix(s.charCodeAt(i));
+    }
+    mixStr('4tox-worldgen-2');
+    mixStr(world.seed);
+    mix(world.islandSize || world.width || 0);
+    mix(world.width || 0);
+    mix(world.height || 0);
+    var tile = world.tile, i;
+    if (tile) for (i = 0; i < tile.length; i++) mix(tile[i]);
+    var objs = world.objects || [];
+    mix(objs.length);
+    for (i = 0; i < objs.length; i++) {
+      var o = objs[i];
+      if (!o) { mix(0); continue; }
+      mixStr(o.kind);
+      mixStr(o.id === undefined ? '' : o.id);
+      mix(Math.round((o.x || 0) * 16));
+      mix(Math.round((o.y || 0) * 16));
+    }
+    world._worldgenHash = ('00000000' + (h >>> 0).toString(16)).slice(-8);
+    return world._worldgenHash;
+  }
+
   global.WorldGen = {
     generate: generate,
     T: T,
@@ -1303,6 +1345,7 @@
     landBounds: landBounds,
     spawnSites: spawnSites,
     spawnSiteSize: spawnSiteSize,
-    describeCell: describeCell
+    describeCell: describeCell,
+    hashWorld: hashWorld
   };
 })(typeof window !== 'undefined' ? window : globalThis);

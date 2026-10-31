@@ -337,6 +337,22 @@ Persistence.prototype.readJournal = async function (from) {
       }
     }
   }
+  /* Оборванный хвост надо не только пережить, но и ОТРЕЗАТЬ. Иначе
+     следующий append пишет новые записи после мусора, на втором рестарте
+     мусор оказывается в середине файла и loadLatest падает
+     journal_checksum — комната не поднимается вообще. */
+  if (truncated && segments.length) {
+    const last = segments[segments.length - 1];
+    const lastNo = parseInt(last.slice(8, 14), 10);
+    const cut = end.segment === lastNo ? end.offset : 0;
+    try {
+      await fsp.truncate(path.join(this.dir, last), cut);
+      if (this.handle) { try { await this.handle.sync(); } catch (e) { /* не критично */ } }
+    } catch (e) {
+      /* Не смогли усечь (чужой lock/права) — оставляем как есть: ошибка
+         проявится на следующем старте, но не здесь. */
+    }
+  }
   return { records: records, truncated: truncated, end: end };
 };
 

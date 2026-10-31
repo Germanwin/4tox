@@ -189,7 +189,7 @@
     0 6px 0 rgba(122, 85, 51, .55),
     0 12px 18px rgba(12, 32, 48, .22);
   transition: transform .16s var(--ease-pop), box-shadow .16s ease, border-color .16s ease;
-  animation: card-in .42s var(--ease-pop) both;
+  animation: card-in .42s var(--ease-pop) backwards;
 }
 .size-card:nth-child(1) { animation-delay: .12s; }
 .size-card:nth-child(2) { animation-delay: .18s; }

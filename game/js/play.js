@@ -209,7 +209,7 @@
   var arrival = null;   // подлёт камеры: {t, dur, from, to}
   var felledSeen = 0;
   var logsSeen = 0;     // world.village.logs на прошлом шаге
-  var deliveredSeen = [];   // v.delivered по жителям: по нему видно сдачу
+  var deliveredSeen = Object.create(null);   // v.delivered по id жителя: по нему видно сдачу
   var firstDelivery = true; // первое бревно партии — о нём стоит сказать словами
   var warriorSeen = {};     // id уже обученных воинов: по нему видно новый чин
   var driftT = 0;       // время заставки: по нему «дышит» камера
@@ -702,11 +702,26 @@
     return 0;
   }
 
+  /* Снимок с другого мира: не применяем и говорим игроку. Молчаливое
+     применение давало «постройки на чужом острове» — хуже, чем честный
+     отказ. */
+  function worldMismatch(res) {
+    if (!res || !res.mismatch) return false;
+    var now = nowMs();
+    if (!state.netMismatchAt || now - state.netMismatchAt > 5000) {
+      state.netMismatchAt = now;
+      emit({ type: 'net-note', text: 'мир на сервере не совпал с островом клиента — перезайдите (F5)' });
+    }
+    state.netStale = true;
+    return true;
+  }
+
   function applyServerBaseline(snap) {
     if (!snap || !state.world) return null;
     var res = global.Serialize.apply(state.world, snap, renderer, {
       owner: state.playerOwner, smooth: false
     });
+    if (worldMismatch(res)) return null;
     state.buildings = res.buildings;
     state.villagers = res.villagers;
     netLatest = snap;
@@ -926,6 +941,7 @@
     var res = global.Serialize.apply(state.world, snap, renderer, {
       owner: state.playerOwner, smooth: false, hold: hold
     });
+    if (worldMismatch(res)) return;
     state.buildings = res.buildings;
     state.villagers = res.villagers;
     state.seconds = (snap.simulationTimeMs || 0) / 1000;
@@ -2025,6 +2041,18 @@
     };
   }
 
+  /* Постановка сминает завал: два спрайта на одной клетке не рисуем. */
+  function clearRubbleLocal(built) {
+    var B = global.Buildings, list = state.buildings;
+    for (var i = list.length - 1; i >= 0; i--) {
+      var o = list[i];
+      if (!o || !o.rubble) continue;
+      for (var j = 0; j < built.length; j++) {
+        if (B.overlaps(o, built[j])) { list.splice(i, 1); break; }
+      }
+    }
+  }
+
   function applyNetCommandNow(cmd) {
     var B = global.Buildings, S = global.Session;
     /* owner — номер города в партии, from — id игрока в лобби. Это разные
@@ -2032,7 +2060,8 @@
     var who = cmd.owner === undefined ? cmd.from : cmd.owner;
     var town = state.world && state.world.towns && state.world.towns[who];
     if (!town || town.alive === false) {
-      var gone = 'ваша деревня больше не в игре';
+      var gone = (!town && (cmd.owner === undefined && cmd.from === undefined))
+        ? 'не указана деревня' : 'ваша деревня больше не в игре';
       netReject(cmd, gone);
       return cmdNo(gone);
     }
@@ -2060,8 +2089,9 @@
         netReject(cmd, poor);
         return cmdNo(poor);
       }
+      var variant = cmd.variant || (cmd.buildingType === 'warcamp' ? 'x' : 'a');
       var made = B.make({
-        type: cmd.buildingType, variant: cmd.variant || 'a', rot: cmd.rot || 0,
+        type: cmd.buildingType, variant: variant, rot: cmd.rot || 0,
         x: cmd.x, y: cmd.y, owner: who, town: who,
         id: 'p' + (cmd.from === undefined ? who : cmd.from) + ':b' + (state.nextBuildId++)
       });
@@ -2070,6 +2100,7 @@
       town.logs -= price;
       B.settle(state.world, made, { clear: false });
       B.touch(state.world);
+      clearRubbleLocal([made]);
       state.buildings.push(made);
       if (cmd.buildingType === 'warcamp' && S.rebalanceGarrison) {
         S.rebalanceGarrison(state.world, state.buildings, state.villagers);
@@ -2107,6 +2138,7 @@
         builtLine.push(lb);
         state.buildings.push(lb);
       }
+      clearRubbleLocal(builtLine);
       /* Серия — одна транзакция мира: мелочь сминается одним проходом, а не
          N проходами по всем объектам, и кеши обновляются один раз. */
       if (B.settleMany) B.settleMany(state.world, builtLine, { clear: false });
@@ -2287,7 +2319,7 @@
     state.follow = false;
     felledSeen = 0;
     logsSeen = state.logs;
-    deliveredSeen = [];
+    deliveredSeen = Object.create(null);
     firstDelivery = true;
     warriorSeen = {};
     state.running = true;
@@ -2636,10 +2668,14 @@
     // Кто сдал с прошлого шага: у жителя это его личный счёт.
     var grew = [];
     for (var i = 0; i < list.length; i++) {
-      var was = typeof deliveredSeen[i] === 'number' ? deliveredSeen[i] : 0;
+      /* Ключ — id жителя, а не индекс: после смерти/удаления индексы
+         сдвигаются, и счётчик одного сравнивался со счётом другого —
+         рождалась ложная сдача «+0» (или не тому жителю). */
+      var key = list[i].id === undefined ? 'i' + i : String(list[i].id);
+      var was = typeof deliveredSeen[key] === 'number' ? deliveredSeen[key] : 0;
       var now = typeof list[i].delivered === 'number' ? list[i].delivered : 0;
       if (now > was) grew.push(list[i]);
-      deliveredSeen[i] = now;
+      deliveredSeen[key] = now;
     }
     state.logs = logs;
     state.deliveries = deliveries;
@@ -2736,12 +2772,13 @@
        drawSpriteOutline) — одного тонкого слоя достаточно. Колец под каждым
        жителем здесь больше нет: в бою и в сети они давали второй слой поверх
        каймы и забивали карту (правило заказчика 2026-10-24). */
+    var me = state.playerOwner || 0;
     for (i = 0; i < state.buildings.length; i++) {
       b = state.buildings[i];
       if (!b || b.rubble || !(b.hp < b.maxHp) || !(w.time < b.hpUntil)) continue;
       box = r.buildingBox(b, z);
       if (!box) continue;
-      foe = (b.owner === undefined ? 0 : b.owner) !== 0;
+      foe = (b.owner === undefined ? 0 : b.owner) !== me;
       bar(box.cx, box.dy + 2, z * 0.9, b.hp, b.maxHp, foe);
     }
     for (i = 0; i < state.villagers.length; i++) {
@@ -2749,7 +2786,7 @@
       if (!v || v.dead || v.hidden || !(v.hp < v.maxHp) || !(w.time < v.hpUntil)) continue;
       vb = r.villagerBox(v, z);
       if (!vb) continue;
-      foe = (v.owner === undefined ? 0 : v.owner) !== 0;
+      foe = (v.owner === undefined ? 0 : v.owner) !== me;
       bar(vb.x, vb.dy + 2, z * 0.55, v.hp, v.maxHp, foe);
     }
     g.restore();
@@ -2864,6 +2901,9 @@
     var best = null, bestD = VILLAGER_PICK;
     for (var i = 0; i < state.villagers.length; i++) {
       var v = state.villagers[i];
+      /* Растворённого в казарме ученика нельзя выбрать мышью: его не видно,
+         а полоса выбора у стены была ~0.07x0.4 клетки. */
+      if (!v || v.dead || v.hidden) continue;
       var d = Math.hypot(v.x - p.x, v.y - p.y);
       if (d <= bestD) { bestD = d; best = v; }
     }
@@ -3326,6 +3366,10 @@
     var e = state.edit;
     if (!e) return { ok: false, reason: 'режим правки не открыт' };
     var B = global.Buildings, b = e.building;
+    /* «Двигать» — чисто локальное состояние (дом за курсором), серверу тут
+       нечего делать. Ветка ниже — для сетевого клиента, и раньше `move`
+       падал в её `else`: кнопка молча закрывала правку. */
+    if (action === 'move') return editMove(null);
     /* Сетевой клиент правит только через хоста: локально он может вести
        призрак, но мир меняет команда. */
     if (state.netRole === 'client' && global.Net) {
@@ -3341,6 +3385,9 @@
         sendCommand({ type: 'edit', action: 'delete', id: b.id }, 'снос');
         editClose();
       } else if (action === 'place') {
+        /* Дом, брошенный в воду/на чужое пятно, не отправляем: сервер всё
+           равно откажет, а игрок увидит прыжок дома назад. */
+        if (!e.valid) return { ok: false, reason: e.reason };
         sendCommand({ type: 'edit', action: 'move', id: b.id, x: b.x, y: b.y }, 'перенос');
         editClose();
       } else if (action === 'apply') {
@@ -3361,8 +3408,6 @@
       }
       return { ok: action !== 'move', reason: '' };
     }
-
-    if (action === 'move') return editMove(null);
 
     if (action === 'place') {
       if (e.mode !== 'move') return { ok: false, reason: 'постройку не ведут за курсором' };

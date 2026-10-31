@@ -277,8 +277,11 @@
   Renderer.prototype.spritesFor = function (type, ruined) {
     var B = global.Buildings;
     var id = (B && B.typeOf) ? B.typeOf({ type: type }) : (type || 'townhall');
-    if (ruined && this.ruinSets[id]) return this.ruinSets[id];
-    return this.buildingSets[id] || null;
+    /* Свой ключ, а не прототип: buildingSets['constructor'] возвращал Object,
+       и отрисовка падала на set.frames у ВСЕХ клиентов комнаты. */
+    var own = Object.prototype.hasOwnProperty;
+    if (ruined && own.call(this.ruinSets, id)) return this.ruinSets[id];
+    return own.call(this.buildingSets, id) ? this.buildingSets[id] : null;
   };
 
   /* Атлас завалов: один PNG, по типу — свой набор кадров (ppu/mul/anchor/
@@ -1052,7 +1055,9 @@
       if (o.kind === 'tree' && !self.showTrees) return;
       if (o.kind === 'stone') {
         if (o.mineable) { if (!self.showRocks) return; }
-        else if (!self.showSmall || (oi % 3)) return;
+        /* Гальку рисуем ВСЮ, как на экране: `oi % 3` был прореживанием,
+           которого экран не делает, и PNG расходился с картой. */
+        else if (!self.showSmall) return;
       }
       var spr = global.Sprites.pick(set, o);
       if (!spr) return;
@@ -1076,14 +1081,17 @@
       g.drawImage(spr.img, spr.sx, spr.sy, spr.sw, spr.sh,
         sx - dw * spr.ax, sy - dh * spr.ay, dw, dh);
     }, function (b) {
-      var B = global.Buildings, bset = self.spritesFor(b.type);
+      var B = global.Buildings, bset = self.spritesFor(b.type, b.rubble);
       if (!B || !bset) return;
-      var spr = B.sprite(bset, b.variant, b.rot);
+      var spr = B.sprite(bset, b.rubble ? B.typeOf(b) : b.variant, b.rot);
       if (!spr) return;
       var c = B.center(b), s = B.scaleAt(bset, px);
+      /* Тот же сдвиг на середину наземного контура, что у buildingBox: без
+         него в PNG ратуша уезжала из середины пятна (~3.9 px вниз). */
+      var sh = B.anchorShift ? B.anchorShift(spr, bset.mul) : { x: 0, y: 0 };
       var dw = spr.sw * s.x, dh = spr.sh * s.y;
-      var cx = (c.x - c.y) * 0.5 * px + ox;
-      var cy = (c.x + c.y) * 0.25 * px + oy;
+      var cx = (c.x - sh.x - (c.y - sh.y)) * 0.5 * px + ox;
+      var cy = (c.x - sh.x + c.y - sh.y) * 0.25 * px + oy;
       g.drawImage(spr.img, spr.sx, spr.sy, spr.sw, spr.sh,
         cx - dw * spr.ax, cy - dh * spr.ay, dw, dh);
     }, function (v) {
@@ -1388,6 +1396,13 @@
     /* Испорченный кадр не должен превращаться в миллион спрайтов: именно
        так «пропавший остров» становился ещё и слайд-шоу. */
     if (!viewSane(box)) return;
+    /* На предельном отдалении гребень меньше порога отсечения: строить
+       13–20 тыс. объектов, чтобы почти все выбросить, незачем. 12 px —
+       нижняя оценка ширины спрайта; если даже она меньше порога, слой не
+       виден вовсе. */
+    var qEarly = (this.quality === undefined || this.quality === null) ? 1 : this.quality;
+    var minEarly = WAVE_MIN_PX * (qEarly < 0.8 ? 1.5 : 1);
+    if (sc.x * 12 < minEarly && sc.y * 12 < minEarly) return;
 
     ctx.save();
     // Ровно то же преобразование, что в drawLand: обрезка построена в

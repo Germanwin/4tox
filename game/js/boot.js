@@ -145,10 +145,15 @@
     if (wasNet) {
       if (global.Net) global.Net.leave();
       Play.stopNet();
-      if (global.Lobby) global.Lobby.close();
+      /* Не Lobby.close(): он показывает главное меню, и новый мир стартовал
+         под ним — игрок жал «Играть» и запускал второй. enterGame только
+         прячет экран лобби. */
+      if (global.Lobby && global.Lobby.enterGame) global.Lobby.enterGame();
+      else if (global.Lobby) global.Lobby.close();
     }
     Play.start({ seed: seed, size: size, mode: wasNet ? 'solo' : (st.gameMode || 'solo') });
     Hud.show();
+    if (Menu.isOpen()) Menu.hide();
     Hud.toast('Новый остров: «' + seed + '» · ' + size + ' × ' + size, 3200);
   }
 

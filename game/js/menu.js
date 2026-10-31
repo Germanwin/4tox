@@ -70,13 +70,26 @@
       if (card) select(parseInt(card.dataset.size, 10));
     });
 
-    // Стрелки переводят выбор на соседнюю карточку: список размеров — это
-    // выбор из семи (пять карточек и два служебных размера), и мышью тыкать
-    // в него необязательно.
+    // Стрелки переводят выбор на соседнюю ВИДИМУЮ карточку: 48 скрыта
+    // (display:none), и раньше стрелка выбирала её — выбранной карточки не
+    // было видно, а «Играть» строила 48.
+    function visibleSizes() {
+      var out = [];
+      for (var si = 0; si < SIZES.length; si++) {
+        var card = el.sizes.querySelector('[data-size="' + SIZES[si] + '"]');
+        if (card && card.offsetParent !== null) out.push(SIZES[si]);
+      }
+      return out.length ? out : SIZES.slice();
+    }
     el.sizes.addEventListener('keydown', function (e) {
-      var i = SIZES.indexOf(selected);
-      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { select(SIZES[Math.min(SIZES.length - 1, i + 1)]); e.preventDefault(); }
-      else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { select(SIZES[Math.max(0, i - 1)]); e.preventDefault(); }
+      var list = visibleSizes();
+      var i = list.indexOf(selected);
+      if (i < 0) i = 0;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        select(list[Math.min(list.length - 1, i + 1)]); e.preventDefault();
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        select(list[Math.max(0, i - 1)]); e.preventDefault();
+      }
     });
 
     $('dice').addEventListener('click', function () { rollSeed(); });
@@ -93,6 +106,23 @@
       if (global.Keys ? global.Keys.typing(e)
           : (e.target && /input|select|textarea/i.test(e.target.tagName))) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      /* Enter на карточке размера/режима или на кнопке — это действие ЭТОЙ
+         кнопки, а не «Играть». Раньше глобальный обработчик перехватывал его
+         и запускал игру с прежним выбором. */
+      var target = e.target;
+      var control = target && target.closest
+        ? target.closest('button, a, [role="radio"], [role="button"]') : null;
+      if (control) {
+        /* Enter на кнопке — её собственное действие. В headless-браузере
+           синтетический Enter не всегда рождает click, поэтому жмём явно:
+           карточка размера выбирается, а игра не стартует. */
+        if ((global.Keys ? global.Keys.name(e) : String(e.key || '').toLowerCase()) === 'enter' &&
+            control.click) {
+          control.click();
+          e.preventDefault();
+        }
+        return;
+      }
       /* Имя клавиши — по физическому месту (mapgen2/js/keys.js): на русской
          раскладке `e.key` для R приходит как «к», и другой сид не выпадал. */
       var k = global.Keys ? global.Keys.name(e) : String(e.key || '').toLowerCase();

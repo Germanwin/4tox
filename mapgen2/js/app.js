@@ -218,7 +218,7 @@
     // лицом вправо-вниз, а это правило живёт в js/buildings.js (FACE_ROT).
     var spots = global.Buildings.placeAll(world, {
       clear: place.clear, clearable: place.clear, requireClear: place.strict,
-      variants: ['a', 'b', 'c']
+      variants: ['a', 'b', 'c'], avoid: buildings
     });
     for (var i = 0; i < spots.length; i++) buildings.push(spots[i]);
     applyBuildings();
@@ -347,7 +347,13 @@
     $('sTrees').textContent = s.trees.toLocaleString('ru-RU');
     $('sRocks').textContent = s.rocks.toLocaleString('ru-RU');
     $('sSmall').textContent = s.smallRocks.toLocaleString('ru-RU');
-    $('sBuild').textContent = buildings.length;
+    /* «Ратуши» — именно ратуши, а не все постройки деревни: startHomeCore
+       кладёт в список ещё дом и лагерь, и на свежей карте было «3». */
+    var townhalls = 0;
+    for (var bi = 0; bi < buildings.length; bi++) {
+      if (global.Buildings.typeOf(buildings[bi]) === 'townhall') townhalls++;
+    }
+    $('sBuild').textContent = townhalls;
     // Время генерации обновляем только когда мир действительно пересобрали:
     // постановка ратуши карту не перегенерирует.
     if (tGen) {

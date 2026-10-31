@@ -162,12 +162,9 @@
       <div class="mm-label">обзор</div>
     </div>
     <div id="hud"><span id="hudText"></span></div>
-    <div id="heroHud">
-      <span id="heroState">Лесоруб</span>
-      <span id="heroChops">срублено 0</span>
-      <button id="heroFocus" title="Показать лесоруба (H)">К лесорубу</button>
-      <button id="heroFollow" class="off" title="Камера следит за лесорубом (C)">Следить</button>
-    </div>
+    <!-- Полоса «Лесоруб · срублено · К лесорубу · Следить» удалена:
+         обработчиков у неё не было ни в app.js, ни где-либо ещё, а висела она
+         поверх карты всегда. -->
     <div id="loading">Загрузка спрайтов…</div>
   </main>
 </div>

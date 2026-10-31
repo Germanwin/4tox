@@ -64,11 +64,24 @@
     return rot === 0 || rot === 90 || rot === 180 || rot === 270;
   }
 
+  /* Свой ключ, а не цепочка прототипа: `prices['constructor']` возвращает
+     встроенную функцию, она проходит `if (!price)`, сравнение `logs < price`
+     даёт NaN (false), а `logs -= price` делает казну NaN — и комната падает
+     на checkpoint. */
+  function hasOwn(obj, key) {
+    return !!obj && Object.prototype.hasOwnProperty.call(obj, key);
+  }
+
   function buildPrice(type) {
     var G = global.GameplayConfig;
-    if (G && G.prices && G.prices[type] !== undefined) return G.prices[type];
-    if (G && G.buildPrices && G.buildPrices[type] !== undefined) return G.buildPrices[type];
-    return PRICE_FALLBACK[type] || 0;
+    if (G && hasOwn(G.prices, type)) return G.prices[type];
+    if (G && hasOwn(G.buildPrices, type)) return G.buildPrices[type];
+    return hasOwn(PRICE_FALLBACK, type) ? PRICE_FALLBACK[type] : 0;
+  }
+
+  function knownType(type) {
+    var B = global.Buildings;
+    return !!(B && B.TYPES && hasOwn(B.TYPES, type));
   }
 
   function buildSiteOpts(sim) {
@@ -129,6 +142,20 @@
     }
   }
 
+  /* Новая постройка сминает завал: руина больше не отдельный объект, её
+     место занято домом. Без этого на карте рисовались бы два спрайта. */
+  function clearRubble(sim, built) {
+    var B = global.Buildings, list = sim.buildings;
+    if (!B || !B.overlaps) return;
+    for (var i = list.length - 1; i >= 0; i--) {
+      var o = list[i];
+      if (!o || !o.rubble) continue;
+      for (var j = 0; j < built.length; j++) {
+        if (B.overlaps(o, built[j])) { list.splice(i, 1); break; }
+      }
+    }
+  }
+
   function apply(sim, cmd) {
     if (!sim || !cmd) return reason('bad_command', 'нет команды');
     /* Служебная команда закрытия дыры в clientSequence: ничего не меняет в
@@ -136,6 +163,13 @@
        потерянный POST оставил пропущенный номер, а более высокие номера уже
        выданы другим действиям. */
     if (cmd.type === 'noop') return applied();
+    /* Выбывание по ратуше — для ВСЕХ команд, а не только для стройки:
+       иначе потерявший город продолжает двигать/сносить постройки, нанимать
+       и тренировать. noop остаётся: им клиент закрывает дыру нумерации. */
+    var commandTown = townOf(sim, cmd.owner);
+    if (!commandTown || commandTown.alive === false) {
+      return reason('town_gone', 'ваша деревня больше не в игре');
+    }
     if (cmd.type === 'order') {
       if (!global.Army) return reason('unsupported', 'отряд не загружен');
       var whoO = cmd.owner;
@@ -162,19 +196,29 @@
       var type = p.buildingType;
       if (!isFinite(p.x) || !isFinite(p.y)) return reason('bad_coords', 'нечисловые координаты');
       if (!validRot(p.rot || 0)) return reason('bad_rot', 'поворот не кратен 90°');
+      if (!knownType(type)) return reason('unknown_building', 'неизвестная постройка');
+      var variant = p.variant === undefined || p.variant === null ? 'a' : String(p.variant);
+      /* У военного лагеря единственный вариант — x. Старый/самодельный клиент
+         без варианта присылал 'a', и лагерь становился невидимым, занимая
+         5x5, получая урон и блокируя ходьбу. */
+      if (type === 'warcamp') {
+        if (p.variant === undefined || p.variant === null) variant = 'x';
+        else if (variant !== 'x') return reason('bad_variant', 'у военного лагеря вариант только x');
+      }
       var price = buildPrice(type);
       if (!price) return reason('unknown_building', 'неизвестная постройка');
       if ((town.logs || 0) < price) {
         return reason('no_resources', 'не хватает брёвен: нужно ' + price +
           ', у деревни ' + (town.logs || 0));
       }
-      var made = buildOne(sim, who, town, type, p.variant, p.rot, p.x, p.y, buildSiteOpts(sim));
+      var made = buildOne(sim, who, town, type, variant, p.rot, p.x, p.y, buildSiteOpts(sim));
       if (!made.ok) return reason('invalid_place', made.reason);
       /* Списание — ПОСЛЕ проверки места и до вставки: мир не должен знать
          дом, за который не заплачено, а казна — не должна платить за дом,
          который не встал. */
       town.logs -= price;
       settleBuilt(sim, [made.building]);
+      clearRubble(sim, [made.building]);
       sim.buildings.push(made.building);
       afterBuild(sim, type);
       return applied({ ids: [made.building.id] });
@@ -189,10 +233,16 @@
         return reason('bad_coords', 'нечисловые концы линии');
       }
       if (!validRot(pl.rot || 0)) return reason('bad_rot', 'поворот не кратен 90°');
+      if (!knownType(typeL)) return reason('unknown_building', 'неизвестная постройка');
+      var variantL = pl.variant === undefined || pl.variant === null ? 'a' : String(pl.variant);
+      if (typeL === 'warcamp') {
+        if (pl.variant === undefined || pl.variant === null) variantL = 'x';
+        else if (variantL !== 'x') return reason('bad_variant', 'у военного лагеря вариант только x');
+      }
       var priceL = buildPrice(typeL);
       if (!priceL) return reason('unknown_building', 'неизвестная постройка');
       var plan = BL.planLine(sim.world, sim.buildings, {
-        type: typeL, variant: pl.variant || 'a', rot: pl.rot || 0,
+        type: typeL, variant: variantL, rot: pl.rot || 0,
         from: { x: pl.x, y: pl.y }, to: { x: pl.x2, y: pl.y2 }
       }, buildSiteOpts(sim));
       if (!plan.ok) return reason('invalid_line', plan.reason);
@@ -208,12 +258,13 @@
       var built = [], i;
       for (i = 0; i < plan.items.length; i++) {
         var it = plan.items[i];
-        var one = buildOne(sim, cmd.owner, townL, typeL, pl.variant, pl.rot, it.x, it.y, buildSiteOpts(sim));
+        var one = buildOne(sim, cmd.owner, townL, typeL, variantL, pl.rot, it.x, it.y, buildSiteOpts(sim));
         if (!one.ok) return reason('invalid_line', one.reason);
         built.push(one.building);
       }
       townL.logs -= cost;
       settleBuilt(sim, built);
+      clearRubble(sim, built);
       for (i = 0; i < built.length; i++) sim.buildings.push(built[i]);
       afterBuild(sim, typeL);
       return applied({ ids: built.map(function (b) { return b.id; }) });

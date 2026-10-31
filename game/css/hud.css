@@ -1472,7 +1472,9 @@
   max-height: 172px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  pointer-events: none;
+  /* Список длиннее max-height: без pointer-events колесо над ним зумило
+     камеру, а полоса прокрутки не работала. */
+  pointer-events: auto;
 }
 .event-log.open .event-list { display: flex; }
 .event-row {
@@ -1761,8 +1763,10 @@
      свободно. Раскрытый список поджимается: панели под ним должны остаться
      на экране. */
   .event-log {
-    width: calc(100vw - 20px - var(--sa-l) - var(--sa-r));
-    max-width: calc(100vw - 20px - var(--sa-l) - var(--sa-r));
+    /* Оставляем справа полосу под бейдж связи: на 360 px бейдж накрывал шапку
+       журнала (overlap 1580 px² в замере). */
+    width: calc(100vw - 20px - var(--sa-l) - var(--sa-r) - 84px);
+    max-width: calc(100vw - 20px - var(--sa-l) - var(--sa-r) - 84px);
   }
   .event-log.open .event-list { max-height: min(32vh, 168px); }
   .event-log-head { min-height: 44px; }

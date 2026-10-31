@@ -555,6 +555,9 @@
     var B = global.Buildings;
     if (B) {
       for (i = 0; i < list.length; i++) {
+        /* Завал — не стена: руина проходима (docs/BIG-PLAN.md: «завалы
+           проходимы и застраиваемы»). */
+        if (list[i] && list[i].rubble) continue;
         cells = B.cells(list[i]);
         for (c = 0; c < cells.length; c++) {
           var cx = cells[c].x, cy = cells[c].y;
@@ -1031,7 +1034,7 @@
      свободные, по возрастанию расстояния до жителя. Диагонали не берём: с
      угла человек стоит в 1.41 клетки от ствола и «рядом с деревом» уже не
      читается. */
-  function standCells(world, solid, tree, x, y) {
+  function standCells(world, solid, tree, x, y, self) {
     var cx = Math.floor(tree.x), cy = Math.floor(tree.y);
     var out = [];
     for (var d = 0; d < 4; d++) {
@@ -1043,7 +1046,25 @@
       });
     }
     out.sort(function (a, b) { return a.d - b.d; });
-    return out;
+    /* Стоянку уже занял другой? Два соседних дерева имеют общий сосед, и двое
+       приходили в одну клетку (тела в 0.38 клетки, спрайты накладываются).
+       Занятой считаем клетку, где кто-то стоит, и клетку, куда он уже идёт
+       (v.goal). Если свободных не осталось — отдаём все: лучше стоять рядом,
+       чем не рубить вовсе. */
+    var list = (world && world._villagers) || (self && self.avoid) || [];
+    var free = out.filter(function (sp) {
+      var px = sp.cx + 0.5, py = sp.cy + 0.5;
+      for (var i = 0; i < list.length; i++) {
+        var o = list[i];
+        if (!o || o === self || o.dead) continue;
+        var dx = o.x - px, dy = o.y - py;
+        if (dx * dx + dy * dy < 0.36) return false;
+        var g = o.goal;
+        if (g && Math.abs(g.x - px) < 0.45 && Math.abs(g.y - py) < 0.45) return false;
+      }
+      return true;
+    });
+    return free.length ? free : out;
   }
 
   /* Длина клеточного пути в метрике поиска (шаг по оси 1, диагональ √2).
@@ -1331,7 +1352,7 @@
     var tree = v.tree;
     if (!tree) return false;
     var sx = Math.floor(v.x), sy = Math.floor(v.y);
-    var spots = standCells(world, solid, tree, v.x, v.y);
+    var spots = standCells(world, solid, tree, v.x, v.y, v);
     var best = null, bestCost = Infinity;
     for (var j = 0; j < spots.length; j++) {
       var sp = spots[j];
@@ -1497,7 +1518,7 @@
         if (global.Metrics && global.Metrics.on) global.Metrics.counters.unreachableHits++;
         continue;
       }
-      var spots = standCells(world, solid, tree, v.x, v.y);
+      var spots = standCells(world, solid, tree, v.x, v.y, v);
       var treeBest = null, treeCost = Infinity;
       /* Две разные причины «не нашли»: кончился кадр (повторим позже, но НЕ
          кэшируем и перебор двигаем) и упёрлись в предел одного поиска (это не
@@ -2879,6 +2900,11 @@
       var cy = Math.floor(ay + Math.sin(ang) * r);
       if (!walkable(world, solid, cx, cy)) continue;      // вода, дерево, дом
       if (dist2(cx + 0.5, cy + 0.5, ax, ay) > WANDER_R * WANDER_R) continue;
+      /* Только что уволенный не топчется у лагеря: первые две минуты цель
+         прогулки — вне его пятна. Иначе «уволен» выглядел как «стоит там же». */
+      var ac = v.avoidCamp;
+      if (ac && (!ac.until || (world.time || 0) < ac.until) &&
+          dist2(cx + 0.5, cy + 0.5, ac.x, ac.y) < ac.r * ac.r) continue;
       return { x: cx, y: cy };
     }
     return null;

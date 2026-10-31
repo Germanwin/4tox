@@ -144,7 +144,11 @@
       var phase = 0;
       if (isFinite(start) && isFinite(dur) && dur > 0) {
         var e = (renderTime - start) / dur;
-        if (loop) phase = e - Math.floor(e);
+        /* Новая анимация началась ПОЗЖЕ момента отрисовки (интерполяция идёт
+           на 150 мс назад): без этого ветка loop давала фазу 0.78–0.97, и
+           гость видел конец цикла вместо начала. */
+        if (e < 0) phase = 0;
+        else if (loop) phase = e - Math.floor(e);
         else phase = Math.max(0, Math.min(1, e));
       }
       return { anim: meta.anim || 'idle', animInstance: inst, phase: phase };

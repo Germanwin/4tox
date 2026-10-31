@@ -677,6 +677,12 @@
     v.station = null;
     v.garrisonSpot = null;
     v.warcamp = null;
+    /* Дерево, помеченное этим лесорубом, иначе остаётся «занятым» навсегда:
+       treesNear отбрасывает дерево с чужой меткой, и его не выберет никто. */
+    if (v.tree) {
+      if (v.tree.mark === v) v.tree.mark = null;
+      v.tree = null;
+    }
     v.anim = 'idle';
   }
 
@@ -843,7 +849,11 @@
          приказа: см. leashAnchor и BATTLE-01. */
       if (t !== v.attackTarget) {
         v.attackTarget = t;
-        v.attackT = Math.max(v.attackT || 0, WINDUP);
+        /* Замах отсчитывается от ВХОДА В ДАЛЬНОСТЬ, а не от выбора цели:
+           иначе он истекал за время погони, и первый удар приходил в кадр
+           входа (0.016 с вместо 0.35). */
+        v.attackT = 0;
+        v.inRange = false;
         v.noPathT = 0;
         if (!v._fightAnchor) {
           v._fightAnchor = { x: v.x, y: v.y, r: FIGHT_LEASH };
@@ -871,11 +881,16 @@
         v.combatMode = 'attack';
         v.path = null;
         v.state = 'attack';
+        if (!v.inRange) {
+          v.inRange = true;
+          v.attackT = Math.max(v.attackT || 0, WINDUP);
+        }
         if (v.attackT <= 0) {
           v.attackT = isBuilding(t) ? BUILDING_EVERY : ATTACK_EVERY;
           pending.push({ v: v, t: t });
         }
       } else {
+        v.inRange = false;
         v.combatMode = 'chase';
         v.targetWhy = v.targetWhy === 'no-shot' ? 'no-shot' : '';
         /* Цель жива, а воин не идёт: пути нет уже chaseGiveUp секунд —

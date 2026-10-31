@@ -471,6 +471,22 @@
     opts = opts || {};
     if (!world || !snap) return { buildings: [], villagers: [], structural: false };
     var B = global.Buildings, i;
+    /* Клиент обязан убедиться, что снимок снят с ТОГО ЖЕ мира. Раньше
+       worldgenHash ехал в каждом снимке, но не читался: при старом
+       закешированном worldgen.js клиент молча клал серверные данные на
+       другой остров. */
+    var wg = snap.worldgenHash;
+    if (wg && global.WorldGen && global.WorldGen.hashWorld &&
+        global.WorldGen.hashWorld(world) !== wg) {
+      return { buildings: [], villagers: [], structural: false, mismatch: true, reason: 'worldgen' };
+    }
+    if (snap.seed !== undefined && String(snap.seed) !== String(world.seed)) {
+      return { buildings: [], villagers: [], structural: false, mismatch: true, reason: 'seed' };
+    }
+    if (snap.size !== undefined &&
+        Number(snap.size) !== Number(world.islandSize || world.width)) {
+      return { buildings: [], villagers: [], structural: false, mismatch: true, reason: 'size' };
+    }
     world.time = snap.t || 0;
     if (snap.over !== undefined) world.over = !!snap.over;
     if (snap.winner !== undefined) world.winner = snap.winner;

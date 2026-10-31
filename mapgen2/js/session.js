@@ -705,7 +705,10 @@
 
     var bot = newTown(world, 1, 'Деревня врага');
     bot.isBot = true;
-    var botList = B.villageAt(world, sites[1], HOME, BOT_VILLAGE, opts.site || SITE);
+    /* Деревня врага не встаёт на деревню игрока: та же проверка места, что и
+       внутри одной деревни, но со списком чужих построек. */
+    var botSite = Object.assign({}, opts.site || SITE, { avoid: playerList });
+    var botList = B.villageAt(world, sites[1], HOME, BOT_VILLAGE, botSite);
     for (i = 0; i < botList.length; i++) {
       botList[i].owner = 1;
       botList[i].town = bot.id;
@@ -795,7 +798,10 @@
     var all = [], towns = [], i;
     for (i = 0; i < n; i++) {
       var town = newTown(world, i, 'Игрок ' + (i + 1));
-      var list = B.villageAt(world, sites[i], HOME, VILLAGE, opts.site || SITE);
+      /* Постройки уже поставленных деревень — помеха: иначе площадки
+         формально разнесены, а пятна встречаются (mp-14). */
+      var siteOpts = Object.assign({}, opts.site || SITE, { avoid: all });
+      var list = B.villageAt(world, sites[i], HOME, VILLAGE, siteOpts);
       for (var j = 0; j < list.length; j++) {
         list[j].owner = i;
         list[j].town = town.id;
@@ -1215,6 +1221,7 @@
     if (v.carrying) loseCargo(v, v.world || null, 'нанят с грузом');
     v.employer = camp;
     v.job = camp;
+    v.avoidCamp = null;     // наняли снова — прогулка обычная
     v.state = 'toCamp';
     v.path = null;
     v.carrying = false;     // приняли на работу — брёвен на руках ещё нет
@@ -1273,6 +1280,15 @@
     v.stuck = 0;
     v.chopT = 0;
     v.hits = 0;
+    /* Первые две минуты после увольнения цель прогулки — вне пятна лагеря:
+       иначе «уволен» выглядел как «остался стоять у лагеря». */
+    if (world && camp && global.Buildings && global.Buildings.bounds) {
+      var bb = global.Buildings.bounds(camp);
+      v.avoidCamp = {
+        x: (bb.x0 + bb.x1) / 2, y: (bb.y0 + bb.y1) / 2,
+        r: 3.2, until: (world.time || 0) + 120
+      };
+    }
     // К прогулке: точка берётся в круге вокруг дома тем же планировщиком, что и
     // у никогда не работавшего (js/villager.js: planWander) — прогулка одна.
     v.state = 'wander';

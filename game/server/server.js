@@ -544,6 +544,10 @@ function makeLobby(max) {
  * VPS. Отказ явный `server_capacity`, а не бесконечное число worker'ов.
  * ---------------------------------------------------------------------- */
 const MAX_ACTIVE_ROOMS = Math.max(1, parseInt(process.env.MAX_ACTIVE_ROOMS || '1', 10) || 1);
+/* Предел лобби — не только против случайного мусора: POST /api/lobby без
+   авторизации, и раньше 20 000 пустых лобби съедали ~60 МБ до первого
+   sweep. TTL остаётся, предел закрывает всплеск. */
+const MAX_LOBBIES = Math.max(8, parseInt(process.env.MAX_LOBBIES || '256', 10) || 256);
 const STATE_DIR = process.env.STATE_DIR
   ? path.resolve(process.env.STATE_DIR)
   : path.resolve(process.cwd(), 'game', 'server', 'var', 'rooms');
@@ -2398,18 +2402,39 @@ const MIME = {
 /* Наружу отдаём только игру и движок. Корень репозитория (с .git, доками и
    инструментами) в сеть не уходит: сервер теперь слушает не только localhost. */
 const STATIC_ROOTS = ['/game/', '/mapgen2/'];
+/* Внутри /game/ есть непубличное: game/server (STATE_DIR по умолчанию —
+   lobby.json с токенами игроков) и game/tools (снимки приёмок, скрипты).
+   Префикс /game/ их формально пропускает, поэтому запрещаем отдельно. */
+const STATIC_DENY = ['/game/server/', '/game/tools/'];
 
 function serveStatic(req, res) {
   let urlPath;
   try { urlPath = decodeURIComponent((req.url || '/').split('?')[0]); }
   catch (e) { res.writeHead(400); res.end('bad url'); return; }
+  if (urlPath.indexOf('\0') >= 0) { res.writeHead(400); res.end('bad url'); return; }
+  urlPath = urlPath.replace(/\\/g, '/');
   if (urlPath === '/' || urlPath === '/game') urlPath = '/game/';
   if (urlPath.endsWith('/')) urlPath += 'index.html';
-  if (!STATIC_ROOTS.some(function (r) { return urlPath.startsWith(r); })) {
+  /* Проверяем НОРМАЛИЗОВАННЫЙ путь: %2e%2e декодируется в .., и проверка
+     префикса по исходной строке пропускала его внутрь репозитория
+     (живой баг: /game/%2e%2e/AGENTS.md отдавал 200). */
+  urlPath = path.posix.normalize(urlPath);
+  if (urlPath.split('/').indexOf('..') >= 0) {
+    res.writeHead(404); res.end('not found'); return;
+  }
+  const allowed = STATIC_ROOTS.some(function (r) { return urlPath.startsWith(r); }) &&
+    !STATIC_DENY.some(function (d) { return urlPath.startsWith(d); });
+  if (!allowed) {
     res.writeHead(404); res.end('not found'); return;
   }
   const file = path.resolve(ROOT, '.' + urlPath);
-  if (file !== ROOT && !file.startsWith(ROOT + path.sep)) {
+  const rootOk = STATIC_ROOTS.some(function (r) {
+    /* resolve, а не join: join сохраняет хвостовой слэш у '/game/', и
+       проверка 'dir + sep' давала '/game//' — ни один файл не проходил. */
+    const dir = path.resolve(ROOT, '.' + r);
+    return file === dir || file.startsWith(dir + path.sep);
+  });
+  if (!rootOk) {
     res.writeHead(403); res.end('forbidden'); return;
   }
   fs.stat(file, function (err, st) {
@@ -2763,6 +2788,12 @@ async function handleRequest(req, res) {
   if (req.method === 'POST' && u.pathname === '/api/lobby') {
     return readJson(req, res, function (body) {
       if (!body) return json(res, 400, { ok: false, reason: 'нет тела' });
+      if (lobbies.size >= MAX_LOBBIES) {
+        return json(res, 503, {
+          ok: false, code: 'server_capacity',
+          reason: 'на сервере слишком много лобби; попробуйте позже'
+        });
+      }
       const lobby = makeLobby(body.max);
       const p = addPlayer(lobby, body.name || 'Хост', body.protocol, body.build);
       lobby.hostId = p.id;
@@ -3380,6 +3411,11 @@ async function handleRequest(req, res) {
     /* Старый `n` — совместимость формы запроса, не новый протокол. */
     const instance = 's' + (p.owner === undefined ? 0 : p.owner) + '-' +
       crypto.createHash('sha1').update(String(p.id)).digest('hex').slice(0, 8);
+    /* Чужой commandId в запросе не должен отдавать чужой результат: id
+       обязан начинаться с instance ЭТОГО игрока. */
+    for (let ii = ids.length - 1; ii >= 0; ii--) {
+      if (ids[ii].indexOf(instance + ':') !== 0) ids.splice(ii, 1);
+    }
     u.searchParams.getAll('n').forEach(function (raw) {
       String(raw).split(',').forEach(function (part) {
         const n = Number(part);

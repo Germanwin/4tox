@@ -213,6 +213,9 @@
   function editRules(b) { return EDIT[typeOf(b)] || EDIT.house; }
 
   function canEdit(b, action) {
+    /* Завал — уже не постройка: он не работает, но 25 клеток лагеря нельзя
+       держать занятыми навсегда. Снос завала разрешён всем типам. */
+    if (action === 'remove' && b && b.rubble) return { ok: true, reason: '' };
     if (editRules(b)[action]) return { ok: true, reason: '' };
     var no = EDIT_NO[typeOf(b)];
     return { ok: false, reason: (no && no[action]) || ('постройку нельзя ' + (EDIT_VERB[action] || action)) };
@@ -1371,6 +1374,9 @@
 
     for (i = 0; i < list.length; i++) {
       if (!list[i] || list[i] === b) continue;
+      /* Завал не мешает ставить: новая постройка его сминает (её убирают из
+         списка в момент постановки — Commands/Play). */
+      if (list[i].rubble) continue;
       if (overlaps(b, list[i])) { res.reason = 'тут уже стоит постройка'; return res; }
     }
 
@@ -1402,6 +1408,22 @@
       if (res.sealed.length) {
         res.reason = sealedReason(world, res.sealed, opts.self, b);
         return res;
+      }
+      /* Дверь — единственный вход жителя. Дом, купленный у воды, с дверью в
+         море — это 12 брёвен в никуда: выйти из него нельзя. */
+      var front = frontSpot(b);
+      if (front) {
+        if (!inWorld(world, front.x, front.y)) {
+          res.reason = 'дверь за краем карты';
+          return res;
+        }
+        var fi = front.y * world.width + front.x;
+        var frontLand = world.isLand ? !!world.isLand[fi]
+          : !(world.tile && world.tile[fi] === T.WATER);
+        if (!frontLand) {
+          res.reason = 'дверь выходит в воду';
+          return res;
+        }
       }
     }
 
@@ -1794,6 +1816,20 @@
     if (S && typeof S.releaseTrainees === 'function') {
       n += S.releaseTrainees(b, villagers);
     }
+    /* Снесли дом — жильцы не должны остаться «прописанными» в несуществующей
+       постройке: HUD писал «числится в доме», а после F5 поведение менялось.
+       Бездомный гуляет вокруг текущей клетки (anchor), как и задумано. */
+    if (typeOf(b) === 'house') {
+      for (i = 0; i < villagers.length; i++) {
+        var res = villagers[i];
+        if (res && res.home === b) {
+          res.home = null;
+          res.homeId = null;
+          res.anchor = { x: res.x, y: res.y };
+          n++;
+        }
+      }
+    }
     for (i = 0; i < villagers.length; i++) {
       var v = villagers[i];
       if (!v || v.employer !== b) continue;
@@ -1878,11 +1914,14 @@
     var y1 = range ? Math.min(world.height, Math.round(cy + range)) : world.height;
     var best = null, bestScore = Infinity;
     var step = opts.step || 2;
+    /* Дома уже стоящих деревень: findSpot проверяет место только по своему
+       списку, поэтому сеть и бот ставили деревни поверх друг друга. */
+    var avoid = opts.avoid || [];
 
     for (var y = y0; y <= y1; y += step) {
       for (var x = x0; x <= x1; x += step) {
         var b = make({ type: type, variant: variant, rot: rot, x: x, y: y });
-        var chk = canPlace(world, list, b, opts);
+        var chk = canPlace(world, list.concat(avoid), b, opts);
         if (!chk.ok) continue;
         var score = chk.blocked.length * 4;   // чем меньше расчистки, тем лучше
         var d = Math.hypot(x + 1.5 - cx, y + 1.5 - cy);
@@ -1907,8 +1946,11 @@
     opts = opts || {};
     var out = [], rots = opts.rotations || [FACE_ROT, FACE_ROT, FACE_ROT];
     var variants = opts.variants || ['a', 'b', 'c'];
+    /* Уже стоящие постройки (в т.ч. поставленные прошлым нажатием «Все три»)
+       обязаны быть помехой: иначе второй клик кладёт те же три пятна. */
+    var avoid = (opts.avoid || (world && world._buildings) || []).slice();
     for (var i = 0; i < variants.length; i++) {
-      var spot = findSpot(world, out, variants[i], rots[i % rots.length], opts);
+      var spot = findSpot(world, out.concat(avoid), variants[i], rots[i % rots.length], opts);
       if (!spot) continue;
       // Место уже проверено в findSpot: здесь постройка встаёт, и вместе с ней
       // решается судьба того, что под ней (settle).
@@ -2115,6 +2157,9 @@
     var cb = clusterBounds(list);
     var cc = { x: (cb.x0 + cb.x1) / 2, y: (cb.y0 + cb.y1) / 2 };
     var place = { clearable: true, requireClear: false, yard: 1 };
+    /* Чужие деревни: в сетевой партии и «против деревни» постройка не должна
+       встать на пятно соседа, хотя список своей деревни её не содержит. */
+    var avoid = opts.avoid || [];
     var gaps = opts.gaps || NEIGHBOUR_GAPS;
     var reach = Math.max(footprint(0, type).w, footprint(90, type).w) + 1;
     var best = null, bestScore = Infinity;
@@ -2127,7 +2172,7 @@
         var gi = gaps.indexOf(gap);
         if (gi < 0) continue;                     // не то кольцо или налезает
         var b = make({ type: type, variant: variant, rot: rot, x: x, y: y });
-        var chk = canPlace(world, list, b, place);
+        var chk = canPlace(world, list.concat(avoid), b, place);
         if (!chk.ok) continue;
         var cx = x + fp.w / 2, cy = y + fp.h / 2;
         var score = chk.blocked.length * 4                       // меньше расчистки
@@ -2171,22 +2216,28 @@
   function villageAt(world, center, first, rest, opts) {
     opts = opts || {};
     var list = [];
+    var avoid = (opts.avoid || []).slice();
+    var placeOpts = Object.assign({}, opts);
+    placeOpts.avoid = avoid;
     var home = first
       ? findSpot(world, list, first.variant, first.rot === undefined ? FACE_ROT : first.rot,
                  { type: first.type || 'townhall', center: center,
                    range: opts.range === undefined ? 12 : opts.range,
-                   minSep: 0, clearable: true, requireClear: false, yard: 1 })
+                   minSep: 0, clearable: true, requireClear: false, yard: 1,
+                   avoid: avoid })
       : null;
     if (home) {
       settle(world, home, opts);
       list.push(home);
+      avoid.push(home);
     }
     rest = rest || [];
     for (var i = 0; i < rest.length; i++) {
-      var spot = neighbourSpot(world, list, rest[i], opts);
+      var spot = neighbourSpot(world, list, rest[i], placeOpts);
       if (!spot) continue;
       settle(world, spot, opts);
       list.push(spot);
+      avoid.push(spot);
     }
     return list;
   }
