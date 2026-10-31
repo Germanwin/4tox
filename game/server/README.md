@@ -2,8 +2,10 @@
 
 Без npm-зависимостей: статика, лобби 2–4 и **авторитетная комната** в
 `worker_threads.Worker`. Мир считает сервер, а не вкладка создателя: создатель
-— обычный клиент. Транспорт прежний: SSE вниз, HTTP POST вверх; WebSocket и
-брокеры не добавлялись.
+— обычный клиент. Постоянный поток — **WebSocket** `/api/ws` с двоичным
+кадром `game/shared/net-wire.js` (10 кадров/с, ~16 КБ на 300 жителях); SSE
+остаётся запасным каналом, HTTP POST — командами. Внешних зависимостей нет:
+WebSocket-сервер свой (`ws.js`).
 
 Архитектура, форматы, checkpoint и пределы — [docs/MP_IMPLEMENTATION.md](../../docs/MP_IMPLEMENTATION.md).
 Проверки и сырые результаты — [docs/MP_VALIDATION.md](../../docs/MP_VALIDATION.md).
@@ -74,6 +76,7 @@ SSH-туннель, он стримит SSE как есть, поэтому го
 
 ## Как устроено
 
+- `GET /api/ws?code&token` — WebSocket комнаты (основной канал снимков);
 - `POST /api/lobby` — создать; `POST /api/join` — войти по коду;
   `POST /api/ready` — готовность; `POST /api/start` — старт (только хост),
   он же ждёт `ready` worker'а с первым committed baseline;

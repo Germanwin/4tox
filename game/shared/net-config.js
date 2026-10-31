@@ -34,6 +34,16 @@
     slowClientTimeoutMs: 5000,
     checkpointEveryTicks: 200,
     emptyRoomGraceMs: 600000,
+    /* WebSocket: поток снимков, liveness и переподключение. Снимки — полные
+       двоичные кадры, поэтому очередь ограничена «последним», а не списком. */
+    wsHeartbeatMs: 10000,
+    wsServerPingMs: 15000,
+    wsServerTimeoutMs: 45000,
+    wsSocketHighBytes: 262144,
+    wsMaxMessageBytes: 65536,
+    wsReconnectBaseMs: 300,
+    wsReconnectMaxMs: 5000,
+    wsMaxFails: 3,
     /* Производные величины. Считаются от tickMs, чтобы ни у кого не было
        собственного «0.05» рядом с конфигом. */
     tickSeconds: 50 / 1000,

@@ -88,6 +88,7 @@ function RoomRuntime(options) {
   if (!(this instanceof RoomRuntime)) return new RoomRuntime(options);
   options = options || {};
   this.roomId = String(options.roomId || 'ROOM');
+  this.testMode = !!options.testMode;
   this.seed = options.seed;
   this.size = options.size || 64;
   this.players = (options.players || []).map((p, i) => ({
@@ -538,6 +539,59 @@ RoomRuntime.prototype.makeSnapshot = function (opts) {
   });
   if (snap.baseline) this.baselinePending = false;
   return snap;
+};
+
+/* Тестовый набор жителей: только при MP_TEST_HOOKS=1. Нужен браузерной
+   приёмке, чтобы проверить сеть и отрисовку на 300 существах, не строя
+   полсотни лагерей командами. Мир при этом остаётся настоящим: те же
+   Villagers.blank, тот же шаг, та же репликация. */
+RoomRuntime.prototype.debugFill = function (n) {
+  n = Math.max(0, Math.min(3000, Number(n) || 0));
+  const g = globalThis;
+  const sim = this.sim;
+  const world = sim.state.world;
+  const town = world.towns && world.towns[0];
+  if (!town) return { ok: false, reason: 'no_town' };
+  const hall = town.townhall;
+  const cx = hall ? hall.x + 1.5 : world.width / 2;
+  const cy = hall ? hall.y + 1.5 : world.height / 2;
+  const solid = g.Villagers && g.Villagers.blockedMap
+    ? g.Villagers.blockedMap(world, sim.state.buildings) : null;
+  const baseId = 90000 + (sim.state.villagers.length * 7) % 10000;
+  let made = 0;
+  const ring = [];
+  for (let r = 2; r <= Math.max(world.width, world.height) / 2 && ring.length < 400; r += 2) {
+    for (let y = Math.max(0, Math.floor(cy - r)); y <= Math.min(world.height - 1, cy + r); y += 2) {
+      for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(world.width - 1, cx + r); x += 2) {
+        if (!world.isLand || !world.isLand[y * world.width + x]) continue;
+        if (solid && solid[y * world.width + x]) continue;
+        ring.push({ x: x + 0.5, y: y + 0.5 });
+      }
+    }
+  }
+  if (!ring.length) return { ok: false, reason: 'no_land' };
+  for (let i = 0; i < n; i++) {
+    const spot = ring[i % ring.length];
+    const id = baseId + i;
+    let v;
+    try {
+      v = g.Villagers.blank(world, {
+        id: id, index: id, rngKey: id,
+        x: spot.x, y: spot.y, owner: 0, town: 0,
+        avoid: sim.state.villagers, buildings: sim.state.buildings
+      });
+    } catch (e) { break; }
+    v.state = 'wander';
+    v.path = null;
+    v.anchor = { x: v.x, y: v.y };
+    v.avoid = [];
+    sim.state.villagers.push(v);
+    town.villagers.push(v);
+    made++;
+  }
+  world._villagers = sim.state.villagers;
+  town._vidNext = Math.max(town._vidNext || 0, baseId + made);
+  return { ok: true, added: made, total: sim.state.villagers.length };
 };
 
 RoomRuntime.prototype.pendingResultBlock = function () {

@@ -24,7 +24,9 @@
 
 | Файл | Ответственность |
 |---|---|
-| `game/shared/net-config.js` | protocol 4, tick 50 мс, snapshotEvery 2, буфер 32, лимиты очередей, `STATE_DIR`-независимые числа |
+| `game/shared/net-config.js` | protocol 4, tick 50 мс, snapshotEvery 2, буфер 32, лимиты очередей/WS, `STATE_DIR`-независимые числа |
+| `game/shared/net-wire.js` | двоичный кадр снимка `4TX1`: pack/unpack, строковая таблица, точность 0.01 клетки |
+| `game/server/ws.js` | WebSocket-сервер без зависимостей: handshake, кадры, ping/pong, backpressure |
 | `mapgen2/js/simulation/gameplay-config.js` | СГЕНЕРИРОВАН из `atlas.json` жителя/воина: frames/fps/loop, `dropDuration=1/3`, цены, константы |
 | `mapgen2/js/simulation/navigation.js` | порционный A*: 4096 pop/тик, quantum 256, 8 активных job, 4096 ожидающих, продолжение с того же heap |
 | `mapgen2/js/simulation/checkpoint.js` | graph codec: объекты/массивы/Map/Set/typed arrays/DataView/ArrayBuffer/RNG, `$ref`, циклы, явные ошибки |
@@ -37,7 +39,7 @@
 | `game/server/server.js` | лобби, токены, SSE, `/api/start`, `/api/command`, `/api/command-state`, `/api/resume`, `/api/ping`, `/api/recover` |
 | `game/js/server-clock.js` | RTT/offset по c0/s1/s2/c3, медиана 3 лучших, неубывающий renderTime |
 | `game/js/snapshot-buffer.js` | epoch/revision, 32 снимка, поза по ломаной, экстраполяция ≤100 мс, stale |
-| `game/js/net.js` | envelope commandId/instance/sequence, `command-state`, ping-метки, baseline/resume |
+| `game/js/net.js` | WebSocket + SSE-резерв, reconnect, envelope commandId/instance/sequence, `command-state`, ping-метки, baseline/resume |
 | `game/js/play.js` | серверный baseline, presentation-only тик, display-позы, pending |
 | `game/js/pending.js` | точный result, резерв, visualSettled ≠ resourceSettled, лимит 60 |
 | `mapgen2/tools/build-mobile-atlases.py` | half-resolution PNG + metadata, `--check` |
@@ -249,7 +251,10 @@ heartbeatMs 2000, commandBodyMaxBytes 16384, commandMaxIds 200,
 buildLineMaxItems 64, commandQueuePerPlayer 64, commandQueuePerRoom 256,
 commandsPerTick 64, pendingMax 60, controlQueueMaxBytes 262144,
 streamQueueMaxBytes 2097152, slowClientTimeoutMs 5000,
-checkpointEveryTicks 200, emptyRoomGraceMs 600000
+checkpointEveryTicks 200, emptyRoomGraceMs 600000,
+wsHeartbeatMs 10000, wsServerPingMs 15000, wsServerTimeoutMs 45000,
+wsSocketHighBytes 262144, wsMaxMessageBytes 65536,
+wsReconnectBaseMs 300, wsReconnectMaxMs 5000, wsMaxFails 3
 ```
 
 `MAX_ACTIVE_ROOMS` (env, по умолчанию 1) — предел комнат, не игроков. Отказ
@@ -313,3 +318,81 @@ half-resolution вариант: кадры режутся по отдельно�
   Отдельной очереди нет — при однопоточном UI она не нужна.
 * `mapgen2/tools/ground.js` имеет 3 FAIL и на исходном HEAD (см. validation);
   это не регрессия миграции.
+
+## 13. Транспорт 2026-10-30: WebSocket и двоичный кадр
+
+Причина правки — жалоба на 300 жителях: «связь рвётся несколько раз в
+секунду, жители стоят, обновления редкие». JSON-снимок на 300 существах —
+~110 КБ, из них больше половины `motion` и имена полей; 10 кадров/с дают
+~1,1 МБ на клиента, а SSE-поток с gzip всё равно требует JSON.parse,
+пересборки объектов и терпит разрывы EventSource. Теперь постоянный поток
+идёт по WebSocket, снимок — двоичный.
+
+### Почему WebSocket, а не UDP/WebTransport
+
+Браузер не даёт UDP напрямую. WebTransport — это HTTP/3/QUIC: нужен
+отдельный сервер и настройка h3 у прокси, а для RTS с 10 кадрами/с и полным
+состоянием мира надёжный упорядоченный поток дешевле. Главная цена TCP —
+объём, и её снимает двоичный формат (в 7 раз меньше), а не отказ от
+надёжности. Потери одного кадра не будет вовсе, а reconnect получает полный
+baseline.
+
+### Канал
+
+- `GET /api/ws?code=…&token=…` с `Upgrade: websocket`; handshake — свой
+  модуль `game/server/ws.js` (RFC 6455: маскированные кадры клиента,
+  continuation, ping/pong, close). Внешних npm-зависимостей нет.
+- Вниз: двоичные кадры `4TX1` (снимок) и текстовые `{t,d}` (hello, lobby,
+  start, command, command-result, peer-left/back, host-left/back, room-fault,
+  room-recovered, pong).
+- Вверх: `{t:'ping'}` раз в 10 с (liveness/`lastSeen`) и `{t:'cmd'}` — заглушка
+  с ответом `command_over_http`. Команды остаются `POST /api/command`: один
+  проверенный путь admission/дедупликации.
+- Сервер шлёт протокольный ping каждые 15 с; нет pong 45 с — соединение
+  закрывается. `broadcast` кладёт снимок в WS-сокет только если
+  `writableLength` ниже 256 КБ; иначе кадр пропускается (следующий полный
+  кадр всё равно заменит его).
+- SSE остаётся вторым каналом: старый клиент/прокси без Upgrade получает
+  прежний сжатый поток. Оба канала питаются одним `broadcast`; двоичный кадр
+  собирается ОДИН раз на всех WS-клиентов.
+
+### Двоичный формат (`game/shared/net-wire.js`)
+
+Магия `4TX1`, версия 1, тип 1. Строковая таблица на кадр; координаты —
+1/100 клетки в u16, поворот — u16, поля-умолчания не пишутся; `motion` —
+`t:u32,x:u16,y:u16,rot:u16` (10 байт на точку). `removed` — hex-строка,
+`commandResults` — только при наличии. Точность: 0.01 клетки, 1°; для
+спрайтов и интерполяции этого достаточно, а кадр на 300 жителях — 13–16 КБ
+против ~87–110 КБ JSON (замер `net-wire.test.js`: 13,8 КБ против 87 КБ,
+pack p95 0,28 мс, unpack p95 0,21 мс).
+
+Формат **полный** (keyframe), не дельта: WebSocket/TCP доставляет кадры по
+порядку, а полный кадр переживает reconnect и не требует истории на каждого
+клиента. Дельты дали бы ещё меньше байт, но добавили бы состояние, которое
+расходится после обрыва — на 300–1000 сущностях это не оправдано.
+
+### Клиент (`game/js/net.js`)
+
+`Net` сначала открывает WS. Пока он открывается, SSE не закрывается; при
+`open` WS закрывает SSE. Обрыв: 300 мс → 600 мс → 1,2 с, после трёх неудач —
+SSE (прокси без Upgrade). При ошибке SSE снова пробует WS через 5 с.
+`Net.transport()` и `Net.transportStats()` показывают реальный канал,
+`bytesIn/snapshotsIn/lastSnapBytes/maxGapMs`. Бинарный кадр разбирается
+`NetWire.unpackSnapshot` и идёт в тот же `applyServerSnapshot`, что и JSON:
+правила игры, `SnapshotBuffer`, `ServerClock` и `Serialize.apply` не
+менялись.
+
+### Проверки
+
+- `node --test game/tools/tests/net-wire.test.js` — roundtrip 300 жителей,
+  размер, скорость, bitmap, битый кадр.
+- `node game/tools/tests/mp-ws-load.js --entities 300` — настоящий
+  `server.js` + Chrome: 306 жителей, WS, 10 снимков/с, 15,7 КБ, max gap
+  105–187 мс, 60 FPS, обрыв сети и F5. `--sse` — тот же прогон на запасном
+  канале.
+- `node game/tools/mp.js` — оба клиента `Net.transport() === 'ws'`.
+- `node game/tools/tests/mp-acceptance.js` — SSE-путь не сломан.
+
+`MP_TEST_HOOKS=1` включает `POST /api/test/fill` (только для приёмки):
+наполняет комнату жителями через `Villagers.blank`. В обычном запуске
+эндпоинта нет.

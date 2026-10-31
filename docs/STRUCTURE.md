@@ -519,6 +519,8 @@ grep -rl "REPO *=" --include=*.py . | grep -v __pycache__ | wc -l
 
 ```
 game/shared/net-config.js          числа протокола, общие для браузера и Node
+game/shared/net-wire.js            двоичный кадр снимка 4TX1 (pack/unpack)
+game/server/ws.js                  WebSocket-сервер без зависимостей
 game/js/server-clock.js            offset/RTT, renderTime по серверным часам
 game/js/quality.js                 auto/low/high DPR + выбор mobile-атласов
 game/js/atlas-tags.js              ровно один tier atlas.js

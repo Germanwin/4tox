@@ -501,66 +501,262 @@
     if (view.hostId !== undefined) hostId = view.hostId;
   }
 
-  function connect() {
-    if (es) { try { es.close(); } catch (e) {} }
+  /* ------------------------- транспорт: WS и SSE ---------------------- *
+   *
+   * Основной канал — WebSocket: один сокет на игру, полный двоичный снимок
+   * 10 раз в секунду, управляющие события JSON. SSE остаётся запасным:
+   * старый прокси/туннель может не пропустить Upgrade, и тогда игра обязана
+   * продолжить работать, а не показать «нет связи».
+   *
+   * Почему не UDP/WebTransport: браузеру UDP напрямую недоступен, а
+   * WebTransport требует HTTP/3 и отдельного сервера; для RTS с 10–20
+   * кадрами в секунду надёжный упорядоченный поток дешевле и не создаёт
+   * дыр в состоянии мира. Двоичный формат убирает главную цену TCP —
+   * объём, а не задержку.
+   * -------------------------------------------------------------------- */
+  var ws = null, wsTimer = null, wsHeartbeat = null;
+  var wsAttempts = 0, wsFails = 0, wsDisabled = false;
+  var transport = null;
+  var WSNet = global.NetConfig || {};
+  var WS_MAX_FAILS = WSNet.wsMaxFails || 3;
+  var WS_HEARTBEAT_MS = WSNet.wsHeartbeatMs || 10000;
+  var WS_RETRY_BASE_MS = WSNet.wsReconnectBaseMs || 300;
+  var WS_RETRY_MAX_MS = WSNet.wsReconnectMaxMs || 5000;
+  /* Счётчики для приёмки и бейджа: сколько реально пришло по WebSocket,
+     какого размера кадры и был ли разрыв между ними. Игроку они не нужны,
+     но без них «стало лучше» — это вера, а не число. */
+  var wsBytesIn = 0, wsSnapshotsIn = 0, wsLastSnapAt = 0;
+  var wsMaxGapMs = 0, wsLastSnapBytes = 0;
+
+  function dispatchEvent(type, data) {
+    if (type === 'hello') {
+      playerId = data.playerId;
+      hostId = data.hostId;
+      useLobby(data.lobby);
+      online = true;
+      saveSession();
+      emit('net-ok', data);
+    } else if (type === 'lobby') {
+      useLobby(data);
+      saveSession();
+    } else if (type === 'start') {
+      handleStart(data);
+      return;                            // emit делает handleStart
+    } else if (type === 'command') {
+      /* Хост по этому событию только будит снимок: выполнять команду
+         здесь нельзя — путь выполнения один, из ответа на снимок. */
+      emit('command-ready', data);
+    } else if (type === 'command-result') {
+      /* Быстрый путь для интерфейса; правду всё равно подтвердит опрос
+         /api/command-state, если поток оборвётся. */
+      if (data && typeof data.n === 'number' && settleCommand(data.n, data)) {
+        return;
+      }
+    }
+    emit(type, data);
+  }
+
+  function closeWs() {
+    if (wsHeartbeat) { global.clearInterval(wsHeartbeat); wsHeartbeat = null; }
+    if (wsTimer) { global.clearTimeout(wsTimer); wsTimer = null; }
+    var sock = ws;
+    ws = null;
+    transport = null;
+    if (sock) {
+      try {
+        sock.onopen = sock.onmessage = sock.onerror = sock.onclose = null;
+        sock.close();
+      } catch (e) {}
+    }
+  }
+
+  function closeSse() {
+    if (!es) return;
+    var source = es;
+    es = null;
+    try {
+      source.onopen = source.onerror = null;
+      source.close();
+    } catch (e) {}
+    if (transport === 'sse') transport = null;
+  }
+
+  function startWsHeartbeat(sock, gen) {
+    if (wsHeartbeat) global.clearInterval(wsHeartbeat);
+    wsHeartbeat = global.setInterval(function () {
+      if (!isCurrent(gen) || ws !== sock) return;
+      try {
+        if (sock.readyState === 1) sock.send(JSON.stringify({ t: 'ping', c: Date.now() }));
+      } catch (e) {}
+    }, WS_HEARTBEAT_MS);
+  }
+
+  function scheduleWsRetry() {
+    if (!code || !token || wsTimer || wsDisabled) return;
+    wsFails++;
+    if (wsFails >= WS_MAX_FAILS) {
+      /* Upgrade не проходит (прокси, корпоративная сеть) — переходим на SSE.
+         Если и SSE умрёт, connectSse попробует WebSocket заново. */
+      wsDisabled = true;
+      connectSse();
+      return;
+    }
+    var delay = Math.min(WS_RETRY_MAX_MS, WS_RETRY_BASE_MS * Math.pow(2, wsFails - 1));
+    wsTimer = global.setTimeout(function () {
+      wsTimer = null;
+      tryWebSocket();
+    }, delay);
+  }
+
+  function tryWebSocket() {
+    if (!code || !token || ws) return;
+    if (!global.NetWire || typeof global.WebSocket !== 'function' ||
+        !global.location || !global.location.host) {
+      wsDisabled = true;
+      connectSse();
+      return;
+    }
     var gen = generation;
-    var source = new EventSource('/api/events?code=' + encodeURIComponent(code) +
-      '&token=' + encodeURIComponent(token));
+    var scheme = (global.location.protocol === 'https:') ? 'wss://' : 'ws://';
+    var url = scheme + global.location.host + '/api/ws?code=' +
+      encodeURIComponent(code) + '&token=' + encodeURIComponent(token);
+    var sock;
+    wsAttempts++;
+    try { sock = new global.WebSocket(url); }
+    catch (e) { scheduleWsRetry(); return; }
+    ws = sock;
+    try { sock.binaryType = 'arraybuffer'; } catch (e) {}
+
+    sock.onopen = function () {
+      if (!isCurrent(gen) || ws !== sock) return;
+      wsFails = 0;
+      transport = 'ws';
+      online = true;
+      /* Два канала одновременно не нужны: SSE ещё секунду назад был
+         единственным, но теперь его роль — только резерв. */
+      closeSse();
+      startWsHeartbeat(sock, gen);
+      emit('net-ok', { transport: 'ws' });
+    };
+    sock.onmessage = function (ev) {
+      if (!isCurrent(gen) || ws !== sock) return;
+      if (typeof ev.data === 'string') {
+        var msg = null;
+        try { msg = JSON.parse(ev.data); } catch (e) { return; }
+        if (!msg || typeof msg !== 'object') return;
+        if (msg.t === 'pong') { emit('ws-pong', msg.d || msg); return; }
+        dispatchEvent(msg.t, msg.d);
+        return;
+      }
+      var snap = null;
+      var bytes = ev.data.byteLength || ev.data.length || 0;
+      try {
+        snap = global.NetWire.unpackSnapshot(new Uint8Array(ev.data));
+      } catch (e) {
+        emit('net-error', { message: 'битый кадр мира' });
+        return;
+      }
+      wsBytesIn += bytes;
+      wsLastSnapBytes = bytes;
+      wsSnapshotsIn++;
+      var at = Date.now();
+      if (wsLastSnapAt) {
+        var gap = at - wsLastSnapAt;
+        if (gap > wsMaxGapMs) wsMaxGapMs = gap;
+      }
+      wsLastSnapAt = at;
+      dispatchEvent('snapshot', snap);
+    };
+    sock.onerror = function () {
+      /* onclose придёт следом; здесь не плодим события и не закрываем
+         сокет вручную. */
+    };
+    sock.onclose = function (ev) {
+      if (ws !== sock) return;
+      ws = null;
+      transport = null;
+      online = false;
+      if (wsHeartbeat) { global.clearInterval(wsHeartbeat); wsHeartbeat = null; }
+      if (!isCurrent(gen)) return;
+      emit('net-error', {
+        message: 'связь с сервером потеряна' +
+          (ev && ev.code ? ' (' + ev.code + ')' : ''),
+        transport: 'ws', code: ev && ev.code
+      });
+      scheduleWsRetry();
+    };
+  }
+
+  function connectSse() {
+    if (es || !code || !token || typeof global.EventSource !== 'function') return;
+    var gen = generation;
+    var source = new global.EventSource('/api/events?code=' +
+      encodeURIComponent(code) + '&token=' + encodeURIComponent(token));
     es = source;
     ['hello', 'lobby', 'start', 'snapshot', 'command', 'command-result',
       'peer-left', 'peer-back', 'host-left', 'host-back', 'room-fault',
       'room-recovered'].forEach(function (type) {
       source.addEventListener(type, function (ev) {
-        /* Событие старого соединения после reset/create не должно оживлять
-           прежнюю партию: проверяем и поколение, и то, что это всё ещё наш
-           EventSource. */
         if (!isCurrent(gen) || es !== source) return;
         var data = null;
         try { data = JSON.parse(ev.data); } catch (e) { return; }
-        if (type === 'hello') {
-          playerId = data.playerId;
-          hostId = data.hostId;
-          useLobby(data.lobby);
-          online = true;
-          saveSession();
-          emit('net-ok', data);
-        } else if (type === 'lobby') {
-          useLobby(data);
-          saveSession();
-        } else if (type === 'start') {
-          handleStart(data);
-          return;                        // emit делает handleStart
-        } else if (type === 'command') {
-          /* Хост по этому событию только будит снимок: выполнять команду
-             здесь нельзя — путь выполнения один, из ответа на снимок. */
-          emit('command-ready', data);
-        } else if (type === 'command-result') {
-          /* Быстрый путь для интерфейса; правду всё равно подтвердит опрос
-             /api/command-state, если поток оборвётся. */
-          if (data && typeof data.n === 'number' && settleCommand(data.n, data)) {
-            return;
-          }
-        }
-        emit(type, data);
+        dispatchEvent(type, data);
       });
     });
     source.onopen = function () {
       if (!isCurrent(gen) || es !== source) return;
       online = true;
-      emit('net-ok', {});
+      transport = 'sse';
+      emit('net-ok', { transport: 'sse' });
     };
     source.onerror = function () {
       if (!isCurrent(gen) || es !== source) return;
       online = false;
-      emit('net-error', { message: 'связь с сервером потеряна' });
+      transport = null;
+      emit('net-error', { message: 'связь с сервером потеряна', transport: 'sse' });
+      /* EventSource сам переподключается; но если WebSocket был отключён
+         только из-за серии неудач, даём ему ещё шанс — SSE сейчас всё
+         равно не здоров. */
+      if (wsDisabled) {
+        wsDisabled = false;
+        wsFails = 0;
+        if (wsTimer) { global.clearTimeout(wsTimer); wsTimer = null; }
+        global.setTimeout(function () { tryWebSocket(); }, 5000);
+      }
     };
+  }
+
+  function connect() {
+    /* SSE не закрываем сразу: пусть живёт до открытия WebSocket. Иначе при
+       мгновенном обрыве WS игрок на секунду остаётся без обоих каналов. */
+    if (wsTimer) { global.clearTimeout(wsTimer); wsTimer = null; }
+    wsAttempts = 0;
+    wsFails = 0;
+    wsDisabled = false;
+    wsBytesIn = 0; wsSnapshotsIn = 0; wsLastSnapAt = 0;
+    wsMaxGapMs = 0; wsLastSnapBytes = 0;
+    if (global.NetWire && typeof global.WebSocket === 'function') {
+      tryWebSocket();
+    } else {
+      connectSse();
+    }
+  }
+
+  /* Для приёмки и диагностики: какой канал реально несёт игру. */
+  function transportName() {
+    if (ws && ws.readyState === 1) return 'ws';
+    if (es) return 'sse';
+    return transport;
   }
 
   function reset() {
     bumpGeneration();
-    if (es) { try { es.close(); } catch (e) {} }
+    closeWs();
+    closeSse();
     clearPending('партия закрыта', 'stale');
-    es = null; token = null; code = null; playerId = null; hostId = 0;
+    transport = null;
+    wsAttempts = 0; wsFails = 0; wsDisabled = false;
+    token = null; code = null; playerId = null; hostId = 0;
     lobby = null; started = null; startKey = null; online = false;
     roomId = null; roomEpoch = 0; clientInstance = null; clientSeq = 0;
     allocatedSeq = 0;
@@ -662,6 +858,12 @@
     var gen = generation;
     resuming = true;
     pendingStart = null;
+    /* Сокет прежнего поколения больше не должен получать кадры: его
+       обработчики отвергнут их по generation, а новый connect() увидел бы
+       занятый ws и не открыл свежий. */
+    closeWs();
+    closeSse();
+    online = false;
     connect();
     return apiGet('/api/resume?code=' + encodeURIComponent(code) +
       '&token=' + encodeURIComponent(token), LIMITS.resume).then(function (j) {
@@ -705,9 +907,10 @@
       if (!isCurrent(gen)) throw staleError();
       resuming = false;
       pendingStart = null;
-      /* Ответа нет — не даём SSE запустить игру без снимка: закрываем поток,
-         Lobby очистит сессию и вернёт меню. */
-      if (es) { try { es.close(); } catch (x) {} es = null; }
+      /* Ответа нет — не даём ни SSE, ни WebSocket запустить игру без
+         снимка: закрываем оба, Lobby очистит сессию и вернёт меню. */
+      closeWs();
+      closeSse();
       online = false;
       throw e;
     });
@@ -1528,6 +1731,19 @@
     lobby: function () { return lobby; },
     started: function () { return started; },
     online: function () { return online; },
-    connected: function () { return !!es; }
+    transport: transportName,
+    resetTransportStats: function () {
+      wsBytesIn = 0; wsSnapshotsIn = 0; wsLastSnapAt = 0;
+      wsMaxGapMs = 0; wsLastSnapBytes = 0;
+    },
+    transportStats: function () {
+      return {
+        transport: transportName(), attempts: wsAttempts, fails: wsFails,
+        disabled: wsDisabled, wsReady: ws ? ws.readyState : null,
+        sse: !!es, bytesIn: wsBytesIn, snapshotsIn: wsSnapshotsIn,
+        lastSnapBytes: wsLastSnapBytes, maxGapMs: wsMaxGapMs
+      };
+    },
+    connected: function () { return !!(ws || es); }
   };
 })(typeof window !== 'undefined' ? window : globalThis);

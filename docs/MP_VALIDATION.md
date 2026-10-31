@@ -352,3 +352,44 @@ game/tools/tests/*.test.js` 68/68. На загруженной машине (loa
 `stepP99Ms` может подняться до 45–52 мс — это хвост синхронного снятия
 checkpoint и волн планирования, а не зависание; тики/снимки при этом
 остаются 20/10.
+
+## Приёмка транспорта 2026-10-30 (WebSocket + двоичный кадр)
+
+Окружение: macOS 15.7.3, Node v24.12.0, Chrome 156 headless. Сервер —
+настоящий `game/server/server.js`, `STATE_DIR` временный; 300/600 жителей
+добавлены тестовой ручкой `MP_TEST_HOOKS=1` через `Villagers.blank`.
+
+```bash
+node --test game/tools/tests/*.test.js
+# tests 73, pass 73, fail 0 (включая net-wire.test.js: 5/5)
+
+node game/tools/tests/mp-acceptance.js
+# PASS: 15/15 (SSE-путь, F5, команды)
+
+node game/tools/mp.js
+# MP: PASS, в том числе «both clients use WebSocket transport: ws/ws»
+
+node game/tools/tests/mp-ws-load.js --entities 300
+# PASS: 306 жителей, transport=ws, 10 снимков/с, 15,7 КБ,
+#       maxGap 105–187 мс, frames p95 16,7 мс / 0 кадров >50 мс,
+#       305 двигались, обрыв сети → снова ws, F5 → снова ws, 306 жителей
+
+node game/tools/tests/mp-ws-load.js --entities 600
+# PASS: 606 жителей, 10 снимков/с, 28,7 КБ, maxGap 145 мс,
+#       frames p95 16,8 мс, 601 двигался, обрыв и F5 → ws
+
+node game/tools/tests/mp-ws-load.js --entities 300 --sse
+# PASS: 306 жителей, transport=sse, 20 revision/s, frames p95 16,7 мс,
+#       обрыв и F5 → sse (запасной канал живой)
+
+node game/tools/menu.js      # все проверки игры пройдены, exit 0
+node mapgen2/tools/game.js   # все проверки начала игры пройдены, exit 0
+```
+
+`net-wire.test.js` на 300 жителях: JSON 87 017 Б → двоичный кадр 13 782 Б
+(16 %), pack p95 0,28 мс, unpack p95 0,21 мс.
+
+**Не считать регрессией:** `node game/tools/http.js` — старая приёмка
+протокола 3/хоста-авторитета; она падает и на чистом `HEAD` (A96C8D6):
+`/api/snapshot` теперь 409, `cmdProto` 3, а тест ждёт 200/2. Это не связано
+с WebSocket.

@@ -167,8 +167,19 @@ async function onMessage(msg) {
     });
     return;
   }
+  if (msg.type === 'debugFill') {
+    if (!(runtime && runtime.testMode)) {
+      send('debugFill', { requestId: msg.requestId, result: { ok: false, reason: 'debug_fill_disabled' } });
+      return;
+    }
+    let result;
+    try { result = runtime.debugFill(msg.n); }
+    catch (e) { result = { ok: false, reason: String(e && e.message || e) }; }
+    send('debugFill', { requestId: msg.requestId, result: result });
+    return;
+  }
   if (msg.type === 'testFault') {
-    if (!(runtime && msg.testMode)) { send('error', { reason: 'test_fault_not_enabled' }); return; }
+    if (!(runtime && runtime.testMode)) { send('error', { reason: 'test_fault_not_enabled' }); return; }
     runtime.enterFault(new Error(String(msg.message || 'injected fault')), 'testFault');
     return;
   }

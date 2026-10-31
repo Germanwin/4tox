@@ -136,8 +136,9 @@ async function main() {
     await B.send('Page.navigate', { url: base + '/game/' });
     await sleep(3500);
 
-    const loaded = await A.js('({ready:!!(window.Play&&window.Net&&window.SnapshotBuffer&&window.ServerClock),proto:window.NetConfig&&NetConfig.protocol})');
-    check(loaded.ready && loaded.proto === 4, 'game page: NetConfig 4, SnapshotBuffer, ServerClock');
+    const loaded = await A.js('({ready:!!(window.Play&&window.Net&&window.SnapshotBuffer&&window.ServerClock),wire:!!window.NetWire,proto:window.NetConfig&&NetConfig.protocol})');
+    check(loaded.ready && loaded.proto === 4 && loaded.wire,
+      'game page: NetConfig 4, NetWire, SnapshotBuffer, ServerClock');
 
     const created = await A.js('Net.create(2,"Host").then(r=>r)');
     const joined = await B.js('Net.join(' + JSON.stringify(created.code) + ',"Guest").then(r=>r)');
@@ -150,12 +151,14 @@ async function main() {
     'start payload: protocol 4 + server baseline + roomId');
     await sleep(2500);
 
-    const sa = await A.js('({role:Play.state.netRole,proto:Play.state.netProtocol,seq:Play.state.netSeq,seed:Play.state.world&&Play.state.world.seed,nv:Play.state.villagers.length,nb:Play.state.buildings.length,center:Play.state.netCentered})');
-    const sb = await B.js('({role:Play.state.netRole,proto:Play.state.netProtocol,seq:Play.state.netSeq,seed:Play.state.world&&Play.state.world.seed,nv:Play.state.villagers.length,nb:Play.state.buildings.length,center:Play.state.netCentered})');
+    const sa = await A.js('({role:Play.state.netRole,proto:Play.state.netProtocol,seq:Play.state.netSeq,seed:Play.state.world&&Play.state.world.seed,nv:Play.state.villagers.length,nb:Play.state.buildings.length,center:Play.state.netCentered,transport:Net.transport(),tstats:Net.transportStats()})');
+    const sb = await B.js('({role:Play.state.netRole,proto:Play.state.netProtocol,seq:Play.state.netSeq,seed:Play.state.world&&Play.state.world.seed,nv:Play.state.villagers.length,nb:Play.state.buildings.length,center:Play.state.netCentered,transport:Net.transport(),tstats:Net.transportStats()})');
     check(sa.role === 'client' && sa.proto === 4 && sb.role === 'client' && sb.proto === 4,
       'both are presentation clients (creator too)');
     check(sa.seed === sb.seed && sa.nv === sb.nv && sa.nb === sb.nb,
       'same seed and object counts: ' + sa.nv + ' жителей, ' + sa.nb + ' построек');
+    check(sa.transport === 'ws' && sb.transport === 'ws',
+      'both clients use WebSocket transport: ' + sa.transport + '/' + sb.transport);
     check(sa.seq > 0 && sb.seq > 0, 'baseline and snapshots applied');
 
     const before = await B.js('[Play.state.villagers.map(v=>[v.id,v.x,v.y]),Play.state.netSeq]');

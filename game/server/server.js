@@ -5,9 +5,10 @@
      2) лобби 2–4 человек с «готов»;
      3) релей снапшотов и команд между браузерами.
 
-   Зависимостей нет: только node:http. Вниз — SSE (text/event-stream), вверх —
-   обычный POST. Для 4 игроков на локальной сети этого хватает, а ставить ws
-   ради одного канала — лишняя зависимость.
+   Зависимостей нет: только node:http. Вниз — WebSocket с двоичным кадром
+   мира (game/shared/net-wire.js), запасной канал — SSE (text/event-stream);
+   вверх — обычный POST для команд. Свой WebSocket-сервер — game/server/ws.js,
+   без npm-пакета `ws`.
 
    Сеть: по умолчанию сервер слушает 0.0.0.0, то есть доступен по IP этой
    машины — друзьям достаточно ссылки `http://<ваш IP>:8787/game/`. Но у
@@ -18,9 +19,9 @@
    (`--tunnel`). cloudflared для туннеля не годится: он буферизует SSE, и
    события «кто готов» / «старт» до браузеров не доезжают.
 
-   Авторитет — у ХОСТА (браузер создателя лобби): он считает мир и присылает
-   снапшоты. Сервер не симулирует и не может «зачитерить» состояние; его дело —
-   честно раздать, кто в лобби, и не пустить чужого без токена.
+   Авторитет — у серверной комнаты: мир считает worker, а браузер (включая
+   создателя лобби) только рисует снимки и присылает команды. Сервер не
+   доверяет клиенту ни состояние, ни owner — только токену.
 
    Транспорт лобби нарочно ДВУХКАНАЛЬНЫЙ:
      • SSE  — мгновенные события (кто вошёл, кто готов, старт);
@@ -48,8 +49,10 @@ const { spawn, execFileSync } = require('child_process');
 const { Worker } = require('worker_threads');
 const UPnP = require('./upnp');
 const Tunnel = require('./tunnel');
+const WS = require('./ws');
 
 const ROOT = path.resolve(__dirname, '..', '..');
+const NetWire = require(path.join(ROOT, 'game', 'shared', 'net-wire.js'));
 /* Сетевые числа сервера и клиента — одна таблица. Протокол 4: мир считает
    worker комнаты, браузерный хост больше не публикует снимки. */
 const NET = require(path.join(ROOT, 'game', 'shared', 'net-config.js'));
@@ -128,6 +131,7 @@ function buildInfo() {
   return {
     ok: true, build: buildId(), protocol: PROTOCOL,
     cmdProto: CMD_PROTO,
+    ws: true, wsProtocol: NetWire.VERSION,
     node: process.version, pid: process.pid,
     uptimeMs: Math.round(process.uptime() * 1000),
     startedAt: new Date(STARTED_AT_MS).toISOString()
@@ -487,6 +491,9 @@ function makeLobby(max) {
   const lobby = {
     code: c, max: Math.max(2, Math.min(MAX_PLAYERS, max || 4)),
     players: [], started: false, seed: null, size: 192, streams: new Map(),
+    /* WebSocket-клиенты комнаты: playerId → Conn. Это основной канал; SSE
+       остаётся запасным и для старых сборок. */
+    ws: new Map(),
     createdAt: now(), hostId: 0, nextId: 0, startPayload: null,
     hostGone: false, hostTimer: null, lastSnapAt: 0, lastSnapshot: null,
     /* Команды, ждущие хоста: [{...cmd, from, owner, sn, at}].
@@ -512,10 +519,11 @@ function makeLobby(max) {
     log: [],
     totals: {
       streamsOpened: 0, streamsClosed: 0,
+      wsOpened: 0, wsClosed: 0, wsDropped: 0,
       rawBytes: 0, gzipBytes: 0, wireBytes: 0,
       dropped: 0, coalesced: 0, droppedControls: 0, errors: 0
     },
-    lastSseAt: 0,
+    lastSseAt: 0, lastWsAt: 0,
     hostGoneReason: null,
     /* Не чаще раза в секунду: иначе 12 снимков/с вытеснят из кольца всё
        остальное (команды, ошибки, потерю хоста). */
@@ -632,6 +640,9 @@ function buildStartPayload(lobby, rec, opts) {
     snapGzip: true,
     cmdProto: CMD_PROTO,
     protocol: PROTOCOL,
+    transport: ['ws', 'sse'],
+    wsProtocol: NetWire.VERSION,
+    snapshotFormat: 'bin1',
     build: buildId(),
     protocolWarning: protocolWarning(lobby),
     serverNow: now(),
@@ -764,6 +775,15 @@ function createRoomWorker(lobby) {
       }
       return;
     }
+    if (msg.type === 'debugFill') {
+      const p = rec.pending.get(msg.requestId);
+      if (p) {
+        rec.pending.delete(msg.requestId);
+        if (p.timer) clearTimeout(p.timer);
+        p.resolve(msg);
+      }
+      return;
+    }
     if (msg.type === 'diagnostics') {
       const p = rec.pending.get(msg.requestId);
       if (p) {
@@ -842,7 +862,8 @@ async function startRoomOnce(lobby) {
       type: 'init', roomId: rec.roomId, workerGeneration: rec.generation,
       seed: start.seed, size: start.size, players: players,
       epoch: 1, stateDir: STATE_DIR, buildHash: buildId(),
-      protocol: NetConfig.protocol
+      protocol: NetConfig.protocol,
+      testMode: process.env.MP_TEST_HOOKS === '1'
     });
     await Promise.race([
       rec.ready,
@@ -1449,13 +1470,22 @@ function closeStream(st, reason, hard) {
 /* Закрытие соединения. Если поток уже заменён новым (переподключение), не
    объявляем peer-left и не помечаем игрока offline: живой поток важнее
    запоздалого close. */
-function onStreamClosed(lobby, p, st, reason) {
-  if (st.closed) return;
-  var current = lobby.streams.get(p.id) === st;
-  if (current) lobby.streams.delete(p.id);
-  closeStream(st, reason, true);
-  if (!current) return;
+/* Живой транспорт игрока — WebSocket или SSE. Пока жив хотя бы один, обрыв
+   второго не делает игрока офлайн: при переключении каналов close старого
+   приходит уже после open нового. */
+function hasLiveTransport(lobby, p) {
+  if (!lobby || !p) return false;
+  if (lobby.streams && lobby.streams.has(p.id)) return true;
+  if (lobby.ws && lobby.ws.has(p.id)) return true;
+  return false;
+}
+
+/* Один игрок перестал получать кадры по одному из каналов. Офлайн и
+   peer-left объявляются только когда не осталось ни WebSocket, ни SSE. */
+function transportClosed(lobby, p, reason) {
+  if (!lobby || !p) return;
   if (lobby.players.indexOf(p) < 0) return;
+  if (hasLiveTransport(lobby, p)) return;
   if (lobby.started) {
     broadcast(lobby, 'peer-left', {
       id: p.id, name: p.name,
@@ -1466,6 +1496,15 @@ function onStreamClosed(lobby, p, st, reason) {
     return;
   }
   markOffline(lobby, p);
+}
+
+function onStreamClosed(lobby, p, st, reason) {
+  if (st.closed) return;
+  var current = lobby.streams.get(p.id) === st;
+  if (current) lobby.streams.delete(p.id);
+  closeStream(st, reason, true);
+  if (!current) return;
+  transportClosed(lobby, p, reason);
 }
 
 /* Запись события в поток (совместимость с прежними вызовами). */
@@ -1483,19 +1522,229 @@ function send(res, type, data) {
    отдельную управляющую очередь. Так тысяча промежуточных кадров не может
    вытеснить command-result или host-left. */
 function broadcast(lobby, type, data, exceptId, opts) {
-  var text;
-  try { text = eventText(type, data); }
-  catch (e) { lobbyLog(lobby, 'event-error', { type: type, message: e.message }); return { bytes: 0, streams: 0 }; }
+  var streams = lobby.streams ? lobby.streams.size : 0;
+  var wsClients = lobby.ws ? lobby.ws.size : 0;
+  var text = null, bin = null, wsText = null;
   var seq = data && typeof data.seq === 'number' ? data.seq : null;
+
+  /* SSE: текст события, как раньше. Если все клиенты на WebSocket, JSON не
+     строим вовсе — это и был главный расход главного потока на 300 жителях. */
+  if (streams) {
+    try { text = eventText(type, data); }
+    catch (e) {
+      lobbyLog(lobby, 'event-error', { type: type, message: e.message });
+      return { bytes: 0, streams: 0 };
+    }
+  }
+
+  /* WebSocket: снимок — один общий двоичный кадр на всех, управление — JSON.
+     Пакет собирается ОДИН раз, а не на каждого клиента. */
+  if (wsClients) {
+    if (type === 'snapshot') {
+      try {
+        bin = NetWire.packSnapshot(data, { baseline: !!(data && data.baseline) });
+      } catch (e) {
+        lobbyLog(lobby, 'wire-pack-error', {
+          type: type, message: String(e && e.message || e)
+        });
+        bin = null;
+      }
+    } else {
+      var payload = data;
+      if (type === 'start' && data) {
+        /* Baseline оставляем в старте: это один кадр за партию, а клиент
+           получает мир синхронно с запуском, не завися от того, успел ли
+           следующий двоичный кадр. Постоянный поток — уже двоичный. */
+        payload = Object.assign({}, data, { transport: 'ws' });
+      }
+      try { wsText = JSON.stringify({ t: type, d: payload }); }
+      catch (e) { wsText = null; }
+    }
+  }
+
+  var bytes = bin ? bin.byteLength : (text ? byteLen(text) : 0);
   lobby.streams.forEach(function (st, id) {
     if (exceptId !== undefined && id === exceptId) return;
     if (type === 'snapshot') {
       pushSnapshot(st, text, seq, now(), { baseline: !!(data && data.baseline) });
-    } else pushControl(st, text, type);
+    } else if (text) pushControl(st, text, type);
   });
-  /* Байты уже посчитаны здесь; второй JSON.stringify того же снимка ради
-     диагностики — лишние мегабайты в главном потоке. */
-  return { bytes: byteLen(text), streams: lobby.streams.size };
+  if (lobby.ws) {
+    lobby.ws.forEach(function (conn, id) {
+      if (exceptId !== undefined && id === exceptId) return;
+      if (!conn || conn.closed) return;
+      if (type === 'snapshot') {
+        if (bin) conn.sendBinary(bin);
+        else if (data) {
+          try { conn.sendJson({ t: 'snapshot', d: data }); }
+          catch (e) { /* кадр не ушёл — следующий полный кадр догонит */ }
+        }
+      } else if (wsText) conn.sendText(wsText);
+    });
+  }
+  return { bytes: bytes, streams: streams + wsClients };
+}
+
+/* ------------------------- WebSocket комнаты -------------------------- *
+ *
+ * Основной канал протокола 4: полный двоичный снимок 10 раз в секунду и
+ * управляющие события JSON. SSE остаётся вторым каналом для старого клиента
+ * и для прокси, который не пропускает Upgrade; оба канала получают одно и
+ * то же событие из broadcast.
+ * ---------------------------------------------------------------------- */
+
+function wsStats(conn) {
+  return {
+    transport: 'ws',
+    playerId: conn.playerId,
+    name: conn.name,
+    queue: conn.backlog || 0,
+    bytesIn: conn.bytesIn || 0,
+    bytesOut: conn.bytesOut || 0,
+    dropped: conn.dropped || 0,
+    openedAt: conn.openedAt,
+    closed: !!conn.closed,
+    remote: conn.remote || null
+  };
+}
+
+/* Подключение WebSocket. Аутентификация та же, что у SSE: код лобби и
+   токен игрока в query. Токен не логируем. */
+function onWsConnection(conn, req, url) {
+  var lobby = lobbyForRequest({ code: url.searchParams.get('code') });
+  var p = playerByToken(lobby, url.searchParams.get('token'));
+  if (!lobby || !p) { conn.close(1008, 'forbidden'); return; }
+
+  /* Вернулся — отменяем вылет и продолжаем той же записью в лобби. */
+  if (p.timer) { clearTimeout(p.timer); p.timer = null; }
+  var back = p.online === false;
+  p.online = true;
+  p.goneAt = 0;
+  touchPlayer(p);
+  if (lobby.hostId === p.id && lobby.hostTimer) {
+    clearTimeout(lobby.hostTimer);
+    lobby.hostTimer = null;
+  }
+
+  var old = lobby.ws.get(p.id);
+  if (old && old !== conn) {
+    lobby.ws.delete(p.id);
+    old.close(1000, 'replaced');
+  }
+  conn.playerId = p.id;
+  conn.name = p.name;
+  conn.remote = (req && req.socket && req.socket.remoteAddress) || null;
+  lobby.ws.set(p.id, conn);
+  lobby.totals.wsOpened++;
+
+  conn.onMessage(function (msg) { onWsMessage(lobby, p, conn, msg); });
+  conn.onClose(function (reason) { onWsClosed(lobby, p, conn, reason); });
+
+  conn.sendJson({
+    t: 'hello',
+    d: {
+      playerId: p.id, hostId: lobby.hostId,
+      lobby: lobbyView(lobby), transport: 'ws',
+      wsProtocol: NetWire.VERSION
+    }
+  });
+  if (lobby.started && lobby.startPayload) {
+    var start = {};
+    for (var k in lobby.startPayload) {
+      if (Object.prototype.hasOwnProperty.call(lobby.startPayload, k) &&
+          k !== 'baseline') start[k] = lobby.startPayload[k];
+    }
+    start.baseline = null;
+    start.transport = 'ws';
+    conn.sendJson({ t: 'start', d: start });
+    var snap = lobby.lastSnapshot || (roomFor(lobby) && roomFor(lobby).latest);
+    if (snap) {
+      var packed = null;
+      try { packed = NetWire.packSnapshot(snap, { baseline: true }); }
+      catch (e) {
+        lobbyLog(lobby, 'wire-pack-error', {
+          phase: 'hello', message: String(e && e.message || e)
+        });
+      }
+      if (packed) conn.sendBinary(packed);
+      else conn.sendJson({ t: 'snapshot', d: snap });
+    }
+    if (lobby.hostGone && p.id !== lobby.hostId) {
+      var host = lobby.players.find(function (x) { return x.id === lobby.hostId; });
+      if (host) {
+        conn.sendJson({
+          t: 'host-left',
+          d: { id: host.id, name: host.name,
+            owner: host.owner === undefined ? 0 : host.owner, host: true }
+        });
+      }
+    }
+  }
+  if (lobby.hostId === p.id && back) hostBack(lobby, p);
+  if (back && lobby.started && p.id !== lobby.hostId) {
+    broadcast(lobby, 'peer-back', {
+      id: p.id, name: p.name,
+      owner: p.owner === undefined ? 0 : p.owner
+    });
+  }
+  if (back) broadcast(lobby, 'lobby', lobbyView(lobby), p.id);
+
+  lobby.lastWsAt = now();
+  lobbyLog(lobby, 'ws-open', {
+    playerId: p.id, name: p.name,
+    protocol: NetWire.VERSION,
+    clients: lobby.ws.size
+  });
+}
+
+/* Клиент → сервер. Команды по-прежнему идут HTTP-путём (одна проверенная
+   реализация admission/дедупликации); здесь — только liveness и ping,
+   чтобы не держать HTTP-опрос ради «я жив». */
+function onWsMessage(lobby, p, conn, msg) {
+  if (lobby.players.indexOf(p) < 0) return;
+  touchPlayer(p);
+  p.online = true;
+  if (typeof msg !== 'string') return;
+  var data = null;
+  try { data = JSON.parse(msg); } catch (e) { return; }
+  if (!data || typeof data !== 'object') return;
+  if (data.t === 'ping') {
+    var s1 = monoMs();
+    var s2 = monoMs();
+    conn.sendJson({
+      t: 'pong', c: data.c,
+      serverReceiveAtMs: s1, serverSendAtMs: s2,
+      serverMonoMs: s2, now: now(),
+      tick: roomFor(lobby) && roomFor(lobby).latest
+        ? roomFor(lobby).latest.simulationTick : null
+    });
+    return;
+  }
+  if (data.t === 'cmd') {
+    /* Пока команды идут HTTP: ответ здесь означал бы второй путь
+       admission, а он обязан быть один. Клиент получает явный сигнал и
+       повторяет POST-ом. */
+    conn.sendJson({ t: 'error', d: { code: 'command_over_http' } });
+  }
+}
+
+function onWsClosed(lobby, p, conn, reason) {
+  if (!lobby || !p) return;
+  if (lobby.ws.get(p.id) !== conn) return;
+  lobby.ws.delete(p.id);
+  lobby.totals.wsClosed++;
+  lobby.totals.wsDropped += conn.dropped || 0;
+  lobby.lastWsAt = now();
+  lobbyLog(lobby, 'ws-close', {
+    playerId: p.id, name: p.name, reason: reason || 'closed',
+    bytesIn: conn.bytesIn || 0, bytesOut: conn.bytesOut || 0,
+    dropped: conn.dropped || 0, clients: lobby.ws.size
+  });
+  transportClosed(lobby, p, reason);
+}
+
+function attachWs(server) {
+  WS.attach(server, onWsConnection);
 }
 
 /* Сколько байт ещё не ушло самому отстающему потоку. В отличие от прежней
@@ -1518,6 +1767,16 @@ function streamBacklog(lobby) {
     total += q;
     count++;
   });
+  if (lobby.ws) {
+    lobby.ws.forEach(function (conn) {
+      if (!conn || conn.closed) return;
+      var q = conn.backlog || 0;
+      if (q > max) max = q;
+      if (q > wireMax) wireMax = q;
+      total += q;
+      count++;
+    });
+  }
   return { queue: max, total: total, streams: count, ageMs: maxAge, wireQueue: wireMax };
 }
 
@@ -1611,6 +1870,11 @@ function dropPlayer(lobby, p) {
     lobby.streams.delete(p.id);
     closeStream(stream, 'player-dropped', true);
   }
+  const wsConn = lobby.ws && lobby.ws.get(p.id);
+  if (wsConn) {
+    lobby.ws.delete(p.id);
+    try { wsConn.close(1000, 'player-dropped'); } catch (e) {}
+  }
   if (!lobby.players.length) {
     if (lobby.hostTimer) clearTimeout(lobby.hostTimer);
     /* Последний игрок ушёл — партия кончилась. Не просто забываем лобби:
@@ -1700,6 +1964,13 @@ function closeLobby(lobby, reason) {
   streams.forEach(function (st) {
     try { closeStream(st, 'lobby-closed', true); } catch (e) {}
   });
+  if (lobby.ws) {
+    const conns = Array.from(lobby.ws.values());
+    lobby.ws.clear();
+    conns.forEach(function (conn) {
+      try { conn.close(1000, 'lobby-closed'); } catch (e) {}
+    });
+  }
   stopRoom(lobby, reason);
   console.log('  лобби ' + lobby.code + ': закрыто (' + (reason || 'closed') + ')');
 }
@@ -1718,7 +1989,8 @@ function lobbyLastTouch(lobby) {
 function sweepInactiveLobbies() {
   const t = now();
   for (const lobby of lobbies.values()) {
-    if (lobby.streams && lobby.streams.size) continue;
+    if ((lobby.streams && lobby.streams.size) ||
+        (lobby.ws && lobby.ws.size)) continue;
     if (t - lobbyLastTouch(lobby) >= INACTIVE_TTL) closeLobby(lobby, 'inactive');
   }
 }
@@ -1728,7 +2000,7 @@ function markOffline(lobby, p) {
   /* Пока старый поток закрывался, игрок мог успеть открыть новый. Живой
      поток важнее события close: иначе переподключение гонкой превращалось бы
      в «нет связи» у только что вернувшегося. */
-  if (lobby.streams.has(p.id)) return;
+  if (hasLiveTransport(lobby, p)) return;
   p.online = false;
   p.goneAt = now();
   lobbyLog(lobby, 'player-offline', {
@@ -2322,12 +2594,16 @@ function diagPlayer(lobby, p) {
     proto: p.proto || 0, clientBuild: p.clientBuild || '',
     lastSeenAgeMs: Math.max(0, now() - (p.lastSeen || 0)),
     hasStream: lobby.streams.has(p.id),
+    hasWs: !!(lobby.ws && lobby.ws.has(p.id)),
+    transport: (lobby.ws && lobby.ws.has(p.id)) ? 'ws'
+      : (lobby.streams.has(p.id) ? 'sse' : null),
     host: p.id === lobby.hostId
   };
 }
 function diagLobby(lobby) {
   const t = now();
   const streams = [];
+  const ws = [];
   let queue = 0, wireQueue = 0, queueAge = 0;
   lobby.streams.forEach(function (st) {
     if (st.closed) return;
@@ -2337,6 +2613,14 @@ function diagLobby(lobby) {
     if (stats.wireQueue > wireQueue) wireQueue = stats.wireQueue;
     if (stats.ageMs > queueAge) queueAge = stats.ageMs;
   });
+  if (lobby.ws) {
+    lobby.ws.forEach(function (conn) {
+      if (!conn || conn.closed) return;
+      const stats = wsStats(conn);
+      ws.push(stats);
+      if (stats.queue > queue) queue = stats.queue;
+    });
+  }
   const lastHeartbeat = lobby.players.reduce(function (m, p) {
     return Math.max(m, p.lastSeen || 0);
   }, 0);
@@ -2353,6 +2637,8 @@ function diagLobby(lobby) {
     lastSnapshotAgeMs: lobby.lastSnapAt ? Math.max(0, t - lobby.lastSnapAt) : null,
     lastSseAt: lobby.lastSseAt || null,
     lastSseAgeMs: lobby.lastSseAt ? Math.max(0, t - lobby.lastSseAt) : null,
+    lastWsAt: lobby.lastWsAt || null,
+    lastWsAgeMs: lobby.lastWsAt ? Math.max(0, t - lobby.lastWsAt) : null,
     tick: snap && snap.simulationTick !== undefined ? snap.simulationTick
       : (snap && snap.t !== undefined ? snap.t : null),
     room: roomSummary(roomFor(lobby)),
@@ -2371,6 +2657,7 @@ function diagLobby(lobby) {
     cmdResults: lobby.cmdResults.size,
     cmdSeen: lobby.cmdSeen.size,
     streams: streams,
+    ws: ws, wsCount: ws.length,
     queue: queue, queueWire: wireQueue, queueAgeMs: queueAge,
     totals: Object.assign({}, lobby.totals)
   };
@@ -2405,6 +2692,7 @@ function diagView(lobby) {
 
 function streamStatsView(lobby) {
   const streams = [];
+  const ws = [];
   let queue = 0, wireQueue = 0, queueAge = 0;
   lobby.streams.forEach(function (st) {
     if (st.closed) return;
@@ -2414,6 +2702,14 @@ function streamStatsView(lobby) {
     if (stats.wireQueue > wireQueue) wireQueue = stats.wireQueue;
     if (stats.ageMs > queueAge) queueAge = stats.ageMs;
   });
+  if (lobby.ws) {
+    lobby.ws.forEach(function (conn) {
+      if (!conn || conn.closed) return;
+      const stats = wsStats(conn);
+      ws.push(stats);
+      if (stats.queue > queue) queue = stats.queue;
+    });
+  }
   return {
     ok: true, build: buildId(), protocol: PROTOCOL, now: now(),
     streams: streams, streamsCount: streams.length,
@@ -3193,6 +3489,27 @@ async function handleRequest(req, res) {
     });
   }
 
+  /* Только для приёмки (MP_TEST_HOOKS=1): наполнить комнату жителями,
+     чтобы браузерный тест шёл на 300 существах, а не на шести. В обычном
+     запуске эндпоинта нет — 404, как и любого другого неизвестного API. */
+  if (process.env.MP_TEST_HOOKS === '1' &&
+      req.method === 'POST' && u.pathname === '/api/test/fill') {
+    return readJson(req, res, function (body) {
+      const lobby = lobbyForRequest(body || {});
+      const p = playerByToken(lobby, body && body.token);
+      if (!lobby || !p) return json(res, 403, { ok: false, reason: 'нет доступа' });
+      if (p.id !== lobby.hostId) return json(res, 403, { ok: false, reason: 'только хост' });
+      const rec = roomFor(lobby);
+      if (!rec || !rec.worker) return json(res, 409, { ok: false, reason: 'комната не запущена' });
+      const n = Math.max(0, Math.min(3000, Number(body.n) || 0));
+      roomRequest(rec, 'debugFill', { n: n }, 15000).then(function (msg) {
+        json(res, 200, { ok: true, result: msg.result || null });
+      }, function (e) {
+        json(res, 503, { ok: false, reason: String(e && e.message || e) });
+      });
+    });
+  }
+
   if (u.pathname.startsWith('/api/')) return json(res, 404, { ok: false, reason: 'нет такого api' });
   serveStatic(req, res);
 }
@@ -3211,7 +3528,12 @@ function requestHandler(req, res) {
   });
 }
 const server = http.createServer(requestHandler);
-function createServer() { return http.createServer(requestHandler); }
+attachWs(server);
+function createServer() {
+  const s = http.createServer(requestHandler);
+  attachWs(s);
+  return s;
+}
 
 /* --------------------------- запуск и ссылки -------------------------- */
 function printLinks() {
