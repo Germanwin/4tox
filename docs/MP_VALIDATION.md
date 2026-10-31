@@ -419,9 +419,6 @@ node mapgen2/tools/game.js   # все проверки начала игры п�
 - Публичный WebSocket через Caddy: 101 + 26 двоичных кадров, магия `4TX1`,
   6 жителей, команда `leave` закрыла комнату, `STATE_DIR` пуст.
 - `4tox-mss.service` — enabled/active; `4tox` и `caddy-naive` active.
-- При включённом локальном NaiveVPN прямые запросы к IP VPS всё ещё
-  перехватываются TUN (route get = en0, но TLS висит). Серверная часть к
-  этому отношения не имеет; нужен split-tunnel на Mac.
 
 ### Финал 2026-10-31 02:05 UTC: VPN и игра одновременно
 
