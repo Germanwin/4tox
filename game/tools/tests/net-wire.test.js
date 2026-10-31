@@ -79,6 +79,7 @@ test('снимок на 300 жителях: полный roundtrip и разме
   const snap = stage300();
   const jsonBytes = Buffer.byteLength(JSON.stringify(snap), 'utf8');
   const packed = Wire.packSnapshot(snap);
+  assert.equal(Buffer.from(packed.subarray(0, 4)).toString('ascii'), '4TX1');
   const out = Wire.unpackSnapshot(packed);
 
   assert.ok(packed.byteLength < jsonBytes * 0.25,

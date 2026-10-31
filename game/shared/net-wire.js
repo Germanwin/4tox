@@ -17,7 +17,7 @@
 (function (global) {
   'use strict';
 
-  var MAGIC = 0x34545831;        // "4TX1"
+  var MAGIC = 0x31585434;        // little-endian "4TX1" на проводе
   var VERSION = 1;
   var TYPE_SNAPSHOT = 1;
   var NULL_STR = 0xFFFF;
