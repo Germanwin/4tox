@@ -408,3 +408,17 @@ node mapgen2/tools/game.js   # все проверки начала игры п�
   `transport=ws`.
 - После `/api/leave` комната закрыта `empty`, `/opt/4tox-var/rooms` пуст;
   `4tox` и `caddy-naive` active, ошибок в журнале нет.
+
+### Прод-хотфикс 2026-10-31 01:37 UTC: 8443 и MSS
+
+- `https://374412.fornex.cloud:8443/api/build` — 200, build
+  `553fb73fdc9b`, `ws:true`.
+- `/game/` и крупные статики на 443 и 8443: 200; с `Accept-Encoding`
+  (как браузер) — 0.2–0.3 с. До MSS-клампа большие ответы иногда висели
+  до таймаута, маленький API проходил.
+- Публичный WebSocket через Caddy: 101 + 26 двоичных кадров, магия `4TX1`,
+  6 жителей, команда `leave` закрыла комнату, `STATE_DIR` пуст.
+- `4tox-mss.service` — enabled/active; `4tox` и `caddy-naive` active.
+- При включённом локальном NaiveVPN прямые запросы к IP VPS всё ещё
+  перехватываются TUN (route get = en0, но TLS висит). Серверная часть к
+  этому отношения не имеет; нужен split-tunnel на Mac.
