@@ -422,3 +422,17 @@ node mapgen2/tools/game.js   # все проверки начала игры п�
 - При включённом локальном NaiveVPN прямые запросы к IP VPS всё ещё
   перехватываются TUN (route get = en0, но TLS висит). Серверная часть к
   этому отношения не имеет; нужен split-tunnel на Mac.
+
+### Финал 2026-10-31 02:05 UTC: VPN и игра одновременно
+
+- VPN: TUN `utun9` поднят; причина прежнего отказа — `bad tun name:
+  utun-naive` в `sing-box`; в шаблон добавлен `interface_name`.
+- При включённом VPN: `https://example.com` — 200 за 0.15 с;
+  `https://374412.fornex.cloud:8443/game/` — 200; `game/js/net.js` —
+  5/5 по 0.25 с; `game/shared/net-wire.js` — 200.
+- Публичный WebSocket на 8443: `hello`, `start`, **26 двоичных кадров**,
+  магия `4TX1`, 6 жителей; комната закрыта `leave`, `STATE_DIR` пуст.
+- Headless Chrome открыл `https://374412.fornex.cloud:8443/game/` и
+  отрисовал загрузку острова («ставим ратушу…»).
+- `4tox-mss.service` — MSS 1200 для 22/443/8443, enabled/active;
+  `4tox` и `caddy-naive` active.
