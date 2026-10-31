@@ -49,7 +49,7 @@
     ping: 4000,
     snapshot: 6000,      // POST снимка
     snapshotPack: 1500,  // упаковка gzip ДО отправки
-    commandSend: 3000,   // весь POST команды с повтором
+    commandSend: 5000,   // весь POST команды; повтор идёт тем же commandId
     commandResult: 8000, // ожидание applied/rejected/expired
     pollMin: 200,
     pollMax: 1200
@@ -1100,9 +1100,26 @@
     /* Одна попытка отправки + то, что можно исправить без участия игрока:
        дыра в нумерации, смена epoch, временный лимит. Повтор идёт с ТЕМ ЖЕ
        commandId и payload — сервер дедуплицирует его, второго дома не будет. */
-    var admitRetries = 0, epochRetries = 0;
+    var admitRetries = 0, epochRetries = 0, netRetries = 0;
     function sendOnce() {
       return post().catch(function (e) {
+        /* Таймаут/обрыв ПОСЛЕ отправки — не доказанный отказ. Сервер узнаёт
+           повтор по тому же commandId и не выполнит действие дважды; поэтому
+           один повтор безопаснее, чем показать «сервер не ответил» и оставить
+           игрока без дома. 502/503/504 от прокси — тот же класс. */
+        var transient = false;
+        if (e && (e.kind === 'timeout' || e.kind === 'network')) transient = true;
+        if (e && e.kind === 'http' &&
+            (e.status === 502 || e.status === 503 || e.status === 504)) {
+          transient = true;
+        }
+        if (transient && netRetries < 1) {
+          netRetries++;
+          return delay(250).then(function () {
+            if (!isCurrent(gen)) throw staleError();
+            return sendOnce();
+          });
+        }
         if (!e || !e.body || e.body.admitted !== false) throw e;
         var codeE = e.body.code;
         var next = e.body.nextClientSequence;
