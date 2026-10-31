@@ -393,3 +393,18 @@ node mapgen2/tools/game.js   # все проверки начала игры п�
 протокола 3/хоста-авторитета; она падает и на чистом `HEAD` (A96C8D6):
 `/api/snapshot` теперь 409, `cmdProto` 3, а тест ждёт 200/2. Это не связано
 с WebSocket.
+
+### Прод-смоук 2026-10-31
+
+Выложен build `553fb73fdc9b` (protocol 4, `ws:true`). Проверено на
+`https://374412.fornex.cloud`:
+
+- `/api/build` — новый build, `ws: true`, `wsProtocol: 1`;
+  `/game/`, `/game/shared/net-wire.js`, `/game/js/net.js` — 200.
+- Публичный WebSocket через Caddy: **101 Switching Protocols**, `Server:
+  Caddy`, в ответе первый кадр `hello`.
+- Комната на сервере (loopback): старт, 28 двоичных снимков, магия `4TX1`,
+  6 жителей, `{t:'ping'}` → `pong`, `/api/diag` — `wsCount=1`,
+  `transport=ws`.
+- После `/api/leave` комната закрыта `empty`, `/opt/4tox-var/rooms` пуст;
+  `4tox` и `caddy-naive` active, ошибок в журнале нет.

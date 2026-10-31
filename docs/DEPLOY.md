@@ -119,6 +119,27 @@ ssh root@213.239.158.37 '
 Старый `COMMIT` вернуть вручную (или удалить файл — тогда `/api/build`
 покажет `dev`). Проверить `/api/build`, `/game/`, журнал службы.
 
+## Факт выкладки 2026-10-31 00:32 UTC
+
+- Было: build `a3b56fcee671`. Стало: **build `553fb73fdc9b`**, protocol 4,
+  cmdProto 3, `ws: true`, `wsProtocol: 1`; Node v24.22.1 на VPS.
+- Что выложено: WebSocket-транспорт и двоичный кадр мира —
+  `game/server/ws.js`, `game/shared/net-wire.js`, `game/shared/net-config.js`,
+  `game/server/server.js`, `game/server/room-runtime.js`,
+  `game/server/room-worker.js`, `game/js/net.js`, `game/index.html`.
+  `mapgen2/` по содержимому не менялся.
+- Бэкапы до выкладки: `/root/4tox-backup-20261031-003137.tgz` (до первой
+  выкладки `fc37d49`) и `/root/4tox-backup-20261031-003252.tgz` (до фикса
+  магии `4TX1`).
+- Активных комнат перед выкладкой не было (`/opt/4tox-var/rooms` пуст).
+  Рестартовал только `4tox.service`; `caddy-naive` active и не трогался.
+- Проверка: `/api/build` — `553fb73fdc9b`, protocol 4, `ws:true`;
+  `/game/`, `/game/shared/net-wire.js`, `/game/js/net.js` — 200.
+  Публичный WebSocket через Caddy — **101 Switching Protocols** и кадр
+  `hello`; loopback-smoke комнаты: старт, 28 двоичных снимков, 6 жителей,
+  `4TX1`, ping/pong, `/api/diag` показывает `wsCount=1`; после `/api/leave`
+  комната закрыта `empty`, `STATE_DIR` снова пуст. В журнале ошибок нет.
+
 ## Факт выкладки 2026-10-30 14:36 MSK
 
 - Было: build `fc21ace32fd8`. Стало: **build `a3b56fcee671`**, protocol 4,
