@@ -434,14 +434,14 @@ node mapgen2/tools/game.js   # все проверки начала игры п�
 - `4tox-mss.service` — MSS 1200 для 22/443/8443, enabled/active;
   `4tox` и `caddy-naive` active.
 
-### Фикс 2026-10-31 02:20 UTC: повтор команды и редирект
+### Фикс 2026-10-31 02:20 UTC: повтор команды, 443 без редиректа
 
 - `Net.command`: при timeout/network/502/503/504 POST повторяется один раз
   с тем же `commandId`; `commandSend` 3000 → 5000 мс. Штатные `mp.js` и
   `mp-pending/mp-commands` — PASS.
-- `https://374412.fornex.cloud/game/` — 308 на
-  `https://374412.fornex.cloud:8443/game/`, затем 200; `/api/build` на 443
-  остаётся 200.
+- Редирект 443→8443 откатан: он ломал бы сессию лобби в `localStorage`
+  (origin включает порт). `/game/` 443 — 200 (3/3), 8443 — 200,
+  `/api/build` 443 — 200.
 - `net.js` на 8443 содержит `commandSend: 5000` и `netRetries`.
 - Выложено без рестарта `4tox.service` (активная комната не тронута);
   `/api/build` покажет новый `COMMIT` после следующего рестарта.
