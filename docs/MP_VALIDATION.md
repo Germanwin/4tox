@@ -445,3 +445,23 @@ node mapgen2/tools/game.js   # все проверки начала игры п�
 - `net.js` на 8443 содержит `commandSend: 5000` и `netRetries`.
 - Выложено без рестарта `4tox.service` (активная комната не тронута);
   `/api/build` покажет новый `COMMIT` после следующего рестарта.
+
+### Фикс 2026-11-01 00:46 UTC: анимации у клиентов и точная тряска
+
+- Причина «пропали все анимации»: двоичный кадр нёс `phase`, но не
+  `animDurationMs`; `SnapshotBuffer.animOf` в этом случае отдавал `phase=0`
+  на каждом кадре, и у ВСЕХ клиентов серверной партии застывали ходьба,
+  рубка и удары. Клиент теперь доигрывает фазу от `phase` снимка по
+  длительности `GameplayConfig` (со знаком: отрисовка идёт на 150 мс позади).
+- Тряска дерева больше не теряется на сервере: `Villagers.strike` пишет
+  `{id, t}` в `world._treeHits`, `Replication.build` кладёт `treeHits` в
+  снимок, `net-wire` v2 кодирует `id+возраст`; клиент качает ровно это
+  дерево с той же фазой. Старый кадр v1 читается новым клиентом, старый
+  клиент v2 отвергает целиком и просит F5.
+- Проверки: `node --test game/tools/tests/*.test.js` — 95/95;
+  `node game/tools/menu.js` — все проверки; `node game/tools/mp.js` —
+  `guest animations advance 6/6` и `guest sees the exact tree shake during
+  chop`; `node mapgen2/tools/{game,lumberjack,combat}.js` — приняты.
+- Выложено build `0c72e8860c4d`, `/api/build` — `wsProtocol: 2`;
+  `/game/`, `tree-hits.js`, `net-wire.js`, `snapshot-buffer.js` — 200;
+  `4tox` и `caddy-naive` active. Бэкап: `/root/4tox-backup-20261101-004620.tgz`.
