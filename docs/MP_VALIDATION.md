@@ -462,6 +462,8 @@ node mapgen2/tools/game.js   # все проверки начала игры п�
   `node game/tools/menu.js` — все проверки; `node game/tools/mp.js` —
   `guest animations advance 6/6` и `guest sees the exact tree shake during
   chop`; `node mapgen2/tools/{game,lumberjack,combat}.js` — приняты.
-- Выложено build `0c72e8860c4d`, `/api/build` — `wsProtocol: 2`;
-  `/game/`, `tree-hits.js`, `net-wire.js`, `snapshot-buffer.js` — 200;
-  `4tox` и `caddy-naive` active. Бэкап: `/root/4tox-backup-20261101-004620.tgz`.
+- Выложено build `0c72e8860c4d`, затем `d3b2720542c5` (несовместимый
+  кадр уводит вкладку на JSON/SSE, а не в ошибку на каждом кадре);
+  `/api/build` — `wsProtocol: 2`; `/game/`, `tree-hits.js`, `net-wire.js`,
+  `snapshot-buffer.js`, `net.js` — 200; `4tox` и `caddy-naive` active.
+  Бэкапы: `/root/4tox-backup-20261101-004620.tgz` и следующий по времени.
