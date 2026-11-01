@@ -516,6 +516,10 @@
    * -------------------------------------------------------------------- */
   var ws = null, wsTimer = null, wsHeartbeat = null;
   var wsAttempts = 0, wsFails = 0, wsDisabled = false;
+  /* Сервер новее клиента: двоичный кадр этой вкладке не разобрать. Не
+     долбимся им каждые 300 мс — уходим на JSON/SSE, где версия не мешает,
+     и говорим игроку про F5. */
+  var wsWireUnsupported = false;
   var transport = null;
   var WSNet = global.NetConfig || {};
   var WS_MAX_FAILS = WSNet.wsMaxFails || 3;
@@ -593,6 +597,11 @@
 
   function scheduleWsRetry() {
     if (!code || !token || wsTimer || wsDisabled) return;
+    if (wsWireUnsupported) {
+      wsDisabled = true;
+      connectSse();
+      return;
+    }
     wsFails++;
     if (wsFails >= WS_MAX_FAILS) {
       /* Upgrade не проходит (прокси, корпоративная сеть) — переходим на SSE.
@@ -657,10 +666,16 @@
         /* Версия кадра новее клиента — это не «битый мир»: сервер обновили,
            вкладка осталась старой. Ей нужен F5, а не ожидание. */
         if (/wire: версия/.test(why)) {
+          wsWireUnsupported = true;
           emit('net-error', {
             message: 'кадр мира новее клиента — обновите страницу (F5)',
             code: 'wire-version', detail: why
           });
+          /* Двоичный канал этой вкладке больше не годится. JSON/SSE несёт
+             те же снимки и те же анимации, поэтому партия продолжается, а
+             не замирает на битом кадре. */
+          closeWs();
+          connectSse();
         } else {
           emit('net-error', { message: 'битый кадр мира', code: 'wire', detail: why });
         }
@@ -743,6 +758,7 @@
     wsAttempts = 0;
     wsFails = 0;
     wsDisabled = false;
+    wsWireUnsupported = false;
     wsBytesIn = 0; wsSnapshotsIn = 0; wsLastSnapAt = 0;
     wsMaxGapMs = 0; wsLastSnapBytes = 0;
     if (global.NetWire && typeof global.WebSocket === 'function') {
@@ -766,6 +782,7 @@
     clearPending('партия закрыта', 'stale');
     transport = null;
     wsAttempts = 0; wsFails = 0; wsDisabled = false;
+    wsWireUnsupported = false;
     token = null; code = null; playerId = null; hostId = 0;
     lobby = null; started = null; startKey = null; online = false;
     roomId = null; roomEpoch = 0; clientInstance = null; clientSeq = 0;
