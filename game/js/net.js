@@ -653,7 +653,17 @@
       try {
         snap = global.NetWire.unpackSnapshot(new Uint8Array(ev.data));
       } catch (e) {
-        emit('net-error', { message: 'битый кадр мира' });
+        var why = String(e && e.message || e || '');
+        /* Версия кадра новее клиента — это не «битый мир»: сервер обновили,
+           вкладка осталась старой. Ей нужен F5, а не ожидание. */
+        if (/wire: версия/.test(why)) {
+          emit('net-error', {
+            message: 'кадр мира новее клиента — обновите страницу (F5)',
+            code: 'wire-version', detail: why
+          });
+        } else {
+          emit('net-error', { message: 'битый кадр мира', code: 'wire', detail: why });
+        }
         return;
       }
       wsBytesIn += bytes;

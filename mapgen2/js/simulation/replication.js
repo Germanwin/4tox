@@ -141,6 +141,8 @@
       winner: simState.winner
     });
     var now = opts.serverGeneratedAtMs || 0;
+    var tickMs = (global.NetConfig && global.NetConfig.tickMs) || 50;
+    var simNow = (simState.tick || 0) * tickMs;
     var live = [];
     var list = base.villagers || [];
     for (var i = 0; i < list.length; i++) {
@@ -164,13 +166,26 @@
       lastPos.set(v.id, { x: v.x, y: v.y });
       var samples = trimSamples(motion.get(v.id) || []);
       if (samples.length) vs.motion = samples;
-      var simNow = (simState.tick || 0) * ((global.NetConfig && global.NetConfig.tickMs) || 50);
       var safe = safeExtrapolationTo(v, simNow);
       if (safe !== null) vs.safeExtrapolationTo = safe;
       if (v.hidden) vs.hidden = 1;
       if (v.dead) vs.deathTimeMs = now;
     }
     trimTo(live);
+    /* Удары по деревьям за последние 0.5 с. Окно шире одного снимка: кадр
+       может потеряться, а тряска — это представление, её не жалко повторить.
+       Возраст считается от времени снимка, поэтому клиент начинает затухание
+       с той же фазы, а не с нуля. */
+    var treeHits = [];
+    var trace = world._treeHits || [];
+    var from = simNow - 500;
+    for (var hi = 0; hi < trace.length; hi++) {
+      var hit = trace[hi];
+      if (!hit || hit.id === undefined || hit.t < from) continue;
+      var age = Math.max(0, Math.round(simNow - hit.t));
+      if (age > 400) continue;
+      treeHits.push({ id: hit.id, age: age });
+    }
     var snap = {
       protocol: opts.protocol || (global.NetConfig && global.NetConfig.protocol) || 4,
       roomId: opts.roomId || null,
@@ -196,6 +211,7 @@
       removed: base.removed
     };
     if (opts.baseline) snap.baseline = true;
+    if (treeHits.length) snap.treeHits = treeHits;
     if (opts.commandResults && opts.commandResults.length) snap.commandResults = opts.commandResults;
     return snap;
   }

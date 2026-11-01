@@ -4,6 +4,10 @@ const test = require('node:test');
 const assert = require('node:assert');
 const SB = require('../../js/snapshot-buffer.js');
 const SC = require('../../js/server-clock.js');
+/* Двоичный кадр не несёт animStartTimeMs/animDurationMs: длительность
+   прохода клиент берёт из того же GameplayConfig, что и сервер. */
+const GC = require('../../../mapgen2/js/simulation/gameplay-config.js');
+global.GameplayConfig = GC;
 
 function snap(rev, t, villagers, extra) {
   return Object.assign({
@@ -94,6 +98,35 @@ test('T23: анимация не перезапускается, spawn/death/tel
   const p3 = b.pose(4, 1450);
   assert.equal(p3.animInstance, 8, 'новая анимация — новый instance');
   assert.ok(Math.abs(p3.x - 5) < 1e-9, 'teleport применён скачком');
+});
+
+test('T23b: двоичный кадр без animDurationMs всё равно играет кадры по phase', () => {
+  const b = SB.create({ protocol: 4, roomId: 'R', epoch: 1 });
+  /* Ровно то, что приходит из net-wire: anim и phase есть, времени начала и
+     длительности прохода нет. До правки animOf отдавал phase = 0 на каждом
+     кадре — у гостя застывали ВСЕ анимации. */
+  b.push(snap(1, 1000, [{
+    id: 5, x: 0, y: 0, rot: 0, anim: 'walk', phase: 0.25,
+    state: 'toTree', warrior: 0
+  }], { baseline: true }));
+  const p1 = b.pose(5, 1000);
+  const p2 = b.pose(5, 1100);
+  assert.equal(p1.state, 'toTree');
+  /* Отрисовка идёт позади снимка: фаза до t0 — это предыдущий проход, а не
+     замороженный ноль и не скачок на phase снимка. */
+  const p0 = b.pose(5, 900);
+  assert.ok(p0.phase < p1.phase - 0.05,
+    'за 100 мс до снимка фаза уже идёт: ' + p0.phase + ' < ' + p1.phase);
+  assert.ok(p2.phase > p1.phase + 0.1,
+    'фаза walk растёт от 0.25: ' + p1.phase + ' -> ' + p2.phase);
+  /* work у рубки хост крутит по кругу, хотя в атласе loop:false. */
+  b.push(snap(2, 1200, [{
+    id: 5, x: 0, y: 0, rot: 0, anim: 'work', phase: 0.9, state: 'chop'
+  }]));
+  const w1 = b.pose(5, 1200);
+  const w2 = b.pose(5, 1275);
+  assert.ok(w2.phase < w1.phase,
+    'work переходит через конец цикла, а не застывает: ' + w1.phase + ' -> ' + w2.phase);
 });
 
 test('ServerClock: RTT/offset, неубывающее время и rebase нового epoch', () => {

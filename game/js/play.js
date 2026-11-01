@@ -716,6 +716,15 @@
     return true;
   }
 
+  /* Удары по деревьям — точные, из снимка: id дерева и возраст удара.
+     Время берём у отрисовки: Renderer.treeShake сравнивает _shakeT именно с
+     renderer.time, а не с игровыми часами сервера. */
+  function applySnapshotTreeHits(snap) {
+    if (!global.TreeHits || !snap || !snap.treeHits || !snap.treeHits.length) return 0;
+    return global.TreeHits.apply(state.world, snap.treeHits,
+      renderer && isFinite(renderer.time) ? renderer.time : state.seconds);
+  }
+
   function applyServerBaseline(snap) {
     if (!snap || !state.world) return null;
     var res = global.Serialize.apply(state.world, snap, renderer, {
@@ -730,6 +739,7 @@
     state.netEpoch = snap.epoch === undefined ? state.netEpoch : snap.epoch;
     state.seconds = (snap.simulationTimeMs || 0) / 1000;
     state.world.time = state.seconds;
+    applySnapshotTreeHits(snap);
     var own = state.world.towns && state.world.towns[state.playerOwner];
     state.logs = own ? (own.logs || 0) : 0;
     state.deliveries = own ? (own.deliveries || 0) : 0;
@@ -844,8 +854,11 @@
       state.netOff.push(global.Net.on('snapshot', applyServerSnapshot));
       state.netOff.push(global.Net.on('room-fault', onRoomFault));
       state.netOff.push(global.Net.on('room-recovered', onRoomRecovered));
-      state.netOff.push(global.Net.on('net-error', function () {
+      state.netOff.push(global.Net.on('net-error', function (ev) {
         emit({ type: 'net-trouble' });
+        if (ev && ev.code === 'wire-version') {
+          emit({ type: 'net-note', text: ev.message || 'обновите страницу (F5)' });
+        }
       }));
       state.netOff.push(global.Net.on('command-result', function (res) {
         if (!res) return;
@@ -946,6 +959,7 @@
     state.villagers = res.villagers;
     state.seconds = (snap.simulationTimeMs || 0) / 1000;
     state.world.time = state.seconds;
+    applySnapshotTreeHits(snap);
     maybeLoadRuins();
     var town = state.world.towns && state.world.towns[state.playerOwner];
     state.logs = town ? (town.logs || 0) : 0;
@@ -1034,6 +1048,10 @@
       if (p.anim) v.anim = p.anim;
       if (p.animInstance !== undefined) v.animInstance = p.animInstance;
       if (p.phase !== undefined) v.phase = p.phase;
+      if (p.state) v.state = p.state;
+      /* Вздрагивание от удара — тоже состояние сервера (v.flinch), а не
+         выдумка клиента: без него воин и житель бьют, но не дёргаются. */
+      if (p.flinch !== undefined) v.flinch = p.flinch || 0;
       v.hidden = !!p.hidden;
     }
     if (t / 1000 > state.seconds) state.seconds = t / 1000;
@@ -1225,8 +1243,11 @@
       state.netOff.push(global.Net.on('snapshot', applySnapshot));
       state.netOff.push(global.Net.on('host-left', onHostLeft));
       state.netOff.push(global.Net.on('host-back', onHostBack));
-      state.netOff.push(global.Net.on('net-error', function () {
+      state.netOff.push(global.Net.on('net-error', function (ev) {
         emit({ type: 'net-trouble' });
+        if (ev && ev.code === 'wire-version') {
+          emit({ type: 'net-note', text: ev.message || 'обновите страницу (F5)' });
+        }
       }));
       state.netOff.push(global.Net.on('command-error', function (ev) {
         emit({ type: 'net-note',
@@ -1505,6 +1526,7 @@
       if (settled) syncPending();
     }
     state.seconds = state.world.time || 0;
+    applySnapshotTreeHits(snap);
     var town = state.world && state.world.towns && state.world.towns[state.playerOwner];
     state.logs = town ? town.logs : 0;
     state.deliveries = town ? town.deliveries : 0;

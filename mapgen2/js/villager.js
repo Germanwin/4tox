@@ -2619,9 +2619,31 @@
      (js/render.js: treeShake): удары идут через 2/3 секунды, и тряска успевает
      погаснуть между ними — иначе дерево дрожало бы непрерывно и «удар» перестал
      бы читаться ударом. */
+  /* Журнал ударов по деревьям — только представление, не правило игры.
+
+     Сервер не рисует и потому не может «показать» тряску сам: флаг shake на
+     дереве гасит рендер, а рендера в worker'е нет. Журнал живёт секунду и
+     уезжает в снимок (js/simulation/replication.js): id дерева + возраст
+     удара. Клиент качает ровно это дерево и ровно с той фазой. Список
+     обрезан по времени и длине, чтобы рубка сотен рабочих не копила его
+     вечно. */
+  function noteTreeHit(world, tree) {
+    if (!world || !tree || tree.id === undefined || tree.id === null) return;
+    var t = isFinite(world.time) ? world.time * 1000 : 0;
+    var list = world._treeHits;
+    if (!list) list = world._treeHits = [];
+    list.push({ id: tree.id, t: t });
+    var cutoff = t - 1000;
+    while (list.length > 1 && list[0].t < cutoff) list.shift();
+    if (list.length > 512) list.splice(0, list.length - 512);
+  }
+
   function strike(v, world) {
     v.hits++;
-    if (v.tree) v.tree.shake = 1;
+    if (v.tree) {
+      v.tree.shake = 1;
+      noteTreeHit(world, v.tree);
+    }
     if (v.chopT + CHOP_EPS >= CHOP_TIME) fell(v, world);
   }
 

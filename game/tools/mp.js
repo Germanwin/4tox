@@ -169,6 +169,16 @@ async function main() {
       (Math.abs(v[1] - before[0][i][1]) > 0.01 || Math.abs(v[2] - before[0][i][2]) > 0.01));
     check(moved, 'display poses move between snapshots');
 
+    /* Двоичный кадр не несёт animStartTimeMs: гость обязан доигрывать phase
+       сам. До правки все анимации у всех клиентов стояли на нулевом кадре. */
+    const animA = await B.js('Play.state.villagers.map(v=>[v.id,v.anim,v.phase])');
+    await sleep(700);
+    const animB = await B.js('Play.state.villagers.map(v=>[v.id,v.anim,v.phase])');
+    const advanced = animB.filter((v, i) => animA[i] &&
+      Math.abs(v[2] - animA[i][2]) > 0.02);
+    check(advanced.length > 0,
+      'guest animations advance, not a frozen frame: ' + advanced.length + '/' + animB.length);
+
     const stop = await B.js('Net.command({type:"stop",ids:[]}).then(r=>r)');
     check(stop && stop.state === 'applied', 'guest command applied by server');
 
@@ -176,6 +186,20 @@ async function main() {
     if (hireIds) {
       const hire = await B.js('Net.command({type:"hire",payload:' + JSON.stringify(hireIds) + '}).then(r=>r)');
       check(hire && hire.state === 'applied', 'guest hire command applied');
+      /* Рубка идёт на сервере, а тряска — представление клиента: сервер шлёт
+         id дерева и возраст удара, клиент качает ИМЕННО его. Проверяем не
+         «в коде есть поле», а что у гостя на карте дёрнулось дерево. */
+      let sawChop = false, sawShake = false;
+      for (let i = 0; i < 250 && !sawShake; i++) {
+        const s = await B.js('({chop: Play.state.villagers.filter(function(v){return v.state==="chop";}).length, shake: Play.state.world.objects.filter(function(o){return !!o.shake;}).length})');
+        if (s.chop > 0) sawChop = true;
+        if (s.shake > 0) sawShake = true;
+        await sleep(100);
+      }
+      check(sawChop && sawShake,
+        'guest sees the exact tree shake during chop: ' +
+        (sawChop ? 'рубит' : 'рубки не было') + ', ' +
+        (sawShake ? 'дерево тряслось' : 'тряски не было'));
     }
     const build = await B.js('Net.command({type:"build",payload:{buildingType:"house",variant:"a",rot:90,x:Play.state.buildings[0].x+8,y:Play.state.buildings[0].y+8}}).then(r=>r)');
     check(build && build.state === 'rejected' && build.reasonCode === 'no_resources',

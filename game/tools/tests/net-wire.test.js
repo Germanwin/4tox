@@ -250,6 +250,19 @@ test('кодек: все необязательные поля жителя пе
   assert.ok(near(out.motion[1].y, 21.5, 0.01));
 });
 
+test('удары по деревьям едут в кадре точным id и возрастом', () => {
+  const snap = stage300();
+  snap.treeHits = [{ id: 123, age: 40 }, { id: 'tree-7', age: 0 }];
+  const out = Wire.unpackSnapshot(Wire.packSnapshot(snap));
+  assert.equal(Wire.VERSION, 2, 'формат поднят: в кадре появились удары');
+  assert.deepEqual(out.treeHits, [
+    { id: '123', age: 40 },
+    { id: 'tree-7', age: 0 }
+  ]);
+  const plain = Wire.unpackSnapshot(Wire.packSnapshot(stage300()));
+  assert.deepEqual(plain.treeHits, []);
+});
+
 test('кодек: битый кадр отвергается, а не рождает пустой мир', () => {
   const snap = stage300();
   const packed = Wire.packSnapshot(snap);

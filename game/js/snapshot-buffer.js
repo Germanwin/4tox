@@ -20,6 +20,9 @@
     historyMs: 2000
   };
 
+  /* Длительность кадра по имени анимации: одна на кадр, а не по объекту. */
+  var animInfoCache = Object.create(null);
+
   function create(opts) {
     opts = opts || {};
     var protocol = opts.protocol === undefined ? 4 : opts.protocol;
@@ -107,6 +110,9 @@
           }
         }
         addSample(v.id, t, v.x, v.y, v.rot);
+        /* Время кадра — рядом с самой анимацией: по нему доигрывается фаза,
+           когда снимок пришёл без её длительности (двоичный кадр). */
+        v._snapT = t;
         metaById.set(v.id, v);
       }
       var cutoff = t - historyMs;
@@ -135,6 +141,26 @@
       return lo;   // первый sample с time >= t
     }
 
+    /* Длительность прохода кадра. Двоичный кадр (net-wire) не несёт
+       animStartTimeMs/animDurationMs — в нём есть только phase на момент
+       снимка. Длительность берём из GameplayConfig: это те же frames/fps,
+       что у атласа, а не отдельная таблица в клиенте. Нет конфига — фазе
+       неоткуда расти, и кадр честно остаётся на месте. */
+    function animInfo(meta) {
+      var key = (meta.warrior ? 'w:' : 'v:') + (meta.anim || 'idle');
+      if (Object.prototype.hasOwnProperty.call(animInfoCache, key)) return animInfoCache[key];
+      var G = global.GameplayConfig;
+      if (!G || typeof G.animation !== 'function') return null;
+      try {
+        var a = G.animation(meta.warrior ? 'warrior' : 'villager',
+          meta.anim || 'idle');
+        animInfoCache[key] = (a && isFinite(a.duration) && a.duration > 0) ? a : null;
+      } catch (e) {
+        animInfoCache[key] = null;
+      }
+      return animInfoCache[key];
+    }
+
     function animOf(meta, renderTime) {
       if (!meta) return null;
       var inst = meta.animInstance;
@@ -150,6 +176,31 @@
         if (e < 0) phase = 0;
         else if (loop) phase = e - Math.floor(e);
         else phase = Math.max(0, Math.min(1, e));
+      } else {
+        /* Доигровка от phase снимка: в двоичном кадре время начала кадра не
+           передаётся, и без этого гость видел ВСЕ анимации застывшими на
+           нулевом кадре (phase = 0 на каждом кадре). Снимок — точка отсчёта:
+           phase на его времени, дальше время кадра идёт по длительности
+           прохода. work у жителя и воина хост крутит по кругу (рубка и удары
+           повторяются), хотя в атласе он объявлен loop:false; carry_put —
+           один проход, его фаза не перескакивает через конец. */
+        var p0 = Number(meta.phase);
+        if (!isFinite(p0)) p0 = 0;
+        var t0 = Number(meta._snapT);
+        var info = animInfo(meta);
+        if (info) {
+          /* Отрисовка идёт на 150 мс ПОЗАДИ снимка. Если бы отрицательный
+             зазор обрезался нулём, фаза замирала бы на каждом новом кадре и
+             шла рывками: 150 мс стоит, 100 мс едет. Поэтому зазор
+             знаковый: для цикла это просто фаза предыдущего прохода. */
+          var dt = isFinite(t0) ? (renderTime - t0) / 1000 : 0;
+          var f = p0 + dt / info.duration;
+          var wraps = meta.anim === 'work' || info.loop !== false;
+          if (wraps) phase = f - Math.floor(f);
+          else phase = Math.max(0, Math.min(1, f));
+        } else {
+          phase = p0;
+        }
       }
       return { anim: meta.anim || 'idle', animInstance: inst, phase: phase };
     }
@@ -171,6 +222,7 @@
           x: meta.x, y: meta.y, rot: meta.rot || 0,
           anim: ph0 && ph0.anim, animInstance: ph0 && ph0.animInstance,
           phase: ph0 ? ph0.phase : 0,
+          state: meta.state || '', flinch: meta.flinch || 0,
           hidden: !!meta.hidden, mode: 'held', underflow: true, stale: stale
         };
       }
@@ -182,7 +234,8 @@
         return {
           x: x, y: y, rot: rot,
           anim: anim && anim.anim, animInstance: anim && anim.animInstance,
-          phase: anim ? anim.phase : 0, hidden: hidden,
+          phase: anim ? anim.phase : 0, state: meta ? (meta.state || '') : '',
+          flinch: meta ? (meta.flinch || 0) : 0, hidden: hidden,
           mode: mode, underflow: !!underflow, stale: stale
         };
       }

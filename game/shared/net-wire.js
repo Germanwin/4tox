@@ -18,7 +18,10 @@
   'use strict';
 
   var MAGIC = 0x31585434;        // little-endian "4TX1" на проводе
-  var VERSION = 1;
+  /* v2: в конце кадра — удары по деревьям (id + возраст). Кадр v1 читается
+     новым клиентом (без ударов), но старый клиент v2 отвергает целиком, а не
+     разбирает наполовину: версия проверяется до полей. */
+  var VERSION = 2;
   var TYPE_SNAPSHOT = 1;
   var NULL_STR = 0xFFFF;
   var F_BASELINE = 1;
@@ -227,6 +230,8 @@
       add(rs[r].commandId); add(rs[r].sessionId);
       add(rs[r].status); add(rs[r].reasonCode); add(rs[r].reason);
     }
+    var hs = snap.treeHits || [];
+    for (var h = 0; h < hs.length; h++) add(hs[h] && hs[h].id);
     return { list: list, idx: function (s) { return add(s); } };
   }
 
@@ -414,6 +419,15 @@
         w.u32(q.epoch || 0);
       }
     }
+    /* Удары по деревьям — в конце: старый кадр v1 их не имеет и читается
+       новым клиентом как пустой список. */
+    var hits = snap.treeHits || [];
+    w.varint(hits.length);
+    for (var hit = 0; hit < hits.length; hit++) {
+      var hh = hits[hit] || {};
+      w.u16(table.idx(hh.id));
+      w.u16(clampInt(hh.age, 0, 65535));
+    }
     return w.finish();
   }
 
@@ -422,7 +436,7 @@
     var r = new Reader(bytes);
     if (r.u32() !== MAGIC) throw new Error('wire: не снимок 4tox');
     var version = r.u8();
-    if (version !== VERSION) throw new Error('wire: версия ' + version);
+    if (version !== 1 && version !== VERSION) throw new Error('wire: версия ' + version);
     var type = r.u8();
     if (type !== TYPE_SNAPSHOT) throw new Error('wire: тип кадра ' + type);
     var flags = r.u16();
@@ -566,6 +580,15 @@
         results[qi] = q;
       }
       out.commandResults = results;
+    }
+    out.treeHits = [];
+    if (version >= 2) {
+      var nh = r.varint();
+      for (var hi = 0; hi < nh; hi++) {
+        var id = S(r.u16());
+        var age = r.u16();
+        if (id !== null) out.treeHits.push({ id: id, age: age });
+      }
     }
     if (r.off !== r.len) throw new Error('wire: лишние байты в кадре off=' + r.off + ' len=' + r.len);
     return out;
