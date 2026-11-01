@@ -456,8 +456,9 @@ node mapgen2/tools/game.js   # все проверки начала игры п�
 - Тряска дерева больше не теряется на сервере: `Villagers.strike` пишет
   `{id, t}` в `world._treeHits`, `Replication.build` кладёт `treeHits` в
   снимок, `net-wire` v2 кодирует `id+возраст`; клиент качает ровно это
-  дерево с той же фазой. Старый кадр v1 читается новым клиентом, старый
-  клиент v2 отвергает целиком и просит F5.
+  дерево с той же фазой. Старый кадр v1 читается новым клиентом; старый
+  клиент v2 отвергает целиком, а вкладка с новым клиентом при будущей
+  версии уходит на JSON/SSE и просит F5.
 - Проверки: `node --test game/tools/tests/*.test.js` — 95/95;
   `node game/tools/menu.js` — все проверки; `node game/tools/mp.js` —
   `guest animations advance 6/6` и `guest sees the exact tree shake during
