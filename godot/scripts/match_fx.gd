@@ -27,6 +27,36 @@ func _ready() -> void:
 	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 
 
+## Постройки, которым нужна HP-полоса: целые и с hp < maxHp. Руины не в счёт
+## (у них hp 0 и спрайт уже завала). Функция вынесена для приёмки.
+func hp_bar_buildings() -> Array:
+	var out: Array = []
+	for b in buildings:
+		if bool(b.get("rubble", false)):
+			continue
+		var hp := float(b.get("hp", -1.0))
+		var max_hp := float(b.get("maxHp", 0.0))
+		if hp < 0.0 or max_hp <= 0.0 or hp >= max_hp - 0.01:
+			continue
+		out.append(b)
+	return out
+
+
+## Жители, которым нужна HP-полоса: hp < максимума (15 житель / 25 воин).
+func hp_bar_villagers() -> Array:
+	var out: Array = []
+	for v in villagers:
+		if bool(v.get("hidden", false)):
+			continue
+		var hp := float(v.get("hp", -1.0))
+		if hp <= 0.0 or bool(v.get("dead", false)):
+			continue
+		var max_hp := max_hp_warrior if bool(v.get("warrior", false)) else max_hp_villager
+		if hp < max_hp - 0.01:
+			out.append(v)
+	return out
+
+
 func _w2s(wx: float, wy: float) -> Vector2:
 	return Vector2(
 		css.x * 0.5 + (wx - wy - float(cam["x"]) + float(cam["y"])) * zoom * 0.5,
@@ -60,6 +90,22 @@ func _draw() -> void:
 			draw_colored_polygon(_diamond(float(b["x"]), float(b["y"]), float(fp.x), float(fp.y)),
 				Color(team_color, 0.10))
 			break
+
+	# Полоса здоровья постройки: над серединой пятна, пока hp < maxHp.
+	for b in hp_bar_buildings():
+		var hp := float(b.get("hp", -1.0))
+		var max_hp := float(b.get("maxHp", 0.0))
+		var fpw := 4.0
+		var fph := 3.0
+		if footprint.x > 0:
+			fpw = float(footprint.x)
+			fph = float(footprint.y)
+		var c := _w2s(float(b["x"]) + fpw * 0.5, float(b["y"]) + fph * 0.5)
+		var w := maxf(28.0, zoom * 0.9)
+		var top := c + Vector2(-w * 0.5, -zoom * 1.15)
+		draw_rect(Rect2(top, Vector2(w, 4.0)), Color(0.08, 0.06, 0.04, 0.7))
+		draw_rect(Rect2(top, Vector2(w * clampf(hp / max_hp, 0.0, 1.0), 4.0)),
+			Color("#d9563f") if hp / max_hp < 0.5 else Color("#7dc75e"))
 
 	# Кольца выбранных жителей и полосы здоровья.
 	for v in villagers:

@@ -107,6 +107,7 @@ var _sim_recv_ms := 0
 var _anim_cfg: Dictionary = {}
 ## treeHits: id дерева → время удара по часам клиента (мс).
 var _tree_shake: Dictionary = {}
+var _ping_t := 0.0
 
 
 func _ready() -> void:
@@ -170,6 +171,10 @@ func open_live(url: String, opts := {}) -> void:
 	_live.failed.connect(_on_live_failed)
 	_live.command_done.connect(_on_command_done)
 	_hud.room = _live
+	if not _live.connection.is_connected(_on_live_connection):
+		_live.connection.connect(_on_live_connection)
+	if not _live.latency.is_connected(_on_live_latency):
+		_live.latency.connect(_on_live_latency)
 	_live.begin_solo(url, str(opts.get("seed", "")), int(opts.get("size", 0)),
 		bool(opts.get("bot", false)))
 
@@ -215,6 +220,10 @@ func open_room(room, opts := {}) -> void:
 		room.failed.connect(_on_live_failed)
 	if not room.command_done.is_connected(_on_command_done):
 		room.command_done.connect(_on_command_done)
+	if not room.connection.is_connected(_on_live_connection):
+		room.connection.connect(_on_live_connection)
+	if not room.latency.is_connected(_on_live_latency):
+		room.latency.connect(_on_live_latency)
 	if room.world != null:
 		_on_live_world(room.world)
 	if not room.latest_snapshot.is_empty():
@@ -448,6 +457,24 @@ func show_error(text: String) -> void:
 	_show_loading("Партия не началась.\n" + text)
 
 
+func _on_live_connection(state: String, detail: String) -> void:
+	if _hud == null:
+		return
+	if state == "online":
+		if _hud.status_text.begins_with("связь"):
+			_hud.status_text = ""
+	elif state == "reconnecting":
+		_hud.status_text = "связь: " + detail
+	elif state == "lost":
+		_hud.status_text = "связь потеряна"
+	_hud.refresh()
+
+
+func _on_live_latency(ms: int) -> void:
+	if _hud != null and _live != null:
+		_hud.set_net(_live.transport, ms, _live.is_host, _live.connected)
+
+
 func _on_live_status(text: String) -> void:
 	_show_loading(text)
 	_set_hint("живая комната · " + text)
@@ -494,6 +521,10 @@ func _on_live_snapshot(s: Dictionary) -> void:
 	if _hud != null:
 		_hud.set_mode(_mode)
 		_hud.set_player_owner(_live.my_owner if _live != null else 0)
+		_hud.set_net(_live.transport if _live != null else "none",
+			_live.latency_ms if _live != null else -1,
+			_live.is_host if _live != null else false,
+			_live.connected if _live != null else false)
 		_hud.on_snapshot(s)
 	if not _match_emitted:
 		_match_emitted = true
@@ -724,6 +755,12 @@ func _request_check() -> void:
 
 func _process(dt: float) -> void:
 	_update_view()
+	# Пинг сети раз в 2,5 с — только для бейджа, на игру не влияет.
+	if _mode == "multi" and _live != null and _live.is_started():
+		_ping_t -= dt
+		if _ping_t <= 0.0:
+			_ping_t = 2.5
+			_live.ping()
 	if _arrival != null and not bool(_arrival.get("skip", false)):
 		_arrival["t"] = float(_arrival["t"]) + dt
 		var k := minf(1.0, float(_arrival["t"]) / float(_arrival["dur"]))

@@ -41,6 +41,11 @@ var _minimap_cam := {"x": 0.0, "y": 0.0, "zoom": 40.0}
 var _viewport := Vector2(1440, 900)
 var _follow := false
 var _end_shown := false
+# Сеть: транспорт и пинг (в solo/bot бейдж не про сеть).
+var net_transport := "none"
+var net_ms := -1
+var net_host := false
+var net_online := false
 ## Поколение панели: асинхронная команда (например, «Отменить» с тремя
 ## поворотами) не должна закрыть панель, которую игрок уже открыл заново.
 var _panel_gen := 0
@@ -301,6 +306,15 @@ func set_minimap_camera(x: float, y: float, z: float, viewport: Vector2) -> void
 		_minimap.set_camera(x, y, z, viewport)
 
 
+func set_net(transport: String, ms: int, host: bool, online: bool) -> void:
+	net_transport = transport
+	net_ms = ms
+	net_host = host
+	net_online = online
+	if _badge != null:
+		refresh()
+
+
 func set_follow(v: bool) -> void:
 	_follow = v
 	refresh()
@@ -365,7 +379,18 @@ func refresh() -> void:
 		("потеряно брёвен %d · кадр №%d · %s" % [lost, int(snap.get("revision", 0)),
 			mode_text])
 	if _badge != null:
-		_badge.text = "" if mode == "solo" else ("локальный сервер · %s" % mode)
+		if mode == "multi":
+			if not net_online:
+				_badge.text = "нет связи"
+				_badge.add_theme_color_override("font_color", Color("#ffb4a2"))
+			else:
+				var role := "хост" if net_host else "гость"
+				var tr := net_transport if net_transport != "none" else "…"
+				var ping := (" · %d мс" % net_ms) if net_ms >= 0 else ""
+				_badge.text = "%s · %s%s" % [role, tr, ping]
+				_badge.add_theme_color_override("font_color", UI.CREAM)
+		else:
+			_badge.text = "" if mode == "solo" else ("локальный сервер · %s" % mode)
 	_update_place_bar()
 	if panel != "":
 		var sig := _panel_sig(logs, c)
@@ -1357,6 +1382,7 @@ func state() -> Dictionary:
 		"visible": _panel.visible,
 		"village": _village.visible,
 		"place_bar": _place_bar.visible,
+		"badge": _badge.text if _badge != null else "",
 	}
 
 

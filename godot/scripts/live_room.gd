@@ -15,6 +15,10 @@ signal failed(text)
 signal lobby_update(players: Array, started: bool, block: Dictionary)
 ## Партия началась (мир и WS подняты или вот-вот): экран лобби уходит.
 signal room_started
+## Состояние транспорта: online / reconnecting / lost.
+signal connection(state: String, detail: String)
+## Пинг до сервера, мс (стенные часы вокруг HTTP-круга).
+signal latency(ms: int)
 
 const Wire = preload("res://scripts/wire.gd")
 const WorldWire = preload("res://scripts/world_wire.gd")
@@ -66,6 +70,16 @@ var _ws: WebSocketPeer = null
 var _started := false
 var _lobby_timer := 0.0
 var _polling := false
+## Переподключение WS: 300 → 600 → 1200 → 2400 мс, не больше пяти попыток.
+const RETRY_MS := [0.3, 0.6, 1.2, 2.4, 2.4]
+var _want_ws := false
+var _reconnect_timer := 0.0
+var _reconnect_attempt := 0
+var reconnects := 0
+var transport := "none"          # none / ws
+var latency_ms := -1
+var connected := false
+var _ws_was_open := false
 
 
 func begin(url: String) -> void:
@@ -321,6 +335,7 @@ func _after_start(start: Dictionary) -> void:
 		_ws = null
 		return
 	_started = true
+	_want_ws = true
 	_save_session()
 	status.emit("в комнате")
 
@@ -398,7 +413,52 @@ func resume(url := "") -> bool:
 	return true
 
 
+func _open_ws() -> void:
+	if code == "" or token == "":
+		return
+	var ws_base := base.replace("https://", "wss://").replace("http://", "ws://")
+	var ws := WebSocketPeer.new()
+	var err := ws.connect_to_url("%s/api/ws?code=%s&token=%s" % [ws_base, code, token])
+	if err != OK:
+		_schedule_reconnect("ws: ошибка " + str(err))
+		return
+	_ws = ws
+
+
+func _schedule_reconnect(reason: String) -> void:
+	if not _want_ws or code == "":
+		return
+	_reconnect_attempt += 1
+	if _reconnect_attempt > RETRY_MS.size():
+		_want_ws = false
+		connection.emit("lost", reason)
+		failed.emit("связь потеряна: " + reason)
+		return
+	_reconnect_timer = float(RETRY_MS[_reconnect_attempt - 1])
+	connection.emit("reconnecting", "%s · попытка %d" % [reason, _reconnect_attempt])
+
+
+## Пинг для бейджа: стенный RTT HTTP-круга. Серверный /api/ping без кода и
+## токена тоже работает, но с ними он ещё и heartbeat.
+func ping() -> int:
+	if code == "" or token == "":
+		return -1
+	var t0 := Time.get_ticks_msec()
+	var r := await _json("GET", "/api/ping?code=%s&token=%s&c0=%d" % [code, token, t0], null)
+	if not r.get("ok", false):
+		return -1
+	latency_ms = Time.get_ticks_msec() - t0
+	latency.emit(latency_ms)
+	return latency_ms
+
+
 func _process(dt: float) -> void:
+	# Переподключение WS: пока комната жива, клиент сам возвращается в неё
+	# (300/600/1200/2400 мс). Сервер на новом WS присылает baseline.
+	if _ws == null and _want_ws and code != "" and _start_done:
+		_reconnect_timer -= dt
+		if _reconnect_timer <= 0.0:
+			_open_ws()
 	# Пока идёт лобби, состав и старт подтягиваются сами: гость не должен
 	# нажимать ничего, чтобы узнать, что хост начал.
 	if code != "" and not _start_done and not solo:
@@ -411,6 +471,15 @@ func _process(dt: float) -> void:
 	_ws.poll()
 	var st := _ws.get_ready_state()
 	if st == WebSocketPeer.STATE_OPEN:
+		if not _ws_was_open:
+			_ws_was_open = true
+			connected = true
+			transport = "ws"
+			if _reconnect_attempt > 0:
+				reconnects += 1
+			_reconnect_attempt = 0
+			connection.emit("online", "")
+	
 		while _ws.get_available_packet_count() > 0:
 			var pkt := _ws.get_packet()
 			if pkt.size() < 6:
@@ -423,9 +492,11 @@ func _process(dt: float) -> void:
 				latest_snapshot = r["snapshot"]
 				snapshot.emit(latest_snapshot)
 	elif st == WebSocketPeer.STATE_CLOSED and _started:
-		_started = false
 		_ws = null
-		failed.emit("связь закрыта")
+		_ws_was_open = false
+		connected = false
+		transport = "none"
+		_schedule_reconnect("связь закрыта")
 
 
 ## Выход из комнаты: сервер закрывает партию сразу, если ушёл последний игрок
@@ -434,6 +505,10 @@ func _process(dt: float) -> void:
 func leave() -> void:
 	_started = false
 	_start_done = false
+	_want_ws = false
+	_reconnect_attempt = 0
+	connected = false
+	transport = "none"
 	_clear_session()
 	if _ws != null:
 		_ws.close()

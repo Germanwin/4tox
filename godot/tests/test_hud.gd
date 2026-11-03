@@ -250,6 +250,18 @@ func _run() -> void:
 		check(int(lp.get("x", -1)) == 30 and int(lp.get("y", -1)) == 30, "начало серии в payload")
 	check(hud.line_mode == false, "режим серии закрыт после постройки")
 
+	# Сетевой бейдж: режим multi, транспорт и пинг в одной строке.
+	hud.set_mode("multi")
+	hud.set_net("ws", 12, true, true)
+	await process_frame
+	check(str(hud.state()["badge"]).find("хост") >= 0, "бейдж: роль хоста")
+	check(str(hud.state()["badge"]).find("ws") >= 0, "бейдж: транспорт ws")
+	check(str(hud.state()["badge"]).find("12") >= 0, "бейдж: пинг 12 мс")
+	hud.set_net("ws", -1, false, false)
+	await process_frame
+	check(str(hud.state()["badge"]).find("нет связи") >= 0, "бейдж: нет связи")
+	hud.set_mode("solo")
+
 	# Меню
 	hud.open_panel("menu")
 	await process_frame

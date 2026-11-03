@@ -14,7 +14,7 @@ echo "=== server api (аддитивные эндпоинты Godot-клиент
 node tests/test_server_api.js
 echo "=== constants (числа из JS)"
 node tests/test_constants.js
-for t in test_wire test_world test_world_wire test_core test_features test_ui test_demo test_hud test_supervisor test_bot test_ruins test_shake test_lobby test_net_lobby_ui test_main_net test_resume test_main_resume test_net test_live; do
+for t in test_wire test_world test_world_wire test_core test_features test_ui test_demo test_hud test_supervisor test_bot test_ruins test_shake test_combat_fx test_lobby test_net_lobby_ui test_main_net test_resume test_main_resume test_reconnect test_net test_live; do
   echo "=== $t"
   "$GODOT" --headless --path . -s "res://tests/$t.gd"
 done
