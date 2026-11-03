@@ -54,6 +54,14 @@ var latest_snapshot: Dictionary = {}
 var lobby_players: Array = []
 var _start_done := false
 
+## Сессия последней партии: по ней приложение возвращается в ту же комнату
+## после перезапуска (GET /api/resume). Файл лежит в user:// и переживает
+## падение приложения; явный выход в меню его стирает.
+const SESSION_PATH := "user://net-session.cfg"
+## Один процесс — одна сессия. Второй клиент (тест, отладка) может выключить
+## запись, чтобы не перетирать сессию основного.
+var persist_session := true
+
 var _ws: WebSocketPeer = null
 var _started := false
 var _lobby_timer := 0.0
@@ -160,6 +168,10 @@ func _poll_lobby() -> void:
 	_polling = true
 	await lobby_status()
 	_polling = false
+
+
+func is_started() -> bool:
+	return _start_done
 
 
 func players_count() -> int:
@@ -309,7 +321,81 @@ func _after_start(start: Dictionary) -> void:
 		_ws = null
 		return
 	_started = true
+	_save_session()
 	status.emit("в комнате")
+
+
+func _save_session() -> void:
+	if not persist_session:
+		return
+	if code == "" or token == "":
+		return
+	var cfg := ConfigFile.new()
+	cfg.set_value("net", "base", base)
+	cfg.set_value("net", "code", code)
+	cfg.set_value("net", "token", token)
+	cfg.set_value("net", "player", player_id)
+	cfg.set_value("net", "host", is_host)
+	cfg.save(SESSION_PATH)
+
+
+func _clear_session() -> void:
+	if FileAccess.file_exists(SESSION_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(SESSION_PATH))
+
+
+static func session_exists() -> bool:
+	return FileAccess.file_exists("user://net-session.cfg")
+
+
+static func session_info() -> Dictionary:
+	var cfg := ConfigFile.new()
+	if cfg.load("user://net-session.cfg") != OK:
+		return {}
+	return {
+		"base": str(cfg.get_value("net", "base", "")),
+		"code": str(cfg.get_value("net", "code", "")),
+		"token": str(cfg.get_value("net", "token", "")),
+		"player": int(cfg.get_value("net", "player", 0)),
+		"host": bool(cfg.get_value("net", "host", false)),
+	}
+
+
+static func clear_session() -> void:
+	if FileAccess.file_exists("user://net-session.cfg"):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path("user://net-session.cfg"))
+
+
+## Вернуться в сохранённую партию: тот же токен, тот же игрок, тот же мир.
+## `/api/resume` отдаёт старт и последний снимок комнаты; WLD1 и WS клиент
+## поднимает обычным путём. Возвращает false, если сессии уже нет (403/404).
+func resume(url := "") -> bool:
+	var info := ToxLiveRoom.session_info()
+	if info.is_empty():
+		return false
+	base = url if url != "" else str(info["base"])
+	base = base.rstrip("/")
+	code = str(info["code"])
+	token = str(info["token"])
+	player_id = int(info["player"])
+	is_host = bool(info["host"])
+	solo = false
+	var st := await _json("GET", "/api/resume?code=%s&token=%s" % [code, token], null)
+	if not st.get("ok", false):
+		_clear_session()
+		return false
+	is_host = bool(st.get("host", is_host))
+	lobby_players = _status_players(st)
+	if bool(st.get("started", false)):
+		var start: Dictionary = st.get("start", {}) if st.get("start") is Dictionary else {}
+		if start.is_empty():
+			return false
+		status.emit("возвращаемся в партию…")
+		await _after_start(start)
+		return true
+	# Партия ещё в лобби (никто не начал): остаёмся на экране сети.
+	await lobby_status()
+	return true
 
 
 func _process(dt: float) -> void:
@@ -348,6 +434,7 @@ func _process(dt: float) -> void:
 func leave() -> void:
 	_started = false
 	_start_done = false
+	_clear_session()
 	if _ws != null:
 		_ws.close()
 		_ws = null

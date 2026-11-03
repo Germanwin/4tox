@@ -30,6 +30,7 @@ func _init() -> void:
 
 func _run() -> void:
 	print("== сеть в приложении")
+	LiveRoom.clear_session()
 	main = MAIN.instantiate()
 	root.add_child(main)
 	await process_frame

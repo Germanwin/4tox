@@ -3,6 +3,7 @@ extends Node
 const HybridDemo = preload("res://scripts/hybrid_demo.gd")
 const Supervisor = preload("res://scripts/server_supervisor.gd")
 const NetLobby = preload("res://scripts/net_lobby.gd")
+const LiveRoom = preload("res://scripts/live_room.gd")
 
 enum State { MENU, LOBBY, PLAY, PAUSE, OVER, GALLERY, DEMO }
 
@@ -88,6 +89,7 @@ func _ready() -> void:
 	_connect_view()
 	menu.show_main(false)
 	call_deferred("_make_preview", 64)
+	call_deferred("_auto_resume")
 	call_deferred("_auto_shot")
 
 func _build_loading() -> void:
@@ -188,7 +190,8 @@ func _make_preview(size: int) -> void:
 	sim.game_over.connect(_on_game_over)
 	running = true
 	starting = false
-	menu.show_main(has_game)
+	if state == State.MENU:
+		menu.show_main(has_game)
 
 func _on_menu_size(size: int, seed_text: String) -> void:
 	if state != State.MENU or has_game:
@@ -269,6 +272,21 @@ func _close_hybrid_to_menu() -> void:
 
 ## Экран сети: HTTP-лобби того же сервера (код/токен, без ENet). Локальный
 ## сервер поднимается сам, если игрок не ввёл адрес VPS в поле.
+## Возврат в партию после перезапуска: сессия живёт в user://, комната — на
+## сервере. Локальный сервер после выхода приложения гаснет, поэтому resume
+## имеет смысл для VPS/второго игрока/падения клиента; если комнаты нет,
+## сессия честно стирается и остаётся меню.
+func _auto_resume() -> void:
+	if net_lobby == null or not LiveRoom.session_exists():
+		return
+	var info := LiveRoom.session_info()
+	var saved_base := str(info.get("base", ""))
+	if saved_base == "":
+		return
+	net_lobby.open(saved_base, "", 0)
+	await net_lobby.resume_game()
+
+
 func _open_net_lobby(size: int, seed_text: String) -> void:
 	if starting:
 		return

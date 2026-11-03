@@ -32,6 +32,8 @@ func _init() -> void:
 
 func _run() -> void:
 	print("== игра мышью")
+	# Чужая сохранённая сессия не должна уводить main в авто-возврат.
+	_clear_net_session()
 	# Размер окна как у игрока: HUD считает позиции от вьюпорта, и в headless
 	# по умолчанию он 64x64 — кнопки уезжали за кадр, клик мимо.
 	root.size = Vector2i(1440, 900)
@@ -264,6 +266,12 @@ func _run() -> void:
 
 
 # ------------------------------------------------------------------ helpers
+
+func _clear_net_session() -> void:
+	var cfg := "user://net-session.cfg"
+	if FileAccess.file_exists(cfg):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(cfg))
+
 
 func _trainees(hud) -> int:
 	var n := 0

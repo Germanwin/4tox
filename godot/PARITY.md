@@ -25,7 +25,7 @@
 | 7 | Лобби-служебное | `/api/build`, protocol, capacity, TTL, max rooms | частично | `/api/health` + `/api/build` есть (`api`), `server_capacity` сервер отдаёт; экран сети показывает причину блока словами, но версию/протокол/capacity не выводит |
 | 8 | Транспорт | WS 4TX1 v2, SSE fallback, reconnect, ping/pong, gzip | частично | WS есть (`live`, `play`); reconnect/SSE-fallback в LiveRoom не сделаны; ping-бейджа нет; серверный gzip — SSE |
 | 9 | Сетевые события | host-left/back, peer-left, room fault, бейдж | нет | мир считает worker, уход хоста партию не роняет, но бейджа/событий «нет связи»/«хост ушёл» в HUD нет |
-| 10 | Resume | F5/перезапуск, `/api/resume`, сессия, гидратация | **нет** | `/api/resume` сервер умеет; клиент сессию не хранит |
+| 10 | Resume | F5/перезапуск, `/api/resume`, сессия, гидратация | есть | `user://net-session.cfg` (code/token/player), `LiveRoom.resume`, автовозврат в `main` — `test_resume` 15/15, `test_main_resume` 13/13; локальный сервер после штатного выхода гаснет, поэтому возврат — после падения клиента или к VPS |
 | 11 | Наблюдатель | вход спектатором, бейдж, нет команд | нет | открытый вопрос §6.2 |
 | 12 | VPS | deploy, 443/8443, WLD1, solo, bot, crossplay, leave | **нет** | сервер не выложен; на VPS `/api/world` 404 (проверено в промпте). Локально всё работает: `api`, `live`, `bot` |
 | 13 | HUD-ресурсы | брёвна, жители, воины, учатся, срублено, доставлено, потеряно | есть | `hud` — строка из `towns[owner]`; `play` |

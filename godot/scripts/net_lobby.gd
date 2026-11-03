@@ -35,6 +35,7 @@ var _create_btn: Button
 var _join_btn: Button
 var _ready_btn: Button
 var _start_btn: Button
+var _resume_btn: Button
 var _back_btn: Button
 
 
@@ -108,6 +109,11 @@ func _build() -> void:
 	_join_btn.custom_minimum_size = Vector2(220, 46)
 	_join_btn.pressed.connect(func() -> void: join_game())
 	row.add_child(_join_btn)
+	_resume_btn = UI.button("Продолжить", 16)
+	_resume_btn.custom_minimum_size = Vector2(180, 46)
+	_resume_btn.visible = false
+	_resume_btn.pressed.connect(func() -> void: resume_game())
+	row.add_child(_resume_btn)
 	_back_btn = UI.button("Назад", 15)
 	_back_btn.custom_minimum_size = Vector2(140, 46)
 	_back_btn.pressed.connect(func() -> void: leave_lobby())
@@ -164,6 +170,9 @@ func open(p_base: String, p_seed: String, p_size: int) -> void:
 	last_block = {}
 	_addr.text = base
 	_code.text = ""
+	if _resume_btn != null:
+		_resume_btn.visible = LiveRoom.session_exists()
+		_resume_btn.disabled = false
 	_players_box_clear()
 	_set_code_line("")
 	_status_label.text = "создайте игру или введите код"
@@ -277,6 +286,46 @@ func toggle_ready() -> void:
 	await room.set_ready(is_ready)
 
 
+## Вернуться в сохранённую партию (после перезапуска/падения): тот же токен и
+## игрок, `/api/resume` отдаёт мир и снимок комнаты.
+func resume_game() -> void:
+	if joined:
+		return
+	if not LiveRoom.session_exists():
+		_status_label.text = "сохранённой партии нет"
+		_resume_btn.visible = false
+		return
+	if not _ensure_room():
+		return
+	var info := LiveRoom.session_info()
+	if str(info.get("base", "")) != "":
+		base = str(info["base"])
+		_addr.text = base
+	_status_label.text = "возвращаемся в партию…"
+	_resume_btn.disabled = true
+	var ok: bool = await room.resume(base)
+	_resume_btn.disabled = false
+	if not ok:
+		_status_label.text = "вернуться не удалось: комната уже закрыта"
+		_resume_btn.visible = false
+		return
+	joined = true
+	is_host = room.is_host
+	is_ready = true
+	_code.text = room.code
+	_set_code_line("код: " + room.code)
+	_create_btn.disabled = true
+	_join_btn.disabled = true
+	_ready_btn.disabled = false
+	_resume_btn.visible = false
+	if room.is_started():
+		# room_started уже ушёл в _after_start; экран просто уходит.
+		visible = false
+		return
+	_status_label.text = "партия ещё в лобби · ждём старта хоста"
+	_render_players(room.lobby_players)
+
+
 func start_game() -> void:
 	if room == null or not is_host:
 		return
@@ -383,6 +432,7 @@ func state() -> Dictionary:
 		"status": _status_label.text,
 		"players": _players_box.get_child_count(),
 		"start_visible": _start_btn.visible,
+		"resume_visible": _resume_btn.visible,
 		"start_disabled": _start_btn.disabled,
 		"ready_disabled": _ready_btn.disabled,
 		"base": base,
@@ -392,7 +442,8 @@ func state() -> Dictionary:
 func press(text: String) -> bool:
 	var map := {
 		"Создать игру": _create_btn, "Войти по коду": _join_btn,
-		"Готов": _ready_btn, "Начать игру": _start_btn, "Назад": _back_btn,
+		"Продолжить": _resume_btn, "Готов": _ready_btn,
+		"Начать игру": _start_btn, "Назад": _back_btn,
 	}
 	var b: Variant = map.get(text)
 	if b == null:

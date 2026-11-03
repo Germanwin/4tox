@@ -24,6 +24,9 @@ func find_button(root: Node, text: String) -> Button:
 
 func _init() -> void:
 	print("== hybrid demo")
+	var cfg := "user://net-session.cfg"
+	if FileAccess.file_exists(cfg):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(cfg))
 	var main = load("res://scenes/main.tscn").instantiate()
 	root.add_child(main)
 	await create_timer(1.5).timeout
