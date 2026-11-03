@@ -26,7 +26,7 @@
 | 8 | Транспорт | WS `4TX1` v2; SSE fallback — если принят (§6.2); reconnect 300/600/1200, ping/pong, gzip | есть | WS; reconnect 300/600/1200 (`test_reconnect` 7/7); после пяти неудач — SSE `/api/events` (`test_sse` 7/7), если и он не отвечает — опрос `/api/resume` (`test_poll_fallback` 7/7); пинг `/api/ping`; SSE читается без gzip (identity), поэтому сжатия на клиенте нет |
 | 9 | Сетевые события | host-left/back, peer-left, room fault, бейдж | частично | JSON-события комнаты приходят по WS; строка HUD + заметка в бейдже («хост вышел», «X вышел», «сбой») — `test_net_events` 6/6, `test_hud`; отдельного экрана нет; запасной опрос — `test_poll_fallback` |
 | 10 | Resume | F5/перезапуск, `/api/resume`, сессия, гидратация | есть | `user://net-session.cfg` (code/token/player), `LiveRoom.resume`, автовозврат в `main` — `test_resume` 15/15, `test_main_resume` 13/13; локальный сервер после штатного выхода гаснет, поэтому возврат — после падения клиента или к VPS |
-| 11 | Наблюдатель | вход спектатором, бейдж, нет команд | нет | открытый вопрос §6.2 |
+| 11 | Наблюдатель | вход спектатором, бейдж, нет команд | есть | `POST /api/spectate` (после старта), токен наблюдателя, `/api/world` + WS baseline; команды/стройка 403 «наблюдатель не командует»; HUD-бейдж «наблюдатель», кнопки стройки/правки/войск скрыты — `test_spectate` 14/14, `test_net_lobby_ui` 19/19 |
 | 12 | VPS | deploy, 443/8443, WLD1, solo, bot, crossplay, leave | есть | build `f7892de14ea4` выложен 2026-11-03 (бэкап `/root/4tox-backup-20261103-025828.tgz`): `/api/health` 200, `/api/world` WLD1 45 801 Б, solo → `4TX1` 728 Б, `/api/leave` — `vps_smoke.js` на 443 и 8443; `vps_crossplay.gd` Godot↔Chrome 17/17 на 8443 и 443; `vps_main.gd` — весь путь приложения через VPS 14/14 на обоих. `MAX_ACTIVE_ROOMS=1` — одна партия |
 | 13 | HUD-ресурсы | брёвна, жители, воины, учатся, срублено, доставлено, потеряно | есть | `hud` — строка из `towns[owner]`; `play` |
 | 14 | События | лента, клик к событию, подсказки, pending/отказы | частично | строка ответа сервера с причиной, `applied/rejected`; ленты-истории и клика к событию нет |
@@ -55,7 +55,7 @@
 | 37 | Безопасность | токены, HTTPS, cert, no secrets in logs, server validation | есть | токены/владелец проверяет сервер; wss с проверкой сертификата; в лог не пишутся токены |
 | 38 | Браузер-регрессия | mp.js/menu.js/game.js; аддитивные правки | есть | все три PASS после правок сервера (см. PORT-STATE) |
 | 39 | Сборка | Node bundle, port, health, logs, shutdown, macOS/Windows, signing | частично | `tools/package.sh` → `build/macos/4tox.app` (415 МБ) с сервером и node, smoke `--smoke` — SMOKE OK; `build/4tox-macos.dmg` 170 МБ (монтируется, app внутри); `build/4tox-windows.zip` 133 МБ, 147 файлов, `unzip -tq` целый; `.exe` **не запускался** (нет Windows); подписи нет |
-| 40 | Тесты | run/visual/play/parity/vps/package + адверсарий | частично | run 27/384, visual 54, play 47, combat 14, parity (test_hud 56 + SSIM 0,06–0,23), vps 443/8443, package .app smoke; `.exe` не запускался, адверсарий не формализован |
+| 40 | Тесты | run/visual/play/parity/vps/package + адверсарий | частично | run 28/399, visual 54, play 47, combat 14, parity (test_hud 56 + SSIM 0,06–0,23), vps 443/8443, package .app smoke; `.exe` не запускался, адверсарий не формализован |
 
 ## Что это значит
 

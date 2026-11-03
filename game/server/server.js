@@ -491,7 +491,8 @@ function makeLobby(max) {
   while (lobbies.has(c)) c = code();
   const lobby = {
     code: c, max: Math.max(2, Math.min(MAX_PLAYERS, max || 4)),
-    players: [], started: false, seed: null, size: 192, streams: new Map(),
+    players: [], spectators: [], nextSpectator: 0,
+    started: false, seed: null, size: 192, streams: new Map(),
     /* Локальная одиночная партия (solo) и партия против деревни (bot):
        аддитивные флаги, которые ставит клиент в /api/lobby или /api/start.
        Без них лобби по-прежнему требует двух игроков. */
@@ -1079,6 +1080,9 @@ function lobbyView(lobby) {
     players: lobby.players.map(function (p) {
       return { id: p.id, name: p.name, ready: p.ready, host: p.id === lobby.hostId,
         color: p.color, online: p.online !== false };
+    }),
+    spectators: (lobby.spectators || []).map(function (p) {
+      return { id: p.id, name: p.name, online: p.online !== false };
     }),
     hostOnline: !!(host && host.online !== false)
   };
@@ -1699,6 +1703,7 @@ function onWsConnection(conn, req, url) {
     d: {
       playerId: p.id, hostId: lobby.hostId,
       lobby: lobbyView(lobby), transport: 'ws',
+      spectator: !!p.spectator,
       wsProtocol: NetWire.VERSION
     }
   });
@@ -1735,13 +1740,13 @@ function onWsConnection(conn, req, url) {
     }
   }
   if (lobby.hostId === p.id && back) hostBack(lobby, p);
-  if (back && lobby.started && p.id !== lobby.hostId) {
+  if (back && !p.spectator && lobby.started && p.id !== lobby.hostId) {
     broadcast(lobby, 'peer-back', {
       id: p.id, name: p.name,
       owner: p.owner === undefined ? 0 : p.owner
     });
   }
-  if (back) broadcast(lobby, 'lobby', lobbyView(lobby), p.id);
+  if (back && !p.spectator) broadcast(lobby, 'lobby', lobbyView(lobby), p.id);
 
   lobby.lastWsAt = now();
   lobbyLog(lobby, 'ws-open', {
@@ -1786,6 +1791,10 @@ function onWsClosed(lobby, p, conn, reason) {
   if (!lobby || !p) return;
   if (lobby.ws.get(p.id) !== conn) return;
   lobby.ws.delete(p.id);
+  if (p.spectator) {
+    lobby.spectators = (lobby.spectators || []).filter(function (x) { return x !== p; });
+    return;
+  }
   lobby.totals.wsClosed++;
   lobby.totals.wsDropped += conn.dropped || 0;
   lobby.lastWsAt = now();
@@ -1837,6 +1846,7 @@ function streamBacklog(lobby) {
 function playerByToken(lobby, t) {
   if (!lobby || !t) return null;
   for (const p of lobby.players) if (p.token === t) return p;
+  for (const p of (lobby.spectators || [])) if (p.token === t) return p;
   return null;
 }
 
@@ -1909,6 +1919,15 @@ function hostBack(lobby, p) {
   });
   broadcast(lobby, 'lobby', lobbyView(lobby));
   console.log('  лобби ' + lobby.code + ': хост ' + p.name + ' вернулся');
+}
+
+function dropSpectator(lobby, p, reason) {
+  if (!lobby || !p) return;
+  lobby.spectators = (lobby.spectators || []).filter(function (x) { return x !== p; });
+  const st = lobby.streams.get(p.id);
+  if (st) { lobby.streams.delete(p.id); closeStream(st, reason || 'spectator-leave', true); }
+  const wsConn = lobby.ws && lobby.ws.get(p.id);
+  if (wsConn) { lobby.ws.delete(p.id); try { wsConn.close(1000, reason || 'spectator-leave'); } catch (e) {} }
 }
 
 function dropPlayer(lobby, p) {
@@ -2839,6 +2858,7 @@ async function handleRequest(req, res) {
       const lobby = lobbyForRequest(body || {});
       const p = playerByToken(lobby, body && body.token);
       if (!lobby || !p) return json(res, 403, { ok: false, reason: 'нет доступа' });
+      if (p.spectator) return json(res, 403, { ok: false, reason: 'наблюдатель не командует' });
       if (!lobby.started) return json(res, 409, { ok: false, reason: 'ещё не начали' });
       const rec = roomFor(lobby);
       if (!rec || !rec.worker || rec.fault) {
@@ -2924,6 +2944,28 @@ async function handleRequest(req, res) {
         clientProto: p.proto, build: buildId()
       });
       console.log('  лобби ' + lobby.code + ' создано (хост ' + p.name + ')');
+    });
+  }
+
+  if (req.method === 'POST' && u.pathname === '/api/spectate') {
+    return readJson(req, res, function (body) {
+      if (!body) return json(res, 400, { ok: false, reason: 'нет тела' });
+      const lobby = lobbies.get(String(body.code || '').toUpperCase());
+      if (!lobby) return json(res, 404, { ok: false, reason: 'лобби не найдено' });
+      if (!lobby.started) return json(res, 409, { ok: false, reason: 'игра ещё не началась' });
+      const id = 's' + (lobby.nextSpectator++);
+      const p = {
+        id: id, name: String(body.name || 'Наблюдатель').slice(0, 24),
+        token: token(), spectator: true, joined: now(), lastSeen: now(),
+        online: true, goneAt: 0, timer: null
+      };
+      lobby.spectators.push(p);
+      json(res, 200, {
+        ok: true, code: lobby.code, token: p.token, playerId: id,
+        hostId: lobby.hostId, spectator: true,
+        build: buildId(), protocol: PROTOCOL, cmdProto: CMD_PROTO
+      });
+      lobbyLog(lobby, 'spectator-joined', { playerId: id, name: p.name });
     });
   }
 
@@ -3334,6 +3376,7 @@ async function handleRequest(req, res) {
       const lobby = lobbyForRequest(body || {});
       const p = playerByToken(lobby, body && body.token);
       if (!lobby || !p) return json(res, 403, { ok: false, reason: 'нет доступа' });
+      if (p.spectator) return json(res, 403, { ok: false, reason: 'наблюдатель не командует' });
       if (!lobby.started) return json(res, 409, { ok: false, reason: 'ещё не начали' });
       const rec = roomFor(lobby);
       if (!rec || !rec.worker || rec.fault) {
@@ -3429,6 +3472,7 @@ async function handleRequest(req, res) {
       const lobby = lobbyForRequest(body || {});
       const p = playerByToken(lobby, body && body.token);
       if (!lobby || !p) return json(res, 403, { ok: false, reason: 'нет доступа' });
+      if (p.spectator) return json(res, 403, { ok: false, reason: 'наблюдатель не командует' });
       if (!lobby.started) return json(res, 409, { ok: false, reason: 'ещё не начали' });
       if (lobby.hostGone) return json(res, 409, { ok: false, reason: 'хост вне сети' });
       touchPlayer(p);
@@ -3671,6 +3715,7 @@ async function handleRequest(req, res) {
       const lobby = lobbyForRequest(body || {});
       const p = playerByToken(lobby, body && body.token);
       if (!lobby || !p) return json(res, 200, { ok: true });
+      if (p.spectator) { dropSpectator(lobby, p, 'leave'); return json(res, 200, { ok: true }); }
       dropPlayer(lobby, p);
       json(res, 200, { ok: true });
     });

@@ -68,6 +68,7 @@ func _run() -> void:
 	check(code.length() >= 4, "код показан: " + code)
 	check(host.state()["host"], "хост помечен")
 	check(host.state()["start_visible"], "кнопка «Начать игру» у хоста")
+	check(host.state()["spectate_visible"], "кнопка «Смотреть» есть")
 
 	guest.open(sup.base, "", 64)
 	guest.set_player_name("Гость")

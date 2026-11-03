@@ -211,6 +211,7 @@ func open_room(room, opts := {}) -> void:
 	_match_emitted = false
 	_hud.reset()
 	_hud.room = room
+	_hud.set_spectator(bool(room.get("is_spectator")))
 	_show_loading("Ждём мир от сервера…")
 	if not room.status.is_connected(_on_live_status):
 		room.status.connect(_on_live_status)
@@ -554,7 +555,8 @@ func _on_live_snapshot(s: Dictionary) -> void:
 	_set_hint("")
 	if _hud != null:
 		_hud.set_mode(_mode)
-		_hud.set_player_owner(_live.my_owner if _live != null else 0)
+		_hud.set_player_owner(0 if (_live != null and _live.is_spectator) \
+			else (_live.my_owner if _live != null else 0))
 		_hud.set_net(_live.transport if _live != null else "none",
 			_live.latency_ms if _live != null else -1,
 			_live.is_host if _live != null else false,

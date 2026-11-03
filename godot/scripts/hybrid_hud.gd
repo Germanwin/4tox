@@ -47,6 +47,7 @@ var net_ms := -1
 var net_host := false
 var net_online := false
 var net_note := ""
+var spectator := false
 ## Поколение панели: асинхронная команда (например, «Отменить» с тремя
 ## поворотами) не должна закрыть панель, которую игрок уже открыл заново.
 var _panel_gen := 0
@@ -309,6 +310,15 @@ func set_minimap_camera(x: float, y: float, z: float, viewport: Vector2) -> void
 		_minimap.set_camera(x, y, z, viewport)
 
 
+func set_spectator(v: bool) -> void:
+	spectator = v
+	if _bottom != null:
+		for text in ["Стройка", "Правка", "Войска"]:
+			if buttons.has(text):
+				(buttons[text] as Button).visible = not v
+	refresh()
+
+
 func set_net_note(text: String) -> void:
 	net_note = text
 	if _badge != null:
@@ -388,7 +398,10 @@ func refresh() -> void:
 		("потеряно брёвен %d · кадр №%d · %s" % [lost, int(snap.get("revision", 0)),
 			mode_text])
 	if _badge != null:
-		if mode == "multi":
+		if spectator:
+			_badge.text = "наблюдатель"
+			_badge.add_theme_color_override("font_color", UI.CREAM)
+		elif mode == "multi":
 			if not net_online:
 				_badge.text = "нет связи"
 				_badge.add_theme_color_override("font_color", Color("#ffb4a2"))
@@ -1377,9 +1390,14 @@ func _check_end() -> void:
 ## Всё, что проверяет структурная приёмка: панель, тексты, кнопки, данные.
 func state() -> Dictionary:
 	var names: Array = []
+	var vis: Array = []
 	for k in buttons:
 		names.append(str(k))
+		var b: Variant = buttons[k]
+		if b != null and is_instance_valid(b) and (b as Button).is_visible_in_tree():
+			vis.append(str(k))
 	names.sort()
+	vis.sort()
 	var end_title := ""
 	if _end_body.get_child_count() > 0:
 		var first: Node = _end_body.get_child(0)
@@ -1399,6 +1417,8 @@ func state() -> Dictionary:
 		"village": _village.visible,
 		"place_bar": _place_bar.visible,
 		"badge": _badge.text if _badge != null else "",
+		"spectator": spectator,
+		"visible_buttons": vis,
 		"end": _end.visible,
 		"end_title": end_title,
 	}

@@ -30,7 +30,7 @@ const WorldData = preload("res://scripts/world_data.gd")
 var base := "http://127.0.0.1:8787"
 var code := ""
 var token := ""
-var player_id := 0
+var player_id: Variant = 0
 var frames := 0
 ## Одиночная партия: один игрок, без гостя (solo:true на /api/start).
 var solo := true
@@ -79,7 +79,8 @@ var _want_ws := false
 var _reconnect_timer := 0.0
 var _reconnect_attempt := 0
 var reconnects := 0
-var transport := "none"          # none / ws
+var transport := "none"          # none / ws / sse / poll
+var is_spectator := false
 var latency_ms := -1
 var connected := false
 var _ws_was_open := false
@@ -227,10 +228,12 @@ func set_ready(value: bool) -> void:
 
 
 ## «Начать игру» — только хост. Сервер сам проверит, можно ли.
-func start_now() -> bool:
+func start_now(solo_start := false) -> bool:
 	if code == "" or not is_host:
 		return false
 	var body := {"code": code, "token": token}
+	if solo_start:
+		body["solo"] = true
 	var r := await _json("POST", "/api/start", body)
 	if not r.get("ok", false):
 		failed.emit("старт: " + str(r.get("reason", "нет ответа")))
@@ -318,8 +321,8 @@ func _after_start(start: Dictionary) -> void:
 	room_id = str(start_payload.get("roomId", code))
 	epoch = int(start_payload.get("epoch", 0))
 	instance = ""
-	my_owner = 0
-	for p in start_payload.get("players", []):
+	my_owner = -1 if is_spectator else 0
+	for p in ([] if is_spectator else start_payload.get("players", [])):
 		if int(p.get("id", -1)) == player_id:
 			instance = str(p.get("instance", ""))
 			cmd_seq = int(p.get("nextClientSequence", 1)) - 1
@@ -351,7 +354,8 @@ func _after_start(start: Dictionary) -> void:
 		return
 	_started = true
 	_want_ws = true
-	_save_session()
+	if not is_spectator:
+		_save_session()
 	status.emit("в комнате")
 
 
@@ -712,7 +716,38 @@ func _process(dt: float) -> void:
 ## Выход из комнаты: сервер закрывает партию сразу, если ушёл последний игрок
 ## (иначе комната живёт 30 с и занимает MAX_ACTIVE_ROOMS). Запрос отправляем
 ## без ожидания: клиент уже уходит.
+## Наблюдатель: тот же мир и WS, но без деревни и без команд. Сервер
+## проверяет токен и отвечает 403 на /api/command.
+func spectate(base_url: String, room_code: String, player_name: String) -> bool:
+	base = base_url.rstrip("/")
+	var r := await _json("POST", "/api/spectate",
+		{"code": room_code, "name": player_name})
+	if not r.get("ok", false):
+		failed.emit(str(r.get("reason", "не удалось войти наблюдателем")))
+		return false
+	code = str(r.get("code", room_code))
+	token = str(r.get("token", ""))
+	player_id = str(r.get("playerId", ""))
+	my_owner = -1
+	is_spectator = true
+	solo = false
+	persist_session = false
+	_started = false
+	_start_done = false
+	var res := await _json("GET", "/api/resume?code=%s&token=%s" % [code, token], null)
+	if not res.get("ok", false):
+		failed.emit("наблюдатель: нет доступа к комнате")
+		return false
+	var start: Variant = res.get("start", {})
+	if not (start is Dictionary):
+		failed.emit("наблюдатель: сервер не отдал старт")
+		return false
+	await _after_start(start)
+	return _started
+
+
 func leave() -> void:
+	is_spectator = false
 	_started = false
 	_start_done = false
 	_want_ws = false
@@ -787,6 +822,8 @@ func _request(method: String, path: String, body) -> Array:
 ## решение — команду всё равно проверит комната; ответ только красит ромб и
 ## называет причину словами.
 func check_place(kind: String, payload: Dictionary) -> Dictionary:
+	if is_spectator:
+		return {"ok": false, "reason": "наблюдатель не командует"}
 	if code == "" or token == "":
 		return {"ok": false, "reason": "нет комнаты"}
 	var q := {"kind": kind}
@@ -801,6 +838,8 @@ func check_place(kind: String, payload: Dictionary) -> Dictionary:
 ## /api/command-state по commandId. HTTP 200 значит только «принято в
 ## очередь»; applied/rejected читаются из состояния.
 func send_command(type: String, payload: Dictionary) -> Dictionary:
+	if is_spectator:
+		return {"ok": false, "state": "rejected", "reason": "наблюдатель не командует"}
 	if instance.is_empty():
 		return {"ok": false, "state": "rejected", "reason": "нет комнаты"}
 	cmd_seq += 1

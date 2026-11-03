@@ -36,6 +36,7 @@ var _join_btn: Button
 var _ready_btn: Button
 var _start_btn: Button
 var _resume_btn: Button
+var _spectate_btn: Button
 var _back_btn: Button
 
 
@@ -109,6 +110,9 @@ func _build() -> void:
 	_join_btn.custom_minimum_size = Vector2(220, 46)
 	_join_btn.pressed.connect(func() -> void: join_game())
 	row.add_child(_join_btn)
+	_spectate_btn = UI.button("Смотреть", 16)
+	_spectate_btn.pressed.connect(func() -> void: spectate_game())
+	box.add_child(_spectate_btn)
 	_resume_btn = UI.button("Продолжить", 16)
 	_resume_btn.custom_minimum_size = Vector2(180, 46)
 	_resume_btn.visible = false
@@ -288,6 +292,30 @@ func toggle_ready() -> void:
 
 ## Вернуться в сохранённую партию (после перезапуска/падения): тот же токен и
 ## игрок, `/api/resume` отдаёт мир и снимок комнаты.
+func spectate_game() -> void:
+	var c := _code.text.strip_edges().to_upper()
+	if c == "":
+		status_text = "введите код комнаты"
+		return
+	if room == null:
+		room = LiveRoom.new()
+		room.name = "LiveRoom"
+		add_child(room)
+		room.lobby_update.connect(_on_lobby_update)
+		room.room_started.connect(_on_room_started)
+		room.failed.connect(_on_failed)
+		room.status.connect(_on_status)
+	if room.is_started():
+		room.leave()
+	status_text = "входим наблюдателем…"
+	var ok: bool = await room.spectate(base, c, _name.text.strip_edges())
+	if not ok:
+		status_text = "не удалось: " + room.last_error
+		return
+	joined = true
+	match_ready.emit(room)
+
+
 func resume_game() -> void:
 	if joined:
 		return
@@ -433,6 +461,7 @@ func state() -> Dictionary:
 		"players": _players_box.get_child_count(),
 		"start_visible": _start_btn.visible,
 		"resume_visible": _resume_btn.visible,
+		"spectate_visible": _spectate_btn.visible,
 		"start_disabled": _start_btn.disabled,
 		"ready_disabled": _ready_btn.disabled,
 		"base": base,
@@ -443,7 +472,8 @@ func press(text: String) -> bool:
 	var map := {
 		"Создать игру": _create_btn, "Войти по коду": _join_btn,
 		"Продолжить": _resume_btn, "Готов": _ready_btn,
-		"Начать игру": _start_btn, "Назад": _back_btn,
+		"Начать игру": _start_btn, "Смотреть": _spectate_btn,
+		"Назад": _back_btn,
 	}
 	var b: Variant = map.get(text)
 	if b == null:

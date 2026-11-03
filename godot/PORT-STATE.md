@@ -36,6 +36,9 @@
 - **сеть через VPS** — прод `374412.fornex.cloud` обновлён до build
   `f7892de14ea4`: 443 и 8443 отдают `/api/world`, `solo` и `4TX1`, кроссплей
   Godot↔Chrome проходит на обоих входах;
+- **наблюдатель** — «Смотреть» на экране сети: вход в начатую комнату по
+  коду, тот же мир и кадры, без деревни; команды и стройка запрещены,
+  бейдж «наблюдатель»;
 - **собранное приложение macOS** — `build/macos/4tox.app` с сервером и node
   внутри; `--smoke` сам поднимает сервер и входит в партию (SMOKE OK);
 - **экран итога** — победа/поражение, «Новый остров» / «В меню».
@@ -45,7 +48,7 @@
 | Гейт | Число |
 |---|---|
 | `./tests/run.sh` | 241 проверка, 0 FAIL (10 headless + net_loop + main_net_loop + кроссплей 16) |
-| `./tests/run.sh` после волны (с сетью) | 27 наборов PASS + 2 loopback, 384 проверки, 0 FAIL |
+| `./tests/run.sh` после волны (с сетью) | 28 наборов PASS + 2 loopback, 399 проверок, 0 FAIL |
 | `./tests/visual.sh` после волны (с тряской) | 54 кадра, 54 PASS, 0 FAIL |
 | `perf_world.gd` после волны (M4, 1440×900, 600 жителей) | 1,89 мс (**529 fps**) стоя, 6,63 мс (**151 fps**) в движении |
 | `./tests/visual.sh` | 54 кадра, 54 PASS, ≤0,5 % |
@@ -92,9 +95,10 @@
 | HUD-паритет: структура + SSIM-замер | `./tests/parity.sh` — `test_hud` 56/56, SSIM full 0,06–0,23 (диагностика) |
 | «Стоп» шлёт команду stop; экран итога победа/поражение | `test_hud.gd` — +5 проверок (56/56); кадры `shots/hud_defeat.png`, `hud_victory.png` |
 | События комнаты: peer-left/back, host-left, room-fault | `test_net_events.gd` — 6/6 (уход хоста, мир продолжается) |
+| Наблюдатель: вход, кадры, запрет команд, бейдж | `test_spectate.gd` — 14/14; `test_net_lobby_ui` — 19/19 |
 
-Полный headless-набор этой волны: `./tests/run.sh` — **27 наборов PASS + 2
-loopback + кроссплей**, 384 проверки, 0 FAIL; `test_play.gd` — 47/47,
+Полный headless-набор этой волны: `./tests/run.sh` — **28 наборов PASS + 2
+loopback + кроссплей**, 399 проверок, 0 FAIL; `test_play.gd` — 47/47,
 `test_hud.gd` — 46/46, `test_ruins.gd` — 30/30, `test_lobby.gd` — 20/20,
 `test_net_lobby_ui.gd` — 18/18, `test_main_net.gd` — 15/15,
 `test_resume.gd` — 15/15, `test_main_resume.gd` — 13/13, `test_shake.gd` — 11/11, `test_reconnect.gd` — 7/7,
@@ -161,7 +165,7 @@ Git: ветка `godot-port`, коммиты порта — исходники, 
 
 ```bash
 cd godot
-./tests/run.sh            # 27 наборов + 2 loopback + кроссплей, 384 проверки
+./tests/run.sh            # 28 наборов + 2 loopback + кроссплей, 399 проверок
 ./tests/play.sh           # сценарий мышью, 47 проверок
 ./tests/play.sh --shots   # то же с окном: shots/play_*.png
 ./tests/visual.sh         # 54 кадра ≤0,5 % (10–15 мин)
