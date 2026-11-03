@@ -47,9 +47,9 @@
 | `./tests/run.sh` | 241 проверка, 0 FAIL (10 headless + net_loop + main_net_loop + кроссплей 16) |
 | `./tests/run.sh` после волны (с сетью) | 27 наборов PASS + 2 loopback, 384 проверки, 0 FAIL |
 | `./tests/visual.sh` после волны (с тряской) | 54 кадра, 54 PASS, 0 FAIL |
-| `perf_world.gd` после волны (M4, загрузка машины) | 600 жителей: 3,46 мс (289 fps) стоя, 5,67 мс (176 fps) в движении |
+| `perf_world.gd` после волны (M4, 1440×900, 600 жителей) | 1,89 мс (**529 fps**) стоя, 6,63 мс (**151 fps**) в движении |
 | `./tests/visual.sh` | 54 кадра, 54 PASS, ≤0,5 % |
-| `perf_world.gd` | 600 жителей: 2,17 мс (461 fps) стоя, 4,19 мс (239 fps) в движении |
+| `perf_world.gd` | 600 жителей: 1,89 мс (529 fps) стоя, 6,63 мс (151 fps) в движении |
 | `node game/tools/mp.js` | PASS (18) |
 | `node game/tools/menu.js` | 303 проверки, PASS |
 | `node mapgen2/tools/game.js` | 81 проверка, PASS |
@@ -99,9 +99,9 @@ loopback + кроссплей**, 384 проверки, 0 FAIL; `test_play.gd` �
 `test_net_lobby_ui.gd` — 18/18, `test_main_net.gd` — 15/15,
 `test_resume.gd` — 15/15, `test_main_resume.gd` — 13/13, `test_shake.gd` — 11/11, `test_reconnect.gd` — 7/7,
 `test_combat_fx.gd` — 10/10, `test_net_events.gd` — 6/6, `test_patrol.gd` — 7/7, `test_sse.gd` — 7/7, `test_poll_fallback.gd` — 7/7.
-Браузерная регрессия после правок сервера: `mp.js` PASS, `menu.js` PASS
-(«все проверки игры пройдены»), `game.js` PASS («все проверки начала игры
-пройдены»).
+Браузерная регрессия (свежий прогон 2026-11-03): `mp.js` **PASS** (18),
+`menu.js` **303 проверки PASS** («все проверки игры пройдены»), `game.js`
+**81 проверка PASS** («все проверки начала игры пройдены»).
 
 Кадры сценария (окно, `./tests/play.sh --shots`): `shots/play_menu.png`,
 `play_start.png`, `play_hired.png`, `play_ghost.png`, `play_built.png`,
