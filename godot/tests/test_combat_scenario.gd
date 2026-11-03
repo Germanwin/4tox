@@ -6,6 +6,7 @@ extends SceneTree
 
 const Supervisor = preload("res://scripts/server_supervisor.gd")
 const Demo = preload("res://scripts/hybrid_demo.gd")
+const MatchFx = preload("res://scripts/match_fx.gd")
 
 var fails := 0
 var checks := 0
@@ -106,6 +107,65 @@ func _run() -> void:
 				return true
 		return false, 120.0)
 	check(ruin, "вражеская постройка стала завалом")
+
+	# Если после завала партия окончена — фиксируем исход и не шлём команды
+	# в закрытую комнату (сервер ответит game_over).
+	var over := await _wait_for(func() -> bool:
+		return bool(hud.snap.get("over", false)), 8.0)
+	check(over, "партия окончена после завала")
+	if over:
+		var wv: Variant = hud.snap.get("winner", null)
+		var win: bool = wv != null and int(wv) == demo.my_owner()
+		print("  .. исход: winner=", wv, " (мой ", demo.my_owner(), ")")
+		check(win, "победа игрока")
+		_finish()
+		return
+
+	# Ответный бой: если кто-то из троих уже погиб у лагеря — он был; иначе
+	# ведём уцелевших на кольцо военного лагеря, где стоят защитники.
+	var alive: Array = []
+	for v in hud.snap.get("villagers", []):
+		if str(v.get("id", "")) in ids and not bool(v.get("dead", false)):
+			alive.append(str(v.get("id", "")))
+	print("  .. после завала живых: ", alive.size(), " из ", ids.size())
+	var hurt := alive.size() < ids.size()
+	var wc := _enemy_building("warcamp")
+	if not hurt and not wc.is_empty() and not alive.is_empty():
+		# Клетка СНАРУЖИ пятна, вплотную к лагерю: защитники на кольце
+		# увидят воинов (агра 8), а путь не упирается в закрытое пятно.
+		var outs: Array = [
+			Vector2i(int(wc["x"]) - 1, int(wc["y"]) + 2),
+			Vector2i(int(wc["x"]) + 5, int(wc["y"]) + 2),
+			Vector2i(int(wc["x"]) + 2, int(wc["y"]) - 1),
+			Vector2i(int(wc["x"]) + 2, int(wc["y"]) + 5),
+		]
+		var aim: Vector2i = outs[0]
+		var best := INF
+		for c in outs:
+			for v in hud.snap.get("villagers", []):
+				if str(v.get("id", "")) not in alive:
+					continue
+				var d: float = abs(float(c.x) - float(v.get("x", 0))) + abs(float(c.y) - float(v.get("y", 0)))
+				if d < best:
+					best = d
+					aim = c
+		hud.open_panel("army")
+		await create_timer(0.2).timeout
+		hud.pick_group(alive)
+		hud.begin_order()
+		await hud.map_click(aim)
+		hurt = await _wait_for(func() -> bool:
+			var left := 0
+			for v in hud.snap.get("villagers", []):
+				if str(v.get("id", "")) not in ids:
+					continue
+				if bool(v.get("dead", false)):
+					continue
+				left += 1
+				if int(v.get("hp", 99)) < 25:
+					return true
+			return left < ids.size(), 90.0)
+	check(hurt, "наши воины ранены или погибли (ответный бой)")
 	_finish()
 
 
