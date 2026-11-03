@@ -45,7 +45,7 @@
 | Гейт | Число |
 |---|---|
 | `./tests/run.sh` | 241 проверка, 0 FAIL (10 headless + net_loop + main_net_loop + кроссплей 16) |
-| `./tests/run.sh` после волны (с сетью) | 26 наборов PASS + 2 loopback, 372 проверки, 0 FAIL |
+| `./tests/run.sh` после волны (с сетью) | 27 наборов PASS + 2 loopback, 379 проверок, 0 FAIL |
 | `./tests/visual.sh` после волны (с тряской) | 54 кадра, 54 PASS, 0 FAIL |
 | `perf_world.gd` после волны (M4, загрузка машины) | 600 жителей: 3,46 мс (289 fps) стоя, 5,67 мс (176 fps) в движении |
 | `./tests/visual.sh` | 54 кадра, 54 PASS, ≤0,5 % |
@@ -82,7 +82,8 @@
 | Руины: атлас по типу, ppu/mul кадра | `test_ruins.gd` — 30/30; кадр `shots/ruins.png` (5 завалов) |
 | Тряска деревьев по `treeHits` | `test_shake.gd` — 11/11; кадр `shots/shake.png` |
 | Переподключение WS 300/600/1200 + пинг | `test_reconnect.gd` — 7/7 (обрыв, кадры пошли, пинг) |
-| Запасной опрос `/api/resume` после пяти неудач WS | `test_poll_fallback.gd` — 7/7 (poll-кадры, возврат ws) |
+| Запасной SSE `/api/events` после пяти неудач WS | `test_sse.gd` — 7/7 (снимки, возврат ws) |
+| Последний запасной канал — опрос `/api/resume` | `test_poll_fallback.gd` — 7/7 (poll-кадры, возврат ws) |
 | HP-полосы построек и жителей, завал | `test_combat_fx.gd` — 10/10; кадр `shots/combat.png` |
 | Кольцо патруля военного лагеря | `test_patrol.gd` — 7/7; на кадре `shots/combat.png` |
 | Боевой сценарий: приказ → завал врага | `./tests/combat.sh` — 12/12 (бот → лесорубы → казарма → 3 воина → приказ на лагерь → rubble) |
@@ -90,12 +91,12 @@
 | HUD-паритет: структура + SSIM-замер | `./tests/parity.sh` — `test_hud` 51/51, SSIM full 0,03–0,28 (диагностика) |
 | События комнаты: peer-left/back, host-left, room-fault | `test_net_events.gd` — 6/6 (уход хоста, мир продолжается) |
 
-Полный headless-набор этой волны: `./tests/run.sh` — **26 наборов PASS + 2
-loopback + кроссплей**, 372 проверки, 0 FAIL; `test_play.gd` — 47/47,
+Полный headless-набор этой волны: `./tests/run.sh` — **27 наборов PASS + 2
+loopback + кроссплей**, 379 проверок, 0 FAIL; `test_play.gd` — 47/47,
 `test_hud.gd` — 46/46, `test_ruins.gd` — 30/30, `test_lobby.gd` — 20/20,
 `test_net_lobby_ui.gd` — 18/18, `test_main_net.gd` — 15/15,
 `test_resume.gd` — 15/15, `test_main_resume.gd` — 13/13, `test_shake.gd` — 11/11, `test_reconnect.gd` — 7/7,
-`test_combat_fx.gd` — 10/10, `test_net_events.gd` — 6/6, `test_patrol.gd` — 7/7, `test_poll_fallback.gd` — 7/7.
+`test_combat_fx.gd` — 10/10, `test_net_events.gd` — 6/6, `test_patrol.gd` — 7/7, `test_sse.gd` — 7/7, `test_poll_fallback.gd` — 7/7.
 Браузерная регрессия после правок сервера: `mp.js` PASS, `menu.js` PASS
 («все проверки игры пройдены»), `game.js` PASS («все проверки начала игры
 пройдены»).
@@ -115,7 +116,7 @@ Git: ветка `godot-port`, коммиты порта — исходники, 
   доходит, вражеский лагерь становится **завалом**. Ответный урон и падение
   ратуши в этом прогоне не наблюдались; правила боя проверены движком,
   картинка HP/завала — `test_combat_fx`.
-- SSE-fallback (открытый вопрос §6.2); сейчас запасной канал — опрос `/api/resume`, а не SSE.
+- SSE без gzip (клиент просит identity) — работает, но трафик больше, чем у браузера.
 - Картинка состояний: пни и подписи жителей (тряска, руины, кольца
   патруля уже подключены).
 
@@ -136,14 +137,14 @@ Git: ветка `godot-port`, коммиты порта — исходники, 
 
 ## Следующее
 
-1. SSE-fallback (вопрос §6.2) и отдельный экран host-left.
+1. Отдельный экран host-left.
 2. Пни и подписи жителей.
 3. Довести бой: ответный урон и падение ратуши, «Стоп» в сценарии.
 4. Запустить `.exe` и замерить 600 жителей на Windows; подпись/нотаризация.
 
 ## Не сделано (честно)
 
-- SSE-fallback, отдельный экран host-left.
+- Отдельный экран host-left.
 - Наблюдатель, лента событий с кликом, диагностический экран.
 - Пни и подписи жителей; `hold fire` отдельной кнопкой.
 - Пиксельный паритет HUD: `parity.sh` пишет SSIM 0,03–0,28, структурный
@@ -154,7 +155,7 @@ Git: ветка `godot-port`, коммиты порта — исходники, 
 
 ```bash
 cd godot
-./tests/run.sh            # 26 наборов + 2 loopback + кроссплей, 372 проверки
+./tests/run.sh            # 27 наборов + 2 loopback + кроссплей, 379 проверок
 ./tests/play.sh           # сценарий мышью, 47 проверок
 ./tests/play.sh --shots   # то же с окном: shots/play_*.png
 ./tests/visual.sh         # 54 кадра ≤0,5 % (10–15 мин)

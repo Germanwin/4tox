@@ -89,6 +89,12 @@ var _fallback := false
 var _fallback_timer := 0.0
 var _ws_retry_timer := 0.0
 var _fallback_fails := 0
+## Запасной SSE: HTTPClient читает text/event-stream с сервера.
+var _sse: HTTPClient = null
+var _sse_buf := ""
+var _sse_state := ""
+var _sse_fails := 0
+var _sse_retry := 0.0
 
 
 func begin(url: String) -> void:
@@ -422,9 +428,142 @@ func resume(url := "") -> bool:
 	return true
 
 
+func _start_sse(reason: String) -> void:
+	if _sse != null or code == "" or token == "":
+		return
+	_close_fallback()
+	_sse_fails = 0
+	_sse_buf = ""
+	_sse_state = "connecting"
+	_sse_retry = 0.0
+	var parts := _origin_parts()
+	_sse = HTTPClient.new()
+	var err: int
+	if bool(parts[2]):
+		err = _sse.connect_to_host(str(parts[0]), int(parts[1]), TLSOptions.client())
+	else:
+		err = _sse.connect_to_host(str(parts[0]), int(parts[1]))
+	if err != OK:
+		_sse = null
+		_start_fallback("SSE: не удалось подключиться")
+		return
+	transport = "sse"
+	connected = true
+	connection.emit("sse", reason)
+
+
+func _origin_parts() -> Array:
+	var s := base
+	var tls := s.begins_with("https://")
+	s = s.trim_prefix("https://").trim_prefix("http://")
+	var slash := s.find("/")
+	if slash >= 0:
+		s = s.substr(0, slash)
+	var host := s
+	var port := 443 if tls else 80
+	var colon := s.rfind(":")
+	if colon > 0 and s.substr(colon + 1).is_valid_int():
+		host = s.substr(0, colon)
+		port = int(s.substr(colon + 1))
+	return [host, port, tls]
+
+
+func _sse_poll(dt: float) -> void:
+	if _sse == null:
+		return
+	_sse.poll()
+	var st := _sse.get_status()
+	if st == HTTPClient.STATUS_DISCONNECTED or st == HTTPClient.STATUS_CANT_CONNECT:
+		_sse_fail("соединение закрыто")
+		return
+	if st == HTTPClient.STATUS_CONNECTED and _sse_state == "connecting":
+		var err := _sse.request(HTTPClient.METHOD_GET,
+			"/api/events?code=%s&token=%s" % [code, token],
+			PackedStringArray(["Accept-Encoding: identity", "Cache-Control: no-cache"]))
+		if err != OK:
+			_sse_fail("запрос не отправился")
+			return
+		_sse_state = "requesting"
+		return
+	if st == HTTPClient.STATUS_REQUESTING and _sse_state == "requesting":
+		return
+	if st == HTTPClient.STATUS_BODY:
+		if _sse_state != "body":
+			_sse_state = "body"
+			_sse_fails = 0
+			transport = "sse"
+			connected = true
+			connection.emit("sse", "поток открыт")
+		while true:
+			var chunk := _sse.read_response_body_chunk()
+			if chunk.size() == 0:
+				break
+			_sse_buf += chunk.get_string_from_utf8()
+		_parse_sse()
+	elif st == HTTPClient.STATUS_CONNECTING and _sse_retry > 0.0:
+		_sse_retry -= dt
+		if _sse_retry <= 0.0:
+			_close_sse()
+			_start_sse("SSE: повтор")
+
+
+func _parse_sse() -> void:
+	while true:
+		var idx := _sse_buf.find("\n\n")
+		if idx < 0:
+			return
+		var block := _sse_buf.substr(0, idx)
+		_sse_buf = _sse_buf.substr(idx + 2)
+		var kind := "message"
+		var data := ""
+		for line in block.split("\n"):
+			if line.begins_with("event: "):
+				kind = line.substr(7).strip_edges()
+			elif line.begins_with("data: "):
+				data += line.substr(6)
+		if data == "":
+			continue
+		var parsed: Variant = JSON.parse_string(data)
+		if not (parsed is Dictionary):
+			continue
+		var d: Dictionary = parsed
+		if kind == "snapshot":
+			latest_snapshot = d
+			frames += 1
+			snapshot.emit(d)
+		elif kind in ["peer-left", "peer-back", "host-left", "host-back", "room-fault", "room-recovered"]:
+			net_event.emit(kind, d)
+
+
+func _sse_fail(reason: String) -> void:
+	_sse_fails += 1
+	_close_sse()
+	if _sse_fails >= 3:
+		_sse_fails = 0
+		_start_fallback("SSE не отвечает: " + reason)
+		return
+	_sse_retry = 1.5
+	_start_sse("SSE: повтор после ошибки")
+
+
+func _close_sse() -> void:
+	if _sse != null:
+		_sse.close()
+		_sse = null
+	_sse_buf = ""
+	_sse_state = ""
+	_sse_retry = 0.0
+
+
+func _close_fallback() -> void:
+	_fallback = false
+	_fallback_timer = 0.0
+
+
 func _start_fallback(reason: String) -> void:
 	if _fallback or code == "":
 		return
+	_close_sse()
 	_fallback = true
 	_fallback_fails = 0
 	_fallback_timer = 0.0
@@ -478,7 +617,7 @@ func _schedule_reconnect(reason: String) -> void:
 		return
 	_reconnect_attempt += 1
 	if _reconnect_attempt > RETRY_MS.size():
-		_start_fallback("WS недоступен: " + reason)
+		_start_sse("WS недоступен: " + reason)
 		return
 	_reconnect_timer = float(RETRY_MS[_reconnect_attempt - 1])
 	connection.emit("reconnecting", "%s · попытка %d" % [reason, _reconnect_attempt])
@@ -505,6 +644,8 @@ func _process(dt: float) -> void:
 		_reconnect_timer -= dt
 		if _reconnect_timer <= 0.0:
 			_open_ws()
+	if _sse != null:
+		_sse_poll(dt)
 	if _fallback and _start_done:
 		_fallback_timer -= dt
 		_ws_retry_timer -= dt
@@ -530,6 +671,7 @@ func _process(dt: float) -> void:
 			_ws_was_open = true
 			_fallback = false
 			_fallback_fails = 0
+			_close_sse()
 			connected = true
 			transport = "ws"
 			if _reconnect_attempt > 0:
@@ -575,6 +717,7 @@ func leave() -> void:
 	_start_done = false
 	_want_ws = false
 	_fallback = false
+	_close_sse()
 	_reconnect_attempt = 0
 	connected = false
 	transport = "none"

@@ -23,7 +23,7 @@
 | 5 | Экран сбоя | сбой подсистемы, мир явно остановлен, повтор/диагностика | частично | `sup` — экран сбоя с причиной и логом; мир не начинается; повтора кнопкой нет |
 | 6 | Лобби | создать/войти по коду, имя, max, код, состав, готов, старт хоста, выход | есть (локально) | `scripts/net_lobby.gd`: «Создать игру»/«Войти по коду», имя, код, состав с цветами, «Готов», «Начать игру» (хост), «Назад» — `test_lobby` 20/20, `test_net_lobby_ui` 18/18, `test_main_net` 15/15; ENet в главном пути больше нет |
 | 7 | Лобби-служебное | `/api/build`, protocol, capacity, TTL, max rooms | частично | `/api/health` + `/api/build` есть (`api`), `server_capacity` сервер отдаёт; экран сети показывает причину блока словами, но версию/протокол/capacity не выводит |
-| 8 | Транспорт | WS `4TX1` v2; SSE fallback — если принят (§6.2); reconnect 300/600/1200, ping/pong, gzip | частично | WS + reconnect (`test_reconnect` 7/7), пинг `/api/ping`; после пяти неудач — запасной опрос `/api/resume` 0,5 с (`test_poll_fallback` 7/7), это **не SSE**; SSE-fallback не сделан (вопрос §6.2); gzip — SSE |
+| 8 | Транспорт | WS `4TX1` v2; SSE fallback — если принят (§6.2); reconnect 300/600/1200, ping/pong, gzip | есть | WS; reconnect 300/600/1200 (`test_reconnect` 7/7); после пяти неудач — SSE `/api/events` (`test_sse` 7/7), если и он не отвечает — опрос `/api/resume` (`test_poll_fallback` 7/7); пинг `/api/ping`; SSE читается без gzip (identity), поэтому сжатия на клиенте нет |
 | 9 | Сетевые события | host-left/back, peer-left, room fault, бейдж | частично | JSON-события комнаты приходят по WS; строка HUD + заметка в бейдже («хост вышел», «X вышел», «сбой») — `test_net_events` 6/6, `test_hud`; отдельного экрана нет; запасной опрос — `test_poll_fallback` |
 | 10 | Resume | F5/перезапуск, `/api/resume`, сессия, гидратация | есть | `user://net-session.cfg` (code/token/player), `LiveRoom.resume`, автовозврат в `main` — `test_resume` 15/15, `test_main_resume` 13/13; локальный сервер после штатного выхода гаснет, поэтому возврат — после падения клиента или к VPS |
 | 11 | Наблюдатель | вход спектатором, бейдж, нет команд | нет | открытый вопрос §6.2 |
@@ -55,7 +55,7 @@
 | 37 | Безопасность | токены, HTTPS, cert, no secrets in logs, server validation | есть | токены/владелец проверяет сервер; wss с проверкой сертификата; в лог не пишутся токены |
 | 38 | Браузер-регрессия | mp.js/menu.js/game.js; аддитивные правки | есть | все три PASS после правок сервера (см. PORT-STATE) |
 | 39 | Сборка | Node bundle, port, health, logs, shutdown, macOS/Windows, signing | частично | `tools/package.sh` → `build/macos/4tox.app` (415 МБ) с сервером и node, smoke `--smoke` — SMOKE OK (3/3, кадр 30); `build/windows/4tox.exe` (115 МБ) собран, но **не запускался** (нет Windows); подписи нет |
-| 40 | Тесты | run/visual/play/parity/vps/package + адверсарий | частично | run 26/372, visual 54, play 47, combat 12, parity (test_hud 51 + SSIM 0,03–0,28), vps 443/8443, package .app smoke; `.exe` не запускался, адверсарий не формализован |
+| 40 | Тесты | run/visual/play/parity/vps/package + адверсарий | частично | run 27/379, visual 54, play 47, combat 12, parity (test_hud 51 + SSIM 0,03–0,28), vps 443/8443, package .app smoke; `.exe` не запускался, адверсарий не формализован |
 
 ## Что это значит
 
@@ -64,7 +64,8 @@
 меню без паузы, экран итога. Это подтверждают `play.sh` (мышью), `bot`,
 `sup` и `api`.
 
-Не сделано и не выдаётся за сделанное: HTTP-лобби в Godot (сеть между
-игроками), resume после перезапуска, SSE-fallback/reconnect, выкладка на VPS,
-сборка .app/.exe (нет шаблонов), руины/тряска деревьев/подписи/кольца
-пни/подписи, боевой сценарий мышью, замер на Windows.
+Не сделано и не выдаётся за сделанное: пиксельный HUD-паритет (SSIM
+0,03–0,28), ответный урон/падение ратуши в боевом сценарии, пни и подписи
+жителей, отдельный экран host-left, спектатор, запуск `.exe` и замер на
+Windows, подпись/нотаризация. HTTP-лобби, resume, reconnect/SSE, VPS и
+сборка `.app`/`.exe` уже сделаны и подтверждены.
