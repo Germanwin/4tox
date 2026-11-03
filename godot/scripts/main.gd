@@ -39,6 +39,7 @@ var edit_snapshot: Dictionary = {}
 var pending_order: Array = []
 var preview_size := 64
 var _gallery_return := State.MENU
+var _smoke_mode := false
 
 func _ready() -> void:
 	ToxAtlasDB.ensure_loaded()
@@ -87,9 +88,15 @@ func _ready() -> void:
 	_connect_lobby()
 	_build_loading()
 	_connect_view()
+	for a in OS.get_cmdline_user_args():
+		if a == "--smoke":
+			_smoke_mode = true
 	menu.show_main(false)
 	call_deferred("_make_preview", 64)
-	call_deferred("_auto_resume")
+	if _smoke_mode:
+		call_deferred("_auto_smoke")
+	else:
+		call_deferred("_auto_resume")
 	call_deferred("_auto_shot")
 
 func _build_loading() -> void:
@@ -276,6 +283,32 @@ func _close_hybrid_to_menu() -> void:
 ## сервере. Локальный сервер после выхода приложения гаснет, поэтому resume
 ## имеет смысл для VPS/второго игрока/падения клиента; если комнаты нет,
 ## сессия честно стирается и остаётся меню.
+## Проверка СОБРАННОГО приложения: поднять встроенный сервер, начать
+## одиночную партию, дождаться мира и кадра, выйти с кодом 0. Запускается
+## флагом `-- --smoke`; так package.sh проверяет .app, а не только проект.
+func _auto_smoke() -> void:
+	print("SMOKE: старт приложения")
+	await _start_hybrid(64, "тихая-долина-701", false)
+	var t0 := Time.get_ticks_msec()
+	while Time.get_ticks_msec() - t0 < 45000:
+		await get_tree().process_frame
+		if demo != null and demo.visible and demo._layer != null \
+				and demo.hud() != null and not demo.hud().snap.is_empty():
+			var snap: Dictionary = demo.hud().snap
+			print("SMOKE OK · построек ", (demo._layer.buildings as Array).size(),
+				" · жителей ", (demo._layer.villagers as Array).size(),
+				" · кадр ", int(snap.get("revision", 0)),
+				" · сервер ", server.base if server != null else "?")
+			if server != null:
+				server.stop()
+			get_tree().quit(0)
+			return
+	print("SMOKE FAIL · сервер ", server.last_error if server != null else "?")
+	if server != null:
+		server.stop()
+	get_tree().quit(1)
+
+
 func _auto_resume() -> void:
 	if net_lobby == null or not LiveRoom.session_exists():
 		return

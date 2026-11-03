@@ -8,6 +8,7 @@ shots/
 # Локальные логи и выгрузки.
 *.log
 export/
+build/
 
 # Состояние сервера, если тест запускал его из каталога godot/
 game/server/var/
@@ -23,3 +24,6 @@ tests/fixtures/*.png
 tests/fixtures/*.png.import
 tests/fixtures/m96/
 tests/fixtures/m192/
+
+# Сборка .app/.exe (офлайн-артефакт)
+build/

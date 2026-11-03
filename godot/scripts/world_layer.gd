@@ -27,6 +27,16 @@ var css := Vector2(1440, 900)
 var town_colors: Array = ["#4a90d9"]
 var lod := 0.0
 var show_plots := true
+## Тряска деревьев по treeHits: id → время удара (мс по часам клиента).
+## Трясущееся дерево исключается из общего меша и рисуется отдельно со
+## сдвигом — иначе пришлось бы пересобирать меш тысячи объектов каждый кадр.
+var shake: Dictionary = {}
+var shake_now_ms := 0
+const SHAKE_MS := 440
+const SHAKE_HZ := 7.0
+const SHAKE_DECAY := 9.0
+const SHAKE_FLOOR := 0.02
+var _shake_sig := ""
 
 var _edge_b: Dictionary = {}
 var _edge_v: Dictionary = {}
@@ -72,6 +82,7 @@ func _ready() -> void:
 
 
 func _draw() -> void:
+	shake_now_ms = Time.get_ticks_msec()
 	var t0 := Time.get_ticks_usec()
 	var z := float(cam["zoom"])
 	_box = _view_box(z)
@@ -83,12 +94,14 @@ func _draw() -> void:
 	if key != _mesh_key:
 		_mesh_key = key
 		_mesh_dirty = true
+	_expire_shakes()
 	if _mesh_dirty:
 		_build_nature_mesh(z)
 	if show_plots:
 		_draw_plots(z)
 	if _nature_mesh != null:
 		draw_mesh(_nature_mesh, nature.atlas)
+	_draw_shaking_trees(z)
 	_draw_buildings_villagers(z)
 	draw_ms = float(Time.get_ticks_usec() - t0) / 1000.0
 
@@ -170,6 +183,9 @@ func _build_nature_mesh(z: float) -> void:
 		var b := i * 11
 		var ox := _op[b]
 		var oy := _op[b + 1]
+		var oid := str(objects[i].get("id", "")) if i < objects.size() else ""
+		if oid != "" and _shake_age(oid) >= 0:
+			continue
 		if ox < _box.position.x or ox > _box.end.x or oy < _box.position.y or oy > _box.end.y:
 			continue
 		var sc := base * _op[b + 8]
@@ -213,6 +229,92 @@ func _build_nature_mesh(z: float) -> void:
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	_nature_mesh = mesh
+
+
+static func shake_value(age_ms: int) -> float:
+	if age_ms < 0 or age_ms > SHAKE_MS:
+		return 0.0
+	var age := float(age_ms) / 1000.0
+	var amp := exp(-age * SHAKE_DECAY)
+	if amp < SHAKE_FLOOR:
+		return 0.0
+	return sin(age * SHAKE_HZ * TAU) * amp
+
+
+## Возраст удара в мс, если дерево трясётся; -1 — стоит.
+func _shake_age(id: String) -> int:
+	if not shake.has(id):
+		return -1
+	var age := shake_now_ms - int(shake[id])
+	if age < 0 or age > SHAKE_MS:
+		return -1
+	return age
+
+
+func set_shake(ids: Dictionary, now_ms: int) -> void:
+	shake_now_ms = now_ms
+	for id in ids:
+		shake[str(id)] = int(ids[id])
+	var sig := ""
+	for id in shake:
+		if _shake_age(str(id)) >= 0:
+			sig += str(id) + ","
+	if sig != _shake_sig:
+		_shake_sig = sig
+		_mesh_dirty = true
+	queue_redraw()
+
+
+func shaking_ids() -> Array:
+	var out: Array = []
+	for id in shake:
+		if _shake_age(str(id)) >= 0:
+			out.append(str(id))
+	return out
+
+
+func _expire_shakes() -> void:
+	var changed := false
+	for id in shake.keys():
+		if shake_now_ms - int(shake[id]) > SHAKE_MS:
+			shake.erase(id)
+			changed = true
+	if changed:
+		_shake_sig = ""
+		for id in shake:
+			_shake_sig += str(id) + ","
+		_mesh_dirty = true
+
+
+func _draw_shaking_trees(z: float) -> void:
+	if shake.is_empty() or nature == null or _op.is_empty():
+		return
+	var tw := float(nature.atlas.get_width())
+	var th := float(nature.atlas.get_height())
+	var base := z / float(nature.ppu) * float(nature.mul)
+	var half := css * 0.5
+	for i in range(mini(_on, objects.size())):
+		var id := str(objects[i].get("id", ""))
+		var age := _shake_age(id)
+		if age < 0:
+			continue
+		var b := i * 11
+		var sc := base * _op[b + 8]
+		var dw := _op[b + 4] * sc
+		var dh := _op[b + 5] * sc
+		if dw < 2.5:
+			continue
+		var ox := _op[b]
+		var oy := _op[b + 1]
+		var px := (ox - oy - float(cam["x"]) + float(cam["y"])) * z * 0.5
+		var py := (ox + oy - float(cam["x"]) - float(cam["y"])) * z * 0.25
+		if z >= 26.0:
+			px += sin(_op[b + 9]) * z * 0.018
+		px += shake_value(age) * z * 0.05
+		var qx := half.x + px - dw * _op[b + 6]
+		var qy := half.y + py - dh * _op[b + 7]
+		var uv := Rect2(_op[b + 2], _op[b + 3], _op[b + 4], _op[b + 5])
+		draw_texture_rect_region(nature.atlas, Rect2(qx, qy, dw, dh), uv, Color.WHITE)
 
 
 func _draw_plots(z: float) -> void:

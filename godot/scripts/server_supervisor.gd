@@ -49,6 +49,8 @@ func find_project_dir() -> String:
 	var exe := OS.get_executable_path().get_base_dir()
 	candidates.append(exe)
 	candidates.append(exe.path_join("server"))
+	# macOS .app: Contents/MacOS/4tox → Contents/Resources/server.
+	candidates.append(exe.path_join("../Resources/server").simplify_path())
 	candidates.append(exe.path_join("..").simplify_path())
 	for dir in candidates:
 		var js := dir.path_join("game/server/server.js")

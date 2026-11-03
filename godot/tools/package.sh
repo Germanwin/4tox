@@ -79,4 +79,17 @@ else
   echo "  ОШИБКА: сервер из бандла не ответил; лог $OUT/server.log"
   exit 1
 fi
+
+APP="$OUT/macos/4tox.app/Contents/MacOS/4tox"
+if [ -x "$APP" ]; then
+  echo "== smoke собранного .app: сервер внутри, мир и кадр"
+  if "$APP" --headless -- --smoke > "$OUT/smoke.log" 2>&1; then
+    grep -E "SMOKE" "$OUT/smoke.log" | tail -2
+    echo "  приложение само подняло сервер и вошло в партию"
+  else
+    echo "  ОШИБКА: smoke .app не прошёл; лог $OUT/smoke.log"
+    tail -20 "$OUT/smoke.log"
+    exit 1
+  fi
+fi
 echo "готово: $OUT/"

@@ -105,6 +105,8 @@ var _view_villagers: Array = []
 var _last_sim_ms := 0
 var _sim_recv_ms := 0
 var _anim_cfg: Dictionary = {}
+## treeHits: id дерева → время удара по часам клиента (мс).
+var _tree_shake: Dictionary = {}
 
 
 func _ready() -> void:
@@ -149,6 +151,7 @@ func open_live(url: String, opts := {}) -> void:
 	_last_snap = {}
 	_samples.clear()
 	_view_villagers = []
+	_tree_shake.clear()
 	_match_emitted = false
 	_army_ids = []
 	_selected = ""
@@ -479,6 +482,7 @@ func _on_live_snapshot(s: Dictionary) -> void:
 	if not colors.is_empty():
 		_layer.town_colors = colors
 	_apply_villagers(s)
+	_apply_tree_hits(s)
 	if not _live_hall_done:
 		for b in _layer.buildings:
 			if str(b.get("type", "")) == "townhall" and int(b.get("owner", 0)) == 0:
@@ -571,6 +575,27 @@ func _apply_villagers(s: Dictionary) -> void:
 		_view_villagers.append(view)
 	_layer.villagers = _view_villagers
 	_interpolate_villagers()
+
+
+## Удары по деревьям: сервер уже посчитал, КАКОЕ дерево и КОГДА ударили;
+## клиент только заводит тряску на те же id. Возраст из кадра переносит фазу,
+## если кадр приехал с задержкой.
+func _apply_tree_hits(s: Dictionary) -> void:
+	var hits: Array = s.get("treeHits", [])
+	if hits.is_empty():
+		return
+	var now_ms := Time.get_ticks_msec()
+	for h in hits:
+		var id := str(h.get("id", ""))
+		if id == "":
+			continue
+		_tree_shake[id] = now_ms - int(h.get("age", 0))
+	if _tree_shake.size() > 64:
+		for id in _tree_shake.keys():
+			if now_ms - int(_tree_shake[id]) > 440:
+				_tree_shake.erase(id)
+	if _layer != null:
+		_layer.set_shake(_tree_shake, now_ms)
 
 
 func _trim_samples(arr: Array, cutoff: int) -> Array:
