@@ -75,6 +75,7 @@
 | Автовозврат при запуске приложения | `test_main_resume.gd` 13/13 (новый main сам входит в ту же комнату) |
 | VPS: health/WLD1/solo/WS/leave на 443 и 8443 | `node tests/vps_smoke.js <origin>` — PASS оба входа, build `7b7d4da4e3ce` |
 | Кроссплей через VPS на 443 и 8443 | `test/vps_crossplay.gd` — 17/17 на обоих |
+| Полный путь приложения через VPS | `test/vps_main.gd` — 14/14 на 8443 и 443 (меню → адрес VPS → код → Chrome → матч) |
 | Руины: атлас по типу, ppu/mul кадра | `test_ruins.gd` — 30/30; кадр `shots/ruins.png` (5 завалов) |
 | Тряска деревьев по `treeHits` | `test_shake.gd` — 11/11; кадр `shots/shake.png` |
 
