@@ -260,6 +260,11 @@ func _run() -> void:
 	hud.set_net("ws", -1, false, false)
 	await process_frame
 	check(str(hud.state()["badge"]).find("нет связи") >= 0, "бейдж: нет связи")
+	hud.set_net("ws", 12, true, true)
+	hud.set_net_note("хост вышел")
+	await process_frame
+	check(str(hud.state()["badge"]).find("хост вышел") >= 0, "бейдж: заметка host-left")
+	hud.set_net_note("")
 	hud.set_mode("solo")
 
 	# Меню

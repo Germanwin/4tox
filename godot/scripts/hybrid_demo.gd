@@ -467,6 +467,7 @@ func _on_live_connection(state: String, detail: String) -> void:
 	if state == "online":
 		if _hud.status_text.begins_with("связь"):
 			_hud.status_text = ""
+		_hud.set_net_note("")
 	elif state == "reconnecting":
 		_hud.status_text = "связь: " + detail
 	elif state == "lost":
@@ -482,14 +483,22 @@ func _on_net_event(kind: String, data: Dictionary) -> void:
 	match kind:
 		"peer-left":
 			_hud.status_text = "%s покинул игру" % str(data.get("name", "игрок"))
-		"peer-back":
-			_hud.status_text = "%s вернулся" % str(data.get("name", "игрок"))
+			_hud.set_net_note("%s вышел" % str(data.get("name", "игрок")))
 		"host-left":
 			_hud.status_text = "хост вышел · мир продолжается"
+			_hud.set_net_note("хост вышел")
+		"peer-back":
+			_hud.status_text = "%s вернулся" % str(data.get("name", "игрок"))
+			_hud.set_net_note("")
+		"host-back":
+			_hud.status_text = "хост вернулся"
+			_hud.set_net_note("")
 		"room-fault":
 			_hud.status_text = "сбой комнаты: " + str(data.get("message", ""))
+			_hud.set_net_note("сбой")
 		"room-recovered":
 			_hud.status_text = "комната восстановлена"
+			_hud.set_net_note("")
 		_:
 			return
 	_hud.refresh()

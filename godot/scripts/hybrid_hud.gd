@@ -46,6 +46,7 @@ var net_transport := "none"
 var net_ms := -1
 var net_host := false
 var net_online := false
+var net_note := ""
 ## Поколение панели: асинхронная команда (например, «Отменить» с тремя
 ## поворотами) не должна закрыть панель, которую игрок уже открыл заново.
 var _panel_gen := 0
@@ -306,6 +307,12 @@ func set_minimap_camera(x: float, y: float, z: float, viewport: Vector2) -> void
 		_minimap.set_camera(x, y, z, viewport)
 
 
+func set_net_note(text: String) -> void:
+	net_note = text
+	if _badge != null:
+		refresh()
+
+
 func set_net(transport: String, ms: int, host: bool, online: bool) -> void:
 	net_transport = transport
 	net_ms = ms
@@ -387,7 +394,8 @@ func refresh() -> void:
 				var role := "хост" if net_host else "гость"
 				var tr := net_transport if net_transport != "none" else "…"
 				var ping := (" · %d мс" % net_ms) if net_ms >= 0 else ""
-				_badge.text = "%s · %s%s" % [role, tr, ping]
+				var note := (" · " + net_note) if net_note != "" else ""
+				_badge.text = "%s · %s%s%s" % [role, tr, ping, note]
 				_badge.add_theme_color_override("font_color", UI.CREAM)
 		else:
 			_badge.text = "" if mode == "solo" else ("локальный сервер · %s" % mode)
