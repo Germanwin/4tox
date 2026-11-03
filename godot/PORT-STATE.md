@@ -90,7 +90,7 @@
 | Боевой сценарий: приказ → завал → победа | `./tests/combat.sh` — 14/14 (бот → лесорубы → казарма → 3 воина → приказ → rubble → winner=0) |
 | Сетевой бейдж хост/гость · ws · мс / «нет связи» / «хост вышел» | `test_hud.gd` — 5 проверок бейджа |
 | HUD-паритет: структура + SSIM-замер | `./tests/parity.sh` — `test_hud` 56/56, SSIM full 0,03–0,28 (диагностика) |
-| «Стоп» шлёт команду stop; экран итога победа/поражение | `test_hud.gd` — +5 проверок (56/56) |
+| «Стоп» шлёт команду stop; экран итога победа/поражение | `test_hud.gd` — +5 проверок (56/56); кадры `shots/hud_defeat.png`, `hud_victory.png` |
 | События комнаты: peer-left/back, host-left, room-fault | `test_net_events.gd` — 6/6 (уход хоста, мир продолжается) |
 
 Полный headless-набор этой волны: `./tests/run.sh` — **27 наборов PASS + 2
@@ -106,7 +106,10 @@ loopback + кроссплей**, 384 проверки, 0 FAIL; `test_play.gd` �
 Кадры сценария (окно, `./tests/play.sh --shots`): `shots/play_menu.png`,
 `play_start.png`, `play_hired.png`, `play_ghost.png`, `play_built.png`,
 `play_edit.png`, `play_warrior.png`; сеть — `shots/net_lobby.png`,
-`shots/net_match.png` (`tests/render_net.gd`).
+`shots/net_match.png` (`tests/render_net.gd`); HUD — `shots/hud.png`,
+`hud_build.png`, `hud_army.png`, `hud_village.png`, `hud_menu.png`,
+`hud_defeat.png`, `hud_victory.png` (`tests/render_hud.gd`); бой —
+`shots/combat.png`, тряска — `shots/shake.png`, руины — `shots/ruins.png`.
 
 Git: ветка `godot-port`, коммиты порта — исходники, тесты, документы;
 `.godot/`, `shots/` и копии атласов/моделей (собираются

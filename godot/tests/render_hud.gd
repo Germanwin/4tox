@@ -81,8 +81,39 @@ func _run() -> void:
 	hud.open_panel("army")
 	await _shot("hud_army")
 
+	hud.open_panel("village")
+	await _shot("hud_village")
+
 	hud.open_panel("menu")
 	await _shot("hud_menu")
+
+	# Экран итога: поражение и победа. Снимок синтетический — проверяется
+	# картинка, а не правила; структурно это покрыто test_hud.
+	hud.close_panel()
+	var live_snap: Dictionary = hud.snap.duplicate(true)
+	var towns: Array = live_snap.get("towns", [])
+	if towns.size() > 0:
+		towns[0]["alive"] = false
+	if towns.size() > 1:
+		towns[1]["alive"] = true
+	live_snap["over"] = true
+	live_snap["winner"] = 1
+	hud.snap = live_snap
+	hud._end_shown = false
+	hud._end.visible = false
+	hud._check_end()
+	await _shot("hud_defeat")
+
+	if towns.size() > 0:
+		towns[0]["alive"] = true
+	if towns.size() > 1:
+		towns[1]["alive"] = false
+	live_snap["winner"] = 0
+	hud.snap = live_snap
+	hud._end_shown = false
+	hud._end.visible = false
+	hud._check_end()
+	await _shot("hud_victory")
 
 	if pid > 0:
 		OS.kill(pid)
