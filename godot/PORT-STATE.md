@@ -45,7 +45,7 @@
 | Гейт | Число |
 |---|---|
 | `./tests/run.sh` | 241 проверка, 0 FAIL (10 headless + net_loop + main_net_loop + кроссплей 16) |
-| `./tests/run.sh` после волны (с сетью) | 27 наборов PASS + 2 loopback, 379 проверок, 0 FAIL |
+| `./tests/run.sh` после волны (с сетью) | 27 наборов PASS + 2 loopback, 384 проверки, 0 FAIL |
 | `./tests/visual.sh` после волны (с тряской) | 54 кадра, 54 PASS, 0 FAIL |
 | `perf_world.gd` после волны (M4, загрузка машины) | 600 жителей: 3,46 мс (289 fps) стоя, 5,67 мс (176 fps) в движении |
 | `./tests/visual.sh` | 54 кадра, 54 PASS, ≤0,5 % |
@@ -88,11 +88,12 @@
 | Кольцо патруля военного лагеря | `test_patrol.gd` — 7/7; на кадре `shots/combat.png` |
 | Боевой сценарий: приказ → завал → победа | `./tests/combat.sh` — 14/14 (бот → лесорубы → казарма → 3 воина → приказ → rubble → winner=0) |
 | Сетевой бейдж хост/гость · ws · мс / «нет связи» / «хост вышел» | `test_hud.gd` — 5 проверок бейджа |
-| HUD-паритет: структура + SSIM-замер | `./tests/parity.sh` — `test_hud` 51/51, SSIM full 0,03–0,28 (диагностика) |
+| HUD-паритет: структура + SSIM-замер | `./tests/parity.sh` — `test_hud` 56/56, SSIM full 0,03–0,28 (диагностика) |
+| «Стоп» шлёт команду stop; экран итога победа/поражение | `test_hud.gd` — +5 проверок (56/56) |
 | События комнаты: peer-left/back, host-left, room-fault | `test_net_events.gd` — 6/6 (уход хоста, мир продолжается) |
 
 Полный headless-набор этой волны: `./tests/run.sh` — **27 наборов PASS + 2
-loopback + кроссплей**, 379 проверок, 0 FAIL; `test_play.gd` — 47/47,
+loopback + кроссплей**, 384 проверки, 0 FAIL; `test_play.gd` — 47/47,
 `test_hud.gd` — 46/46, `test_ruins.gd` — 30/30, `test_lobby.gd` — 20/20,
 `test_net_lobby_ui.gd` — 18/18, `test_main_net.gd` — 15/15,
 `test_resume.gd` — 15/15, `test_main_resume.gd` — 13/13, `test_shake.gd` — 11/11, `test_reconnect.gd` — 7/7,
@@ -156,7 +157,7 @@ Git: ветка `godot-port`, коммиты порта — исходники, 
 
 ```bash
 cd godot
-./tests/run.sh            # 27 наборов + 2 loopback + кроссплей, 379 проверок
+./tests/run.sh            # 27 наборов + 2 loopback + кроссплей, 384 проверки
 ./tests/play.sh           # сценарий мышью, 47 проверок
 ./tests/play.sh --shots   # то же с окном: shots/play_*.png
 ./tests/visual.sh         # 54 кадра ≤0,5 % (10–15 мин)

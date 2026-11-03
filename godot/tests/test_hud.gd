@@ -267,6 +267,44 @@ func _run() -> void:
 	hud.set_net_note("")
 	hud.set_mode("solo")
 
+	# «Стоп» шлёт команду stop с выбранными воинами.
+	room.calls.clear()
+	hud.pick_group([7, 8])
+	hud.open_panel("army")
+	await create_timer(0.15).timeout
+	hud.press("Стоп")
+	await create_timer(0.15).timeout
+	var stop_call: Dictionary = {}
+	for c in room.calls:
+		if str(c["type"]) == "stop":
+			stop_call = c
+	check(not stop_call.is_empty(), "«Стоп» отправил команду stop")
+	if not stop_call.is_empty():
+		check((stop_call["payload"].get("ids", []) as Array).size() == 2,
+			"stop с двумя воинами")
+
+	# Экран итога: поражение и победа по снимку.
+	hud.snap = {"over": true, "winner": 1, "towns": [
+		{"owner": 0, "alive": false, "logs": 3, "felled": 1, "deliveries": 1},
+		{"owner": 1, "alive": true, "logs": 0, "felled": 0, "deliveries": 0}],
+		"buildings": [], "villagers": []}
+	hud.owner_id = 0
+	hud._end_shown = false
+	hud._end.visible = false
+	hud._check_end()
+	await process_frame
+	check(hud.state()["end"] == true, "экран итога показан")
+	check(str(hud.state()["end_title"]) == "Поражение", "итог: поражение")
+	hud.snap = {"over": true, "winner": 0, "towns": [
+		{"owner": 0, "alive": true, "logs": 3, "felled": 1, "deliveries": 1},
+		{"owner": 1, "alive": false, "logs": 0, "felled": 0, "deliveries": 0}],
+		"buildings": [], "villagers": []}
+	hud._end_shown = false
+	hud._end.visible = false
+	hud._check_end()
+	await process_frame
+	check(str(hud.state()["end_title"]) == "Победа", "итог: победа")
+
 	# Меню
 	hud.open_panel("menu")
 	await process_frame

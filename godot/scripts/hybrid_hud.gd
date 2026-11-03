@@ -1380,6 +1380,11 @@ func state() -> Dictionary:
 	for k in buttons:
 		names.append(str(k))
 	names.sort()
+	var end_title := ""
+	if _end_body.get_child_count() > 0:
+		var first: Node = _end_body.get_child(0)
+		if first is Label:
+			end_title = (first as Label).text
 	return {
 		"panel": panel,
 		"top": _top_label.text,
@@ -1394,6 +1399,8 @@ func state() -> Dictionary:
 		"village": _village.visible,
 		"place_bar": _place_bar.visible,
 		"badge": _badge.text if _badge != null else "",
+		"end": _end.visible,
+		"end_title": end_title,
 	}
 
 
