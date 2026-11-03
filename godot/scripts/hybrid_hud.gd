@@ -128,7 +128,7 @@ func _type_name(type: String) -> String:
 
 func _build_frame() -> void:
 	_top = UI.panel(10)
-	_top.custom_minimum_size = Vector2(880, 44)
+	_top.custom_minimum_size = Vector2(720, 44)
 	add_child(_top)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 18)
@@ -137,7 +137,7 @@ func _build_frame() -> void:
 	row.add_child(_top_label)
 
 	_events = UI.panel(8)
-	_events.custom_minimum_size = Vector2(880, 34)
+	_events.custom_minimum_size = Vector2(720, 34)
 	add_child(_events)
 	_events_label = UI.ink_label("событий нет", 14)
 	_events_label.add_theme_color_override("font_color", UI.INK_SOFT)
@@ -149,7 +149,7 @@ func _build_frame() -> void:
 	for spec in [["build", "Стройка"], ["edit", "Правка"], ["army", "Войска"],
 			["village", "Деревня"], ["menu", "Меню"]]:
 		var b := UI.button(str(spec[1]), 16)
-		b.custom_minimum_size = Vector2(118, 46)
+		b.custom_minimum_size = Vector2(108, 46)
 		b.pressed.connect(func() -> void: toggle_panel(str(spec[0])))
 		_bottom.add_child(b)
 		buttons[str(spec[1])] = b
@@ -228,22 +228,24 @@ func _build_frame() -> void:
 
 func _on_resized() -> void:
 	_viewport = get_viewport_rect().size
-	_top.position = Vector2(_viewport.x * 0.5 - 440, 10)
-	_top.size = Vector2(880, 44)
-	_events.position = Vector2(_viewport.x * 0.5 - 440, 60)
-	_events.size = Vector2(880, 34)
-	_bottom.position = Vector2(24, _viewport.y - 70)
-	_status.position = Vector2(24, _viewport.y - 100)
-	_status.size = Vector2(700, 24)
-	_hint.position = Vector2(24, _viewport.y - 26)
+	# Как в браузере: ресурсы сверху слева, действия сверху справа, подсказки
+	# снизу слева, обзор снизу справа, события под ресурсами.
+	_top.position = Vector2(24, 16)
+	_top.size = Vector2(720, 44)
+	_events.position = Vector2(24, 66)
+	_events.size = Vector2(720, 34)
+	_bottom.position = Vector2(_viewport.x - 604, 16)
+	_status.position = Vector2(24, _viewport.y - 58)
+	_status.size = Vector2(760, 24)
+	_hint.position = Vector2(24, _viewport.y - 30)
 	_hint.size = Vector2(900, 20)
 	_panel.position = Vector2(_viewport.x * 0.5 - 380, 120)
 	_place_bar.position = Vector2(_viewport.x * 0.5 - 320, _viewport.y - 190)
-	_minimap.position = Vector2(_viewport.x - 216, 104)
+	_minimap.position = Vector2(_viewport.x - 216, _viewport.y - 192)
 	_minimap.size = Vector2(196, 168)
-	_village.position = Vector2(16, 80)
+	_village.position = Vector2(16, 110)
 	_village.size = Vector2(330, 520)
-	_badge.position = Vector2(_viewport.x - 216, 78)
+	_badge.position = Vector2(_viewport.x - 216, _viewport.y - 216)
 	_end.position = Vector2(_viewport.x * 0.5 - 300, _viewport.y * 0.5 - 150)
 	_end.size = Vector2(600, 300)
 	_panel_sig_last = ""
