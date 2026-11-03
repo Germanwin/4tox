@@ -55,7 +55,7 @@ def main():
         vals = [ssim(ga.crop(r), ba.crop(r)) for r in regs]
         print(f"  {gname:14s} ↔ {bname:16s} full={full:.3f}  "
               f"hud={np.mean(vals):.3f}  [{', '.join(f'{v:.2f}' for v in vals)}]")
-    print("SSIM — диагностика; структурный гейт: tests/parity.sh (test_hud 51/51).")
+    print("SSIM — диагностика; структурный гейт: tests/parity.sh (test_hud 56/56).")
     return 0 if ok else 1
 
 
