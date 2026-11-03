@@ -34,7 +34,7 @@
   `user://net-session.cfg`, `GET /api/resume`, тот же игрок и мир (для VPS и
   живого сервера; штатный выход сессию стирает);
 - **сеть через VPS** — прод `374412.fornex.cloud` обновлён до build
-  `f7892de14ea4`: 443 и 8443 отдают `/api/world`, `solo` и `4TX1`, кроссплей
+  `21592ed64770`: 443 и 8443 отдают `/api/world`, `solo` и `4TX1`, кроссплей
   Godot↔Chrome проходит на обоих входах;
 - **наблюдатель** — «Смотреть» на экране сети: вход в начатую комнату по
   коду, тот же мир и кадры, без деревни; команды и стройка запрещены,
@@ -78,7 +78,7 @@
 | Кроссплей Godot ↔ Chrome через тот же WS | `test_crossplay.gd` 16/16 |
 | Возврат в партию по `/api/resume` | `test_resume.gd` 15/15 (падение клиента, тот же мир/дерево, команда) |
 | Автовозврат при запуске приложения | `test_main_resume.gd` 13/13 (новый main сам входит в ту же комнату) |
-| VPS: health/WLD1/solo/WS/leave на 443 и 8443 | `node tests/vps_smoke.js <origin>` — PASS оба входа, build `f7892de14ea4` |
+| VPS: health/WLD1/solo/WS/leave на 443 и 8443 | `node tests/vps_smoke.js <origin>` — PASS оба входа, build `21592ed64770` |
 | Кроссплей через VPS на 443 и 8443 | `test/vps_crossplay.gd` — 17/17 на обоих |
 | Полный путь приложения через VPS | `test/vps_main.gd` — 14/14 на 8443 и 443 (меню → адрес VPS → код → Chrome → матч) |
 | Сборка macOS + smoke собранного | `./tools/package.sh` → `build/macos/4tox.app` (415 МБ), `SMOKE OK`; `build/4tox-macos.dmg` 170 МБ монтируется, внутри app |
@@ -132,10 +132,12 @@ Git: ветка `godot-port`, коммиты порта — исходники, 
 
 ## Прод
 
-**VPS выложен 2026-11-03**: build `f7892de14ea4`, бэкап
-`/root/4tox-backup-20261103-025828.tgz`, рестарт только `4tox.service`
+**VPS выложен 2026-11-03**: build `21592ed64770`, бэкап
+`/root/4tox-backup-20261103-214116.tgz`, рестарт только `4tox.service`
 (Caddy не трогали, VPN жив). `tests/vps.sh`, `vps_smoke.js` (443/8443),
 `vps_crossplay.gd` (443/8443), `vps_main.gd` (443/8443) — зелёные.
+Наблюдатель на VPS проверен вручную: `/api/spectate` → WLD1 46 791 Б,
+`/api/command` — 403 «наблюдатель не командует», `/api/leave` закрывает.
 Ограничение `MAX_ACTIVE_ROOMS=1`: одновременно одна партия.
 
 ## Блокеры
