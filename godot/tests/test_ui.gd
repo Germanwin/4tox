@@ -11,6 +11,15 @@ func _key(code: int) -> void:
 	e.pressed = true
 	Input.parse_input_event(e)
 
+func _wait_for(pred: Callable, timeout_s: float) -> bool:
+	var t0 := Time.get_ticks_msec()
+	while (Time.get_ticks_msec() - t0) < int(timeout_s * 1000.0):
+		if pred.call():
+			return true
+		await create_timer(0.05).timeout
+	return pred.call()
+
+
 func find_button(root: Node, text: String) -> Button:
 	for n in root.find_children("*", "Button", true, false):
 		if n is Button and n.text == text:
@@ -25,15 +34,19 @@ func _init() -> void:
 	check(main.menu.visible, "menu visible at start")
 	check(find_button(main.menu, "Сеть") != null, "network mode button")
 	main._on_play(64, "тихая-долина-701", "net")
-	await process_frame
-	check(main.state == main.State.LOBBY and main.lobby.visible, "network opens the lobby")
-	main._on_lobby_host({"name": "Тест", "port": 7810, "seed": "тихая-долина-701", "size": 64})
-	await create_timer(0.25).timeout
-	check(main.net.is_host and main.net.active, "host creates the lobby")
-	check(main.lobby._wait_page.visible, "lobby waiting page")
-	main._on_lobby_back()
-	await create_timer(0.25).timeout
-	check(not main.net.active and main.state == main.State.MENU and main.menu.visible,
+	await create_timer(1.0).timeout
+	check(main.state == main.State.LOBBY and main.net_lobby.visible,
+		"network opens the HTTP lobby")
+	check(main.net_lobby.press("Создать игру"), "кнопка «Создать игру» есть")
+	var made := await _wait_for(func() -> bool: return main.net_lobby.joined, 12.0)
+	check(made, "лобби создано по HTTP")
+	if made:
+		check(str(main.net_lobby.state().code).length() >= 4,
+			"код лобби: " + str(main.net_lobby.state().code))
+		check(main.net_lobby.state().host, "создатель — хост")
+	main.net_lobby.press("Назад")
+	await create_timer(0.3).timeout
+	check(main.state == main.State.MENU and main.menu.visible,
 		"lobby back returns to the menu")
 	# Прототип (ToxSim) больше не главный путь: «Играть» — гибрид. Старые
 	# экраны прототипа остаются за отладочным входом и проверяются напрямую,
@@ -138,6 +151,8 @@ func _init() -> void:
 	check(not main.running and not main.view.input_enabled, "host loss freezes the client")
 	check(main.hud.end_screen.visible and main.hud.net_label.text.contains("нет связи"),
 		"host loss shows the no-connection screen")
+	if main.server != null:
+		main.server.stop()
 	print("")
 	print("ALL UI TESTS PASSED" if fails == 0 else "%d UI TESTS FAILED" % fails)
 	quit(1 if fails > 0 else 0)

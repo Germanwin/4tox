@@ -2,6 +2,7 @@ extends Node
 
 const HybridDemo = preload("res://scripts/hybrid_demo.gd")
 const Supervisor = preload("res://scripts/server_supervisor.gd")
+const NetLobby = preload("res://scripts/net_lobby.gd")
 
 enum State { MENU, LOBBY, PLAY, PAUSE, OVER, GALLERY, DEMO }
 
@@ -13,6 +14,7 @@ var lobby: ToxLobby
 var net: ToxNet
 var gallery: ToxModelGallery
 var demo: Node2D
+var net_lobby = null
 var server = null
 var ui_layer: CanvasLayer
 var loading_layer: CanvasLayer
@@ -72,6 +74,12 @@ func _ready() -> void:
 	lobby.visible = false
 	ui_layer.add_child(lobby)
 	ui_layer.move_child(gallery, -1)
+	net_lobby = NetLobby.new()
+	net_lobby.name = "NetLobby"
+	net_lobby.visible = false
+	ui_layer.add_child(net_lobby)
+	net_lobby.match_ready.connect(_on_net_match_ready)
+	net_lobby.back.connect(_on_net_lobby_back)
 	_connect_menu()
 	_connect_hud()
 	_connect_net()
@@ -200,7 +208,7 @@ func _on_menu_size(size: int, seed_text: String) -> void:
 ## кнопками; см. docs/GODOT-PORT-PROMPT.md §4.1.
 func _on_play(size: int, seed_text: String, mode: String) -> void:
 	if mode == "net":
-		_open_lobby(size, seed_text)
+		_open_net_lobby(size, seed_text)
 		return
 	_start_hybrid(size, seed_text, mode == "bot")
 
@@ -247,6 +255,8 @@ func _on_server_failed(text: String) -> void:
 func _close_hybrid_to_menu() -> void:
 	demo.visible = false
 	demo.close()
+	if net_lobby != null and net_lobby.room != null:
+		net_lobby.close_room()
 	if server != null:
 		server.stop()
 	state = State.MENU
@@ -255,6 +265,44 @@ func _close_hybrid_to_menu() -> void:
 	view.input_enabled = false
 	menu.show_main(false)
 	_make_preview(preview_size)
+
+
+## Экран сети: HTTP-лобби того же сервера (код/токен, без ENet). Локальный
+## сервер поднимается сам, если игрок не ввёл адрес VPS в поле.
+func _open_net_lobby(size: int, seed_text: String) -> void:
+	if starting:
+		return
+	starting = true
+	state = State.LOBBY
+	menu.visible = false
+	hud.visible = false
+	gallery.visible = false
+	lobby.visible = false
+	view.input_enabled = false
+	view.fit_island()
+	view._arrival_t = -1.0
+	if server != null and not server.is_running():
+		await server.start_server()
+	net_lobby.open(server.base if server != null and server.base != "" else "http://127.0.0.1:8787",
+		seed_text, size)
+	starting = false
+
+
+func _on_net_lobby_back() -> void:
+	state = State.MENU
+	net_lobby.visible = false
+	view.visible = true
+	has_game = false
+	menu.show_main(false)
+	view.input_enabled = false
+	view.fit_island()
+	view._arrival_t = -1.0
+
+
+func _on_net_match_ready(room) -> void:
+	_enter_demo_shell()
+	net_lobby.visible = false
+	demo.open_room(room, {"mode": "multi"})
 
 
 func _open_lobby(size: int, seed_text: String) -> void:

@@ -356,9 +356,14 @@ func refresh() -> void:
 	_top_label.text = "Брёвна %d · Жители %d · Воины %d · Учатся %d · Срублено %d · Доставлено %d" % [
 		logs, int(c["villagers"]) + int(c["trainees"]), c["warriors"], c["trainees"],
 		felled, delivered]
+	var mode_text := "одиночная партия"
+	if mode == "bot":
+		mode_text = "против деревни"
+	elif mode == "multi":
+		mode_text = "сетевая партия"
 	_events_label.text = ("Ответ: " + status_text) if status_text != "" else \
 		("потеряно брёвен %d · кадр №%d · %s" % [lost, int(snap.get("revision", 0)),
-			"против деревни" if mode == "bot" else "одиночная партия"])
+			mode_text])
 	if _badge != null:
 		_badge.text = "" if mode == "solo" else ("локальный сервер · %s" % mode)
 	_update_place_bar()

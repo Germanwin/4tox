@@ -23,7 +23,9 @@ func _run() -> void:
 	get_root().add_child(main)
 	await create_timer(1.8).timeout
 	var port := _port()
-	main._on_play(64, "тихая-долина-701", "net")
+	# ENet-лобби больше не главный путь («Сеть» — HTTP). Легаси-петля
+	# проверяет старый экран напрямую.
+	main._open_lobby(64, "тихая-долина-701")
 	await process_frame
 	main._on_lobby_join({"name": "Гость", "address": "127.0.0.1", "port": port})
 	print("MAIN CLIENT JOINING ", port)

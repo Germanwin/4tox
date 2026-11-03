@@ -71,6 +71,8 @@ var _place_rot := 90
 var _last_snap: Dictionary = {}
 var _mode := "solo"                 # solo | bot | multi
 var _bot := false
+## Комнату создал этот экран (solo) или её передал экран лобби (mult).
+var _owns_live := true
 
 # ввод
 var _pressed := false
@@ -157,6 +159,7 @@ func open_live(url: String, opts := {}) -> void:
 		_live.queue_free()
 		_live = null
 	_live = LiveRoom.new()
+	_owns_live = true
 	add_child(_live)
 	_live.status.connect(_on_live_status)
 	_live.world_ready.connect(_on_live_world)
@@ -166,6 +169,53 @@ func open_live(url: String, opts := {}) -> void:
 	_hud.room = _live
 	_live.begin_solo(url, str(opts.get("seed", "")), int(opts.get("size", 0)),
 		bool(opts.get("bot", false)))
+
+
+## Принять уже созданную комнату из экрана сети: тот же путь, что open_live,
+## но лобби, старт и токены остались у ToxNetLobby.
+func open_room(room, opts := {}) -> void:
+	visible = true
+	if _ui != null:
+		_ui.visible = true
+	set_process(true)
+	set_process_unhandled_input(true)
+	_ensure_ui()
+	if _hud != null:
+		_hud.queue_free()
+		_hud = null
+	_ensure_hud()
+	_clear_shell()
+	_mode = "multi"
+	_bot = false
+	_owns_live = false
+	_live = room
+	_live_url = str(room.base)
+	_live_hall_done = false
+	_snapshot_seq = -1
+	_last_snap = {}
+	_samples.clear()
+	_view_villagers = []
+	_army_ids = []
+	_selected = ""
+	_selected_villager = ""
+	_match_emitted = false
+	_hud.reset()
+	_hud.room = room
+	_show_loading("Ждём мир от сервера…")
+	if not room.status.is_connected(_on_live_status):
+		room.status.connect(_on_live_status)
+	if not room.world_ready.is_connected(_on_live_world):
+		room.world_ready.connect(_on_live_world)
+	if not room.snapshot.is_connected(_on_live_snapshot):
+		room.snapshot.connect(_on_live_snapshot)
+	if not room.failed.is_connected(_on_live_failed):
+		room.failed.connect(_on_live_failed)
+	if not room.command_done.is_connected(_on_command_done):
+		room.command_done.connect(_on_command_done)
+	if room.world != null:
+		_on_live_world(room.world)
+	if not room.latest_snapshot.is_empty():
+		_on_live_snapshot(room.latest_snapshot)
 
 
 func close() -> void:
@@ -178,7 +228,8 @@ func close() -> void:
 	set_process_unhandled_input(false)
 	if _live != null:
 		_live.leave()
-		_live.queue_free()
+		if _owns_live:
+			_live.queue_free()
 		_live = null
 	_hud = null
 	_ghost = null
@@ -1130,12 +1181,18 @@ func restart_live(new_seed := "") -> void:
 		"mode": _mode}
 	if _live != null:
 		_live.leave()
-		_live.queue_free()
+		if _owns_live:
+			_live.queue_free()
 		_live = null
 	open_live(url if url != "" else "http://127.0.0.1:8787", opts)
 
 
 func new_island() -> void:
+	if _mode == "multi":
+		if _hud != null:
+			_hud.status_text = "в сети новый остров создаёт хост: выйдите в меню и создайте новую игру"
+			_hud.refresh()
+		return
 	if _hud != null:
 		_hud.close_panel()
 	restart_live(_random_seed())

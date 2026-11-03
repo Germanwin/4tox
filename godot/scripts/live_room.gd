@@ -11,6 +11,10 @@ signal snapshot(snap)
 signal command_done(result)
 signal players_changed(count, ready)
 signal failed(text)
+## Лобби-состояние для экрана сети: состав, «началось ли», причина блока.
+signal lobby_update(players: Array, started: bool, block: Dictionary)
+## Партия началась (мир и WS подняты или вот-вот): экран лобби уходит.
+signal room_started
 
 const Wire = preload("res://scripts/wire.gd")
 const WorldWire = preload("res://scripts/world_wire.gd")
@@ -39,9 +43,21 @@ var cmd_instance_ok := false
 var start_payload: Dictionary = {}
 var last_command: Dictionary = {}
 var my_owner := 0
+## Хост лобби создал комнату (кнопка «Начать игру» его).
+var is_host := false
+## Имя в лобби.
+var player_name := "Godot"
+## Мир и последний кадр кэшируются: экран матча подключается к комнате уже
+## после старта и должен увидеть мир, не ожидая второго WLD1/кадра.
+var world = null
+var latest_snapshot: Dictionary = {}
+var lobby_players: Array = []
+var _start_done := false
 
 var _ws: WebSocketPeer = null
 var _started := false
+var _lobby_timer := 0.0
+var _polling := false
 
 
 func begin(url: String) -> void:
@@ -67,9 +83,127 @@ func begin_host(url: String) -> void:
 	begin(url)
 
 
+## Создать лобби, но НЕ начинать: состав, «Готов» и старт — кнопки экрана.
+func create_lobby(url: String, name: String, p_seed := "", p_size := 0,
+		max_players := 2) -> bool:
+	base = url.rstrip("/")
+	player_name = name
+	solo = false
+	wait_guest = false
+	is_host = true
+	if p_seed != "":
+		seed_text = p_seed
+	if p_size > 0:
+		world_size = p_size
+	var body := {"name": name, "max": maxi(2, max_players)}
+	if seed_text != "":
+		body["seed"] = seed_text
+	if world_size > 0:
+		body["size"] = world_size
+	var lobby := await _json("POST", "/api/lobby", body)
+	if not lobby.get("ok", false):
+		failed.emit("лобби: " + str(lobby.get("reason", "нет ответа")))
+		return false
+	code = str(lobby.get("code", ""))
+	token = str(lobby.get("token", ""))
+	player_id = int(lobby.get("playerId", 0))
+	is_host = int(lobby.get("hostId", player_id)) == player_id
+	status.emit("лобби " + code + " создано")
+	await lobby_status()
+	return true
+
+
+## Войти в чужое лобби по коду.
+func join_lobby(url: String, p_code: String, name: String) -> bool:
+	base = url.rstrip("/")
+	player_name = name
+	solo = false
+	wait_guest = false
+	is_host = false
+	code = p_code.strip_edges().to_upper()
+	var r := await _json("POST", "/api/join", {"code": code, "name": name})
+	if not r.get("ok", false):
+		failed.emit("вход: " + str(r.get("reason", "нет ответа")))
+		return false
+	token = str(r.get("token", ""))
+	player_id = int(r.get("playerId", 0))
+	is_host = int(r.get("hostId", -1)) == player_id
+	status.emit("в лобби " + code)
+	await lobby_status()
+	return true
+
+
+## Один опрос состава. Если партия началась — поднимает мир и WS один раз.
+func lobby_status() -> Dictionary:
+	if code == "":
+		return {"ok": false}
+	var st := await _json("GET", "/api/status?code=%s&token=%s" % [code, token], null)
+	if not st.get("ok", false):
+		failed.emit("статус: " + str(st.get("reason", "нет ответа")))
+		return st
+	lobby_players = _status_players(st)
+	var ready := 0
+	for p in lobby_players:
+		if bool(p.get("ready", false)):
+			ready += 1
+	players_changed.emit(lobby_players.size(), ready)
+	var block: Dictionary = st.get("block", {}) if st.get("block") is Dictionary else {}
+	lobby_update.emit(lobby_players, bool(st.get("started", false)), block)
+	if bool(st.get("started", false)) and not _start_done:
+		var start: Dictionary = st.get("start", {}) if st.get("start") is Dictionary else {}
+		if not start.is_empty():
+			await _after_start(start)
+	return st
+
+
+func _poll_lobby() -> void:
+	_polling = true
+	await lobby_status()
+	_polling = false
+
+
+func players_count() -> int:
+	return lobby_players.size()
+
+
+func ready_count() -> int:
+	var n := 0
+	for p in lobby_players:
+		if bool(p.get("ready", false)):
+			n += 1
+	return n
+
+
+func set_ready(value: bool) -> void:
+	if code == "":
+		return
+	var r := await _json("POST", "/api/ready",
+		{"code": code, "token": token, "ready": value})
+	if not r.get("ok", false):
+		failed.emit("готов: " + str(r.get("reason", "нет ответа")))
+		return
+	await lobby_status()
+
+
+## «Начать игру» — только хост. Сервер сам проверит, можно ли.
+func start_now() -> bool:
+	if code == "" or not is_host:
+		return false
+	var body := {"code": code, "token": token}
+	var r := await _json("POST", "/api/start", body)
+	if not r.get("ok", false):
+		failed.emit("старт: " + str(r.get("reason", "нет ответа")))
+		return false
+	var start: Dictionary = r.get("start", {}) if r.get("start") is Dictionary else {}
+	if not start.is_empty():
+		await _after_start(start)
+	return true
+
+
+## Автоодиночка/автолобби для тестов и отладочного входа.
 func _run() -> void:
 	status.emit("создаём комнату…")
-	var body := {"name": "Godot", "max": 2}
+	var body := {"name": player_name, "max": 2}
 	if seed_text != "":
 		body["seed"] = seed_text
 	if world_size > 0:
@@ -83,13 +217,10 @@ func _run() -> void:
 	code = str(lobby.get("code", ""))
 	token = str(lobby.get("token", ""))
 	player_id = int(lobby.get("playerId", 0))
+	is_host = true
 
 	if not solo:
 		status.emit("ждём второго игрока… код " + code)
-	var guest_token := ""
-	if not solo:
-		# Гость из браузера сам заходит по коду; если он уже в лобби — просто
-		# проверим состав, а не создаём третьего.
 		var joined := false
 		for i in range(150):
 			var st := await _json("GET", "/api/status?code=%s&token=%s" % [code, token], null)
@@ -131,25 +262,39 @@ func _run() -> void:
 	if not started.get("ok", false):
 		failed.emit("старт: " + str(started.get("reason", "нет ответа")))
 		return
-	start_payload = started.get("start", {}) if started.get("start") is Dictionary else {}
+	var start: Dictionary = started.get("start", {}) if started.get("start") is Dictionary else {}
+	await _after_start(start)
+
+
+## Общий путь после старта: снимок старта → WLD1 → WebSocket. Повторный
+## вызов безопасен: мир и WS поднимаются один раз.
+func _after_start(start: Dictionary) -> void:
+	if _start_done:
+		return
+	_start_done = true
+	start_payload = start
 	protocol = int(start_payload.get("protocol", 0))
 	room_id = str(start_payload.get("roomId", code))
 	epoch = int(start_payload.get("epoch", 0))
 	instance = ""
+	my_owner = 0
 	for p in start_payload.get("players", []):
 		if int(p.get("id", -1)) == player_id:
 			instance = str(p.get("instance", ""))
 			cmd_seq = int(p.get("nextClientSequence", 1)) - 1
 			my_owner = int(p.get("owner", 0))
+			is_host = is_host or int(p.get("id", -1)) == int(start_payload.get("hostId", -1))
 			break
+	room_started.emit()
 
 	status.emit("мир…")
 	var wbytes := await _raw("/api/world?code=%s&token=%s" % [code, token])
-	print("live: мир ", wbytes.size(), " байт, режим ", "bot" if bot else "solo")
+	print("live: мир ", wbytes.size(), " байт, режим ",
+		"bot" if bot else ("solo" if solo else "multi"))
 	if wbytes.is_empty():
 		failed.emit("мир: пустой ответ")
 		return
-	var world = WorldData.new()
+	world = WorldData.new()
 	var wr: Dictionary = WorldWire.unpack_into(world, wbytes)
 	if not wr.get("ok", false):
 		failed.emit("мир: " + str(wr.get("error", "")))
@@ -167,7 +312,14 @@ func _run() -> void:
 	status.emit("в комнате")
 
 
-func _process(_dt: float) -> void:
+func _process(dt: float) -> void:
+	# Пока идёт лобби, состав и старт подтягиваются сами: гость не должен
+	# нажимать ничего, чтобы узнать, что хост начал.
+	if code != "" and not _start_done and not solo:
+		_lobby_timer -= dt
+		if _lobby_timer <= 0.0 and not _polling:
+			_lobby_timer = 0.8
+			_poll_lobby()
 	if _ws == null:
 		return
 	_ws.poll()
@@ -182,7 +334,8 @@ func _process(_dt: float) -> void:
 			var r: Dictionary = Wire.unpack(pkt)
 			if r.get("ok", false):
 				frames += 1
-				snapshot.emit(r["snapshot"])
+				latest_snapshot = r["snapshot"]
+				snapshot.emit(latest_snapshot)
 	elif st == WebSocketPeer.STATE_CLOSED and _started:
 		_started = false
 		_ws = null
@@ -194,6 +347,7 @@ func _process(_dt: float) -> void:
 ## без ожидания: клиент уже уходит.
 func leave() -> void:
 	_started = false
+	_start_done = false
 	if _ws != null:
 		_ws.close()
 		_ws = null
