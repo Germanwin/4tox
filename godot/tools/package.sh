@@ -92,4 +92,28 @@ if [ -n "$APP" ] && [ -x "$APP" ]; then
     exit 1
   fi
 fi
+# --- распространяемые архивы -------------------------------------------
+if command -v hdiutil >/dev/null 2>&1 && [ -d "$OUT/macos/4tox.app" ]; then
+  echo "== dmg macOS"
+  rm -f "$OUT/4tox-macos.dmg"
+  hdiutil create -quiet -volname "4tox" -srcfolder "$OUT/macos/4tox.app" \
+    -ov -format UDZO "$OUT/4tox-macos.dmg"
+  hdiutil attach -quiet -nobrowse -readonly "$OUT/4tox-macos.dmg"
+  if [ -d "/Volumes/4tox/4tox.app" ]; then
+    echo "  dmg смонтирован, 4tox.app внутри"
+  else
+    echo "  ОШИБКА: в dmg нет 4tox.app"; hdiutil detach -quiet "/Volumes/4tox"; exit 1
+  fi
+  hdiutil detach -quiet "/Volumes/4tox"
+  ls -lh "$OUT/4tox-macos.dmg" | awk '{print "  "$5" "$9}'
+fi
+if command -v zip >/dev/null 2>&1 && [ -f "$OUT/windows/4tox.exe" ]; then
+  echo "== zip Windows"
+  rm -f "$OUT/4tox-windows.zip"
+  (cd "$OUT/windows" && zip -qry "$OLDPWD/$OUT/4tox-windows.zip" 4tox.exe server)
+  unzip -tq "$OUT/4tox-windows.zip" >/dev/null
+  echo "  zip целый: $(unzip -l "$OUT/4tox-windows.zip" | tail -1 | awk '{print $2}') файлов"
+  ls -lh "$OUT/4tox-windows.zip" | awk '{print "  "$5" "$9}'
+fi
+
 echo "готово: $OUT/"

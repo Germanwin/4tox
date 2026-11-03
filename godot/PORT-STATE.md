@@ -78,7 +78,8 @@
 | VPS: health/WLD1/solo/WS/leave на 443 и 8443 | `node tests/vps_smoke.js <origin>` — PASS оба входа, build `f7892de14ea4` |
 | Кроссплей через VPS на 443 и 8443 | `test/vps_crossplay.gd` — 17/17 на обоих |
 | Полный путь приложения через VPS | `test/vps_main.gd` — 14/14 на 8443 и 443 (меню → адрес VPS → код → Chrome → матч) |
-| Сборка macOS + smoke собранного | `./tools/package.sh` → `build/macos/4tox.app` (415 МБ), `SMOKE OK` (сервер внутри, 3/3, кадр 30); `build/windows/4tox.exe` собран |
+| Сборка macOS + smoke собранного | `./tools/package.sh` → `build/macos/4tox.app` (415 МБ), `SMOKE OK`; `build/4tox-macos.dmg` 170 МБ монтируется, внутри app |
+| Windows-архив | `build/4tox-windows.zip` 133 МБ, 147 файлов (exe + server + node), `unzip -tq` целый; `.exe` не запускался |
 | Руины: атлас по типу, ppu/mul кадра | `test_ruins.gd` — 30/30; кадр `shots/ruins.png` (5 завалов) |
 | Тряска деревьев по `treeHits` | `test_shake.gd` — 11/11; кадр `shots/shake.png` |
 | Переподключение WS 300/600/1200 + пинг | `test_reconnect.gd` — 7/7 (обрыв, кадры пошли, пинг) |

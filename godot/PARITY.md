@@ -54,7 +54,7 @@
 | 36 | Диагностика | `/api/diag`, `/api/stream-stats`, fault records, checkpoint | частично | эндпоинты есть; клиентского экрана диагностики нет |
 | 37 | Безопасность | токены, HTTPS, cert, no secrets in logs, server validation | есть | токены/владелец проверяет сервер; wss с проверкой сертификата; в лог не пишутся токены |
 | 38 | Браузер-регрессия | mp.js/menu.js/game.js; аддитивные правки | есть | все три PASS после правок сервера (см. PORT-STATE) |
-| 39 | Сборка | Node bundle, port, health, logs, shutdown, macOS/Windows, signing | частично | `tools/package.sh` → `build/macos/4tox.app` (415 МБ) с сервером и node, smoke `--smoke` — SMOKE OK (3/3, кадр 30); `build/windows/4tox.exe` (115 МБ) собран, но **не запускался** (нет Windows); подписи нет |
+| 39 | Сборка | Node bundle, port, health, logs, shutdown, macOS/Windows, signing | частично | `tools/package.sh` → `build/macos/4tox.app` (415 МБ) с сервером и node, smoke `--smoke` — SMOKE OK; `build/4tox-macos.dmg` 170 МБ (монтируется, app внутри); `build/4tox-windows.zip` 133 МБ, 147 файлов, `unzip -tq` целый; `.exe` **не запускался** (нет Windows); подписи нет |
 | 40 | Тесты | run/visual/play/parity/vps/package + адверсарий | частично | run 27/384, visual 54, play 47, combat 14, parity (test_hud 56 + SSIM 0,03–0,28), vps 443/8443, package .app smoke; `.exe` не запускался, адверсарий не формализован |
 
 ## Что это значит
