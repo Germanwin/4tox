@@ -1330,7 +1330,8 @@ func _check_end() -> void:
 	if _end == null:
 		return
 	var over := bool(snap.get("over", false))
-	var winner := int(snap.get("winner", -1))
+	var wv: Variant = snap.get("winner", -1)
+	var winner := -1 if wv == null else int(wv)
 	var mine := _town()
 	var fallen := bool(snap.get("over", false)) and not bool(mine.get("alive", true))
 	if not over:

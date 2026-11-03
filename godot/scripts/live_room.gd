@@ -83,6 +83,12 @@ var transport := "none"          # none / ws
 var latency_ms := -1
 var connected := false
 var _ws_was_open := false
+## Запасной канал после пяти неудач WS: опрос /api/resume (0,5 с), пока WS
+## не вернётся. Это не SSE, а именно опрос — в бейдже честно «poll».
+var _fallback := false
+var _fallback_timer := 0.0
+var _ws_retry_timer := 0.0
+var _fallback_fails := 0
 
 
 func begin(url: String) -> void:
@@ -416,6 +422,45 @@ func resume(url := "") -> bool:
 	return true
 
 
+func _start_fallback(reason: String) -> void:
+	if _fallback or code == "":
+		return
+	_fallback = true
+	_fallback_fails = 0
+	_fallback_timer = 0.0
+	_ws_retry_timer = 5.0
+	_reconnect_attempt = 0
+	connected = true
+	transport = "poll"
+	connection.emit("poll", reason)
+
+
+## Запасной канал: раз в 0,5 с берём последний снимок через /api/resume.
+## Команды по-прежнему уходят HTTP-путём, так что игра продолжается.
+func _poll_fallback() -> void:
+	if not _fallback or code == "" or token == "":
+		return
+	var r := await _json("GET", "/api/resume?code=%s&token=%s" % [code, token], null)
+	if not _fallback:
+		return
+	if not r.get("ok", false):
+		_fallback_fails += 1
+		if _fallback_fails >= 3:
+			_fallback = false
+			_want_ws = false
+			connected = false
+			transport = "none"
+			connection.emit("lost", "опрос не отвечает")
+			failed.emit("связь потеряна: опрос не отвечает")
+		return
+	_fallback_fails = 0
+	var snap: Variant = r.get("snapshot", {})
+	if snap is Dictionary and not (snap as Dictionary).is_empty():
+		latest_snapshot = snap
+		frames += 1
+		snapshot.emit(snap)
+
+
 func _open_ws() -> void:
 	if code == "" or token == "":
 		return
@@ -429,13 +474,11 @@ func _open_ws() -> void:
 
 
 func _schedule_reconnect(reason: String) -> void:
-	if not _want_ws or code == "":
+	if not _want_ws or code == "" or _fallback:
 		return
 	_reconnect_attempt += 1
 	if _reconnect_attempt > RETRY_MS.size():
-		_want_ws = false
-		connection.emit("lost", reason)
-		failed.emit("связь потеряна: " + reason)
+		_start_fallback("WS недоступен: " + reason)
 		return
 	_reconnect_timer = float(RETRY_MS[_reconnect_attempt - 1])
 	connection.emit("reconnecting", "%s · попытка %d" % [reason, _reconnect_attempt])
@@ -458,9 +501,18 @@ func ping() -> int:
 func _process(dt: float) -> void:
 	# Переподключение WS: пока комната жива, клиент сам возвращается в неё
 	# (300/600/1200/2400 мс). Сервер на новом WS присылает baseline.
-	if _ws == null and _want_ws and code != "" and _start_done:
+	if _ws == null and _want_ws and code != "" and _start_done and not _fallback:
 		_reconnect_timer -= dt
 		if _reconnect_timer <= 0.0:
+			_open_ws()
+	if _fallback and _start_done:
+		_fallback_timer -= dt
+		_ws_retry_timer -= dt
+		if _fallback_timer <= 0.0:
+			_fallback_timer = 0.5
+			_poll_fallback()
+		if _ws_retry_timer <= 0.0 and _ws == null:
+			_ws_retry_timer = 5.0
 			_open_ws()
 	# Пока идёт лобби, состав и старт подтягиваются сами: гость не должен
 	# нажимать ничего, чтобы узнать, что хост начал.
@@ -476,6 +528,8 @@ func _process(dt: float) -> void:
 	if st == WebSocketPeer.STATE_OPEN:
 		if not _ws_was_open:
 			_ws_was_open = true
+			_fallback = false
+			_fallback_fails = 0
 			connected = true
 			transport = "ws"
 			if _reconnect_attempt > 0:
@@ -507,9 +561,10 @@ func _process(dt: float) -> void:
 	elif st == WebSocketPeer.STATE_CLOSED and _started:
 		_ws = null
 		_ws_was_open = false
-		connected = false
-		transport = "none"
-		_schedule_reconnect("связь закрыта")
+		if not _fallback:
+			connected = false
+			transport = "none"
+			_schedule_reconnect("связь закрыта")
 
 
 ## Выход из комнаты: сервер закрывает партию сразу, если ушёл последний игрок
@@ -519,6 +574,7 @@ func leave() -> void:
 	_started = false
 	_start_done = false
 	_want_ws = false
+	_fallback = false
 	_reconnect_attempt = 0
 	connected = false
 	transport = "none"
