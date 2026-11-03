@@ -46,6 +46,13 @@ func _run() -> void:
 			b["rubble"] = true
 			b["hp"] = 0.0
 			made_ruin = true
+	# Военный лагерь рядом: на кадре видно кольцо патруля (21 клетка).
+	for b in buildings:
+		if str(b.get("type", "")) == "townhall":
+			buildings.append({"id": "wc:0", "type": "warcamp", "variant": "x",
+				"rot": 90, "x": int(b["x"]) + 6, "y": int(b["y"]) - 2,
+				"owner": 0, "hp": 40.0, "maxHp": 40.0})
+			break
 	var hurt_warrior := false
 	for v in villagers:
 		if not bool(v.get("warrior", false)):
@@ -85,6 +92,8 @@ func _run() -> void:
 	fx.buildings = buildings
 	fx.villagers = villagers
 	fx.team_color = Color("#4a90d9")
+	fx.my_owner = 0
+	fx.show_patrol = true
 	fx.selected_villagers = [str(villagers[0].get("id", ""))] if villagers.size() > 0 else []
 	root.add_child(fx)
 	await process_frame

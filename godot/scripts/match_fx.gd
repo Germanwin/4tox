@@ -21,6 +21,29 @@ var place_valid := true
 var max_hp_villager := 15.0
 var max_hp_warrior := 25.0
 var team_color := Color("#4a90d9")
+var my_owner := 0
+var show_patrol := false
+
+
+## Клетки кольца военного лагеря: пятно 5×5 минус модель 2×2 по центру
+## (21 клетка). Те же числа, что Buildings.patrolCells, но без правил игры —
+## это только подсветка.
+static func patrol_cells(x: int, y: int) -> Array:
+	var out: Array = []
+	for j in range(5):
+		for i in range(5):
+			var is_model := i >= 1 and i <= 2 and j >= 1 and j <= 2
+			if not is_model:
+				out.append(Vector2i(x + i, y + j))
+	return out
+
+
+static func model_cells(x: int, y: int) -> Array:
+	var out: Array = []
+	for j in range(2):
+		for i in range(2):
+			out.append(Vector2i(x + 1 + i, y + 1 + j))
+	return out
 
 
 func _ready() -> void:
@@ -106,6 +129,22 @@ func _draw() -> void:
 		draw_rect(Rect2(top, Vector2(w, 4.0)), Color(0.08, 0.06, 0.04, 0.7))
 		draw_rect(Rect2(top, Vector2(w * clampf(hp / max_hp, 0.0, 1.0), 4.0)),
 			Color("#d9563f") if hp / max_hp < 0.5 else Color("#7dc75e"))
+
+	# Кольцо патруля своих военных лагерей: пока открыта панель «Войска».
+	if show_patrol:
+		for b in buildings:
+			if str(b.get("type", "")) != "warcamp" or bool(b.get("rubble", false)):
+				continue
+			if int(b.get("owner", 0)) != my_owner:
+				continue
+			for c in patrol_cells(int(b["x"]), int(b["y"])):
+				var pts := _diamond(float(c.x), float(c.y), 1.0, 1.0)
+				draw_colored_polygon(pts, Color(team_color, 0.10))
+				pts.append(pts[0])
+				draw_polyline(pts, Color(team_color, 0.55), 1.0)
+			for c in model_cells(int(b["x"]), int(b["y"])):
+				var mp := _diamond(float(c.x), float(c.y), 1.0, 1.0)
+				draw_colored_polygon(mp, Color(0.15, 0.10, 0.06, 0.25))
 
 	# Кольца выбранных жителей и полосы здоровья.
 	for v in villagers:

@@ -861,6 +861,8 @@ func _update_view() -> void:
 		_fx.buildings = _layer.buildings if _layer != null else []
 		_fx.villagers = _view_villagers
 		_fx.team_color = _team_color(0, 1.0)
+		_fx.my_owner = _live.my_owner if _live != null else 0
+		_fx.show_patrol = _hud != null and _hud.panel == "army"
 		_fx.queue_redraw()
 	_ghost_update()
 	if _hud != null:
