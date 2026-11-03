@@ -1,10 +1,8 @@
 extends SceneTree
 
-## Боевой сценарий через HUD (сокращённый): бот → лесорубы → 28 брёвен →
-## казарма → трое воинов → приказ на вражескую ратушу. Проверяет, что приказ
-## доходит до сервера и враг получает урон. Ответный урон в этом прогоне не
-## гарантирован (защитники могут стоять далеко) — он не выдаётся за проверку;
-## картинка HP/завала проверяется отдельно test_combat_fx.
+## Боевой сценарий до ЗАВАЛА: бот → лесорубы → казарма → трое воинов →
+## приказ на вражеский лагерь лесоруба (35 hp). Проверяет, что бой не только
+## ранит, но и доводит постройку до rubble в снимке.
 
 const Supervisor = preload("res://scripts/server_supervisor.gd")
 const Demo = preload("res://scripts/hybrid_demo.gd")
@@ -27,7 +25,7 @@ func _init() -> void:
 
 
 func _run() -> void:
-	print("== боевой сценарий (приказ → урон врагу)")
+	print("== боевой сценарий (приказ → завал врага)")
 	sup = Supervisor.new()
 	root.add_child(sup)
 	await process_frame
@@ -87,8 +85,8 @@ func _run() -> void:
 		"трое пошли учиться")
 	check(await _wait_for(func() -> bool: return _count_warriors() >= 3, 60.0),
 		"трое вышли воинами: %d" % _count_warriors())
-	var target := _enemy_building("townhall")
-	check(not target.is_empty(), "вражеская ратуша найдена")
+	var target := _enemy_building("lumbercamp")
+	check(not target.is_empty(), "вражеский лагерь найден")
 	if target.is_empty():
 		_finish()
 		return
@@ -102,16 +100,12 @@ func _run() -> void:
 	hud.begin_order()
 	await hud.map_click(Vector2i(int(target["x"]), int(target["y"])))
 	check(true, "приказ отдан %d воинам" % ids.size())
-	var fight := await _wait_for(func() -> bool:
+	var ruin := await _wait_for(func() -> bool:
 		for b in hud.snap.get("buildings", []):
-			if int(b.get("owner", 0)) == 1 and (bool(b.get("rubble", false)) \
-					or float(b.get("hp", 1.0)) < float(b.get("maxHp", 1.0)) - 0.01):
-				return true
-		for v in hud.snap.get("villagers", []):
-			if int(v.get("owner", 0)) == 1 and int(v.get("hp", 99)) < 15:
+			if int(b.get("owner", 0)) == 1 and bool(b.get("rubble", false)):
 				return true
 		return false, 120.0)
-	check(fight, "враг получил урон")
+	check(ruin, "вражеская постройка стала завалом")
 	_finish()
 
 
