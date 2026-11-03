@@ -45,7 +45,7 @@
 | Гейт | Число |
 |---|---|
 | `./tests/run.sh` | 241 проверка, 0 FAIL (10 headless + net_loop + main_net_loop + кроссплей 16) |
-| `./tests/run.sh` после волны (с сетью) | 23 набора PASS + 2 loopback, 351 проверка, 0 FAIL |
+| `./tests/run.sh` после волны (с сетью) | 24 набора PASS + 2 loopback, 357 проверок, 0 FAIL |
 | `./tests/visual.sh` после волны (с тряской) | 54 кадра, 54 PASS, 0 FAIL |
 | `perf_world.gd` после волны (M4, загрузка машины) | 600 жителей: 3,46 мс (289 fps) стоя, 5,67 мс (176 fps) в движении |
 | `./tests/visual.sh` | 54 кадра, 54 PASS, ≤0,5 % |
@@ -84,13 +84,14 @@
 | Переподключение WS 300/600/1200 + пинг | `test_reconnect.gd` — 7/7 (обрыв, кадры пошли, пинг) |
 | HP-полосы построек и жителей, завал | `test_combat_fx.gd` — 10/10; кадр `shots/combat.png` |
 | Сетевой бейдж хост/гость · ws · мс / «нет связи» | `test_hud.gd` — 4 проверки бейджа |
+| События комнаты: peer-left/back, host-left, room-fault | `test_net_events.gd` — 6/6 (уход хоста, мир продолжается) |
 
-Полный headless-набор этой волны: `./tests/run.sh` — **23 набора PASS + 2
-loopback + кроссплей**, 351 проверка, 0 FAIL; `test_play.gd` — 47/47,
+Полный headless-набор этой волны: `./tests/run.sh` — **24 набора PASS + 2
+loopback + кроссплей**, 357 проверок, 0 FAIL; `test_play.gd` — 47/47,
 `test_hud.gd` — 46/46, `test_ruins.gd` — 30/30, `test_lobby.gd` — 20/20,
 `test_net_lobby_ui.gd` — 18/18, `test_main_net.gd` — 15/15,
 `test_resume.gd` — 15/15, `test_main_resume.gd` — 13/13, `test_shake.gd` — 11/11, `test_reconnect.gd` — 7/7,
-`test_combat_fx.gd` — 10/10.
+`test_combat_fx.gd` — 10/10, `test_net_events.gd` — 6/6.
 Браузерная регрессия после правок сервера: `mp.js` PASS, `menu.js` PASS
 («все проверки игры пройдены»), `game.js` PASS («все проверки начала игры
 пройдены»).
@@ -108,7 +109,7 @@ Git: ветка `godot-port`, коммиты порта — исходники, 
 
 - Боевой сценарий мышью (приказ, стоп, падение ратуши) — правила считает
   сервер, клиент рисует HP/завал; отдельного прогона сценария нет.
-- SSE-fallback (открытый вопрос §6.2), host-left/peer-left.
+- SSE-fallback (открытый вопрос §6.2), отдельный бейдж/экран host-left.
 - Картинка состояний: пни, подписи жителей, кольца патруля (тряска и
   руины уже подключены).
 
@@ -136,7 +137,7 @@ Git: ветка `godot-port`, коммиты порта — исходники, 
 
 ## Не сделано (честно)
 
-- SSE-fallback, host-left/peer-left.
+- SSE-fallback, отдельный экран/бейдж host-left.
 - Наблюдатель, лента событий с кликом, диагностический экран.
 - Пни, подписи жителей, кольца патруля, `hold fire` отдельной кнопкой.
 - Пиксельный паритет HUD (согласован структурный + SSIM, `parity.sh` не
@@ -147,7 +148,7 @@ Git: ветка `godot-port`, коммиты порта — исходники, 
 
 ```bash
 cd godot
-./tests/run.sh            # 23 набора + 2 loopback + кроссплей, 351 проверка
+./tests/run.sh            # 24 набора + 2 loopback + кроссплей, 357 проверок
 ./tests/play.sh           # сценарий мышью, 47 проверок
 ./tests/play.sh --shots   # то же с окном: shots/play_*.png
 ./tests/visual.sh         # 54 кадра ≤0,5 % (10–15 мин)

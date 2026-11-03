@@ -175,6 +175,8 @@ func open_live(url: String, opts := {}) -> void:
 		_live.connection.connect(_on_live_connection)
 	if not _live.latency.is_connected(_on_live_latency):
 		_live.latency.connect(_on_live_latency)
+	if not _live.net_event.is_connected(_on_net_event):
+		_live.net_event.connect(_on_net_event)
 	_live.begin_solo(url, str(opts.get("seed", "")), int(opts.get("size", 0)),
 		bool(opts.get("bot", false)))
 
@@ -224,6 +226,8 @@ func open_room(room, opts := {}) -> void:
 		room.connection.connect(_on_live_connection)
 	if not room.latency.is_connected(_on_live_latency):
 		room.latency.connect(_on_live_latency)
+	if not room.net_event.is_connected(_on_net_event):
+		room.net_event.connect(_on_net_event)
 	if room.world != null:
 		_on_live_world(room.world)
 	if not room.latest_snapshot.is_empty():
@@ -467,6 +471,27 @@ func _on_live_connection(state: String, detail: String) -> void:
 		_hud.status_text = "связь: " + detail
 	elif state == "lost":
 		_hud.status_text = "связь потеряна"
+	_hud.refresh()
+
+
+## Сетевое событие комнаты: словами в строку статуса HUD, без всплывашек
+## (правило 2026-10-24: в сети только бейдж/строка).
+func _on_net_event(kind: String, data: Dictionary) -> void:
+	if _hud == null:
+		return
+	match kind:
+		"peer-left":
+			_hud.status_text = "%s покинул игру" % str(data.get("name", "игрок"))
+		"peer-back":
+			_hud.status_text = "%s вернулся" % str(data.get("name", "игрок"))
+		"host-left":
+			_hud.status_text = "хост вышел · мир продолжается"
+		"room-fault":
+			_hud.status_text = "сбой комнаты: " + str(data.get("message", ""))
+		"room-recovered":
+			_hud.status_text = "комната восстановлена"
+		_:
+			return
 	_hud.refresh()
 
 

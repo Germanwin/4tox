@@ -19,6 +19,9 @@ signal room_started
 signal connection(state: String, detail: String)
 ## Пинг до сервера, мс (стенные часы вокруг HTTP-круга).
 signal latency(ms: int)
+## Служебные события комнаты по WS (JSON): peer-left/peer-back/host-left/
+## room-fault/room-recovered. Снимки — только бинарный 4TX1.
+signal net_event(kind: String, data: Dictionary)
 
 const Wire = preload("res://scripts/wire.gd")
 const WorldWire = preload("res://scripts/world_wire.gd")
@@ -485,6 +488,16 @@ func _process(dt: float) -> void:
 			if pkt.size() < 6:
 				continue
 			if pkt.decode_u32(0) != Wire.MAGIC:
+				# Не кадр мира — служебное событие комнаты (JSON-текст).
+				var ev: Variant = JSON.parse_string(pkt.get_string_from_utf8())
+				if ev is Dictionary and (ev as Dictionary).has("t"):
+					var kind := str((ev as Dictionary)["t"])
+					# hello/start/lobby/snapshot — протокол входа, а не событие
+					# комнаты; наружу отдаём только то, что меняет игру.
+					if kind in ["peer-left", "peer-back", "host-left", "host-back",
+							"room-fault", "room-recovered"]:
+						var d: Variant = (ev as Dictionary).get("d", {})
+						net_event.emit(kind, d if d is Dictionary else {})
 				continue
 			var r: Dictionary = Wire.unpack(pkt)
 			if r.get("ok", false):
