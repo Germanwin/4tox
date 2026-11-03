@@ -104,6 +104,8 @@ Godot↔Godot и Godot↔Chrome. Адрес сервера — origin без `/g
 
 ## Сборка
 
-`export_presets.cfg` и `tools/package.sh` готовы. Шаблоны экспорта Godot на
-этой машине не установлены, поэтому `.app`/`.exe` не собраны — см.
-[PORT-STATE.md](PORT-STATE.md).
+`./tools/package.sh` собирает `build/macos/4tox.app` и
+`build/windows/4tox.exe`, кладёт рядом бандл сервера (game/, mapgen2/, node) и
+проверяет собранное приложение флагом `--smoke`: оно само поднимает сервер,
+входит в партию и выходит 0. Нужны шаблоны экспорта Godot той же версии
+(Editor → Manage Export Templates). `.exe` на этой машине не запускался.

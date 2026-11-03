@@ -54,7 +54,7 @@
 | 36 | Диагностика | `/api/diag`, `/api/stream-stats`, fault records, checkpoint | частично | эндпоинты есть; клиентского экрана диагностики нет |
 | 37 | Безопасность | токены, HTTPS, cert, no secrets in logs, server validation | есть | токены/владелец проверяет сервер; wss с проверкой сертификата; в лог не пишутся токены |
 | 38 | Браузер-регрессия | mp.js/menu.js/game.js; аддитивные правки | есть | все три PASS после правок сервера (см. PORT-STATE) |
-| 39 | Сборка | Node bundle, port, health, logs, shutdown, macOS/Windows, signing | частично | `tools/package.sh` + `export_presets.cfg` написаны; **шаблоны экспорта не установлены**, .app/.exe не собраны |
+| 39 | Сборка | Node bundle, port, health, logs, shutdown, macOS/Windows, signing | частично | `tools/package.sh` → `build/macos/4tox.app` (415 МБ) с сервером и node, smoke `--smoke` — SMOKE OK (3/3, кадр 30); `build/windows/4tox.exe` (115 МБ) собран, но **не запускался** (нет Windows); подписи нет |
 | 40 | Тесты | run/visual/play/parity/vps/package + адверсарий | частично | run/visual/play есть; `parity.sh`, `vps.sh`, `package.sh` — package написан и упирается в шаблоны; parity.sh и vps.sh нет |
 
 ## Что это значит

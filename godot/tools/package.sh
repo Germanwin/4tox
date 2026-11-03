@@ -27,7 +27,7 @@ fi
 
 OUT="build"
 rm -rf "$OUT"
-mkdir -p "$OUT"
+mkdir -p "$OUT/macos" "$OUT/windows"
 
 echo "== macOS"
 "$GODOT" --headless --path . --export-release "macOS" "$OUT/macos/4tox.app"
@@ -80,8 +80,8 @@ else
   exit 1
 fi
 
-APP="$OUT/macos/4tox.app/Contents/MacOS/4tox"
-if [ -x "$APP" ]; then
+APP="$(find "$OUT/macos/4tox.app/Contents/MacOS" -maxdepth 1 -type f -perm -111 2>/dev/null | head -1)"
+if [ -n "$APP" ] && [ -x "$APP" ]; then
   echo "== smoke собранного .app: сервер внутри, мир и кадр"
   if "$APP" --headless -- --smoke > "$OUT/smoke.log" 2>&1; then
     grep -E "SMOKE" "$OUT/smoke.log" | tail -2
