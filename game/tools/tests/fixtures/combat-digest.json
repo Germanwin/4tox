@@ -1,0 +1,10 @@
+{
+  "seed": "combat-digest-1",
+  "size": 96,
+  "players": 2,
+  "perTown": 120,
+  "ticks": 600,
+  "villagers": 246,
+  "warriors": 60,
+  "hash": "7678ea2395b1d0c5e96faf4acbdcfd8c6be3f56a"
+}

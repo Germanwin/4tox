@@ -27,3 +27,20 @@ art/tools/model-stand/tools/out/
 
 # Состояние серверных комнат: журнал, checkpoint, lobby.json (секреты токенов)
 game/server/var/
+
+# Godot: кэш импорта и служебные .import у скриншотов
+.godot/
+godot/.godot/
+godot/shots/*.import
+
+# Godot-порт: кадры приёмки перерисовываются прогоном
+godot/shots/
+
+# Артефакты research-прогона 2026-10-27 (101 МБ: продублированные копии
+# паспорта и раскадровки). Сам разбор остаётся в research/, тяжёлые копии —
+# вне истории.
+research/passport-2026-10-27/4tox-current-passport-20261027/
+research/passport-2026-10-27/4tox-current-passport-20261027 2/
+research/passport-2026-10-27/runs/
+research/passport-2026-10-27/runs-baseline/
+research/passport-2026-10-27/4tox-current-passport-20261027.zip

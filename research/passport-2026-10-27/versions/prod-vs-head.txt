@@ -1,0 +1,16 @@
+# сверка: тело с публичного адреса против файла в этом checkout
+# (sha256 тела из prod-http.txt против versions/source-hashes.txt)
+game/index.html | совпадает
+game/js/boot.js | совпадает
+game/js/play.js | совпадает
+game/js/net.js | совпадает
+game/js/pending.js | совпадает
+game/js/lobby.js | совпадает
+game/js/hud.js | совпадает
+game/js/menu.js | совпадает
+mapgen2/js/serialize.js | совпадает
+mapgen2/js/render.js | совпадает
+mapgen2/js/session.js | совпадает
+mapgen2/js/villager.js | совпадает
+mapgen2/js/combat.js | совпадает
+mapgen2/js/buildings.js | совпадает

@@ -1,0 +1,170 @@
+{
+  "generatedAt": "2026-11-03T00:29:51.984Z",
+  "source": [
+    "mapgen2/js/buildings.js",
+    "mapgen2/js/combat.js",
+    "mapgen2/js/session.js",
+    "game/js/play.js"
+  ],
+  "zoom": {
+    "min": 3,
+    "max": 120
+  },
+  "input": {
+    "clickSlop": 8,
+    "holdSlop": 18,
+    "panSlop": 8,
+    "placeSlop": 18,
+    "holdMs": 500,
+    "doubleMs": 500,
+    "arrivalSeconds": 1.4
+  },
+  "buildMenu": [
+    {
+      "type": "house",
+      "variant": "a",
+      "price": 12,
+      "note": "жильё для четверых"
+    },
+    {
+      "type": "lumbercamp",
+      "variant": "a",
+      "price": 20,
+      "note": "три рабочих места"
+    },
+    {
+      "type": "barracks",
+      "variant": "a",
+      "price": 28,
+      "note": "открытый плац · тип А"
+    },
+    {
+      "type": "warcamp",
+      "variant": "x",
+      "price": 24,
+      "note": "дружина до 20 воинов"
+    }
+  ],
+  "caps": {
+    "warcamp": 20,
+    "barracksYard": 10,
+    "yard": 1,
+    "faceRot": 90,
+    "lineMax": 20,
+    "lineGap": 1
+  },
+  "slots": {
+    "work": {
+      "townhall": 0,
+      "house": 0,
+      "lumbercamp": 3,
+      "barracks": 0,
+      "warcamp": 0
+    },
+    "training": {
+      "townhall": 0,
+      "house": 0,
+      "lumbercamp": 0,
+      "barracks": 3,
+      "warcamp": 0
+    }
+  },
+  "trainTime": 5,
+  "housing": {
+    "houseLevel": 1,
+    "housingCapacity": 4
+  },
+  "combat": {
+    "hp": {
+      "villager": 15,
+      "warrior": 25,
+      "townhall": 120,
+      "house": 50,
+      "lumbercamp": 35,
+      "barracks": 80,
+      "warcamp": 40
+    },
+    "damage": {
+      "unit": 6,
+      "building": 2
+    },
+    "interval": {
+      "unit": 0.8,
+      "building": 1.5
+    },
+    "windup": 0.35,
+    "range": 1.2,
+    "aggro": 8,
+    "defendR": 12,
+    "retargetR": 3,
+    "barTime": 5,
+    "flinch": 0.16
+  },
+  "anim": {
+    "villager": {
+      "carry": {
+        "frames": 8,
+        "fps": 12,
+        "loop": true,
+        "duration": 0.6666666666666666
+      },
+      "carry_put": {
+        "frames": 4,
+        "fps": 12,
+        "loop": false,
+        "duration": 0.3333333333333333
+      },
+      "idle": {
+        "frames": 6,
+        "fps": 8,
+        "loop": true,
+        "duration": 0.75
+      },
+      "walk": {
+        "frames": 8,
+        "fps": 12,
+        "loop": true,
+        "duration": 0.6666666666666666
+      },
+      "walk_axe": {
+        "frames": 8,
+        "fps": 12,
+        "loop": true,
+        "duration": 0.6666666666666666
+      },
+      "work": {
+        "frames": 8,
+        "fps": 12,
+        "loop": false,
+        "duration": 0.6666666666666666
+      }
+    },
+    "warrior": {
+      "idle": {
+        "frames": 6,
+        "fps": 8,
+        "loop": true,
+        "duration": 0.75
+      },
+      "walk": {
+        "frames": 8,
+        "fps": 12,
+        "loop": true,
+        "duration": 0.6666666666666666
+      },
+      "work": {
+        "frames": 8,
+        "fps": 12,
+        "loop": false,
+        "duration": 0.6666666666666666
+      }
+    }
+  },
+  "names": {
+    "townhall": "Ратуша",
+    "house": "Дом жителя",
+    "lumbercamp": "Лагерь лесоруба",
+    "barracks": "Казарма",
+    "warcamp": "Военный лагерь"
+  }
+}

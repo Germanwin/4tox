@@ -73,6 +73,10 @@
   var actions = {};
   var rows = [];              // строки жителей в выезжающей панели
   var listSig = '';           // по нему видно, что строки надо пересобрать
+  /* Размер портрета в CSS-пикселях, померенный один раз на пересборку списка.
+     Читать его у каждой строки на каждое обновление — это принудительная
+     раскладка на строку (см. paintFace). */
+  var faceBox = null;
   var lastLogs = -1;
   var hintT = 0;
   var stateAcc = 0;
@@ -239,6 +243,15 @@
 
     bindButtons();
     bindHints();
+    /* Размер портрета задан CSS, а в узком окне он другой (hud.css: 30×38 на
+       полном, 26×33 на узком). Померенный размер помним до пересборки списка,
+       поэтому при смене ширины окна его надо забыть. */
+    global.addEventListener('resize', function () { faceBox = null; winDirty = true; });
+    /* Прокрутка списка жителей двигает окно строк: в документе живут только
+       видимые, поэтому после прокрутки окно надо пересобрать. */
+    if (el.villagerList) {
+      el.villagerList.addEventListener('scroll', function () { winDirty = true; });
+    }
   }
 
 
@@ -563,6 +576,8 @@
     if (drawerOpen) {
       closeSquad();
       listSig = '';
+      // Панель открылась — пересчитать окно строк (высота списка теперь настоящая).
+      winDirty = true;
       paintVillagers(global.Play.state);
       // Пересборка строк снимает подсветку — возвращаем её: выбранного жителя
       // выбирают на карте, а смотрят в панели.
@@ -1036,6 +1051,12 @@
     // Жители новые: строки собираются заново, счёт начинается с нуля.
     rows = [];
     listSig = '';
+    // Окно строк — тоже с нуля: в новом мире другие жители и другая прокрутка.
+    winFirst = -1;
+    winCount = 0;
+    winRowH = 0;
+    winDirty = true;
+    faceBox = null;
     lastLogs = -1;
     buildSig = '';
     placeSig = '';
@@ -1188,6 +1209,28 @@
     return parts.join('|');
   }
 
+  /* ------------------- строки списка: столько, сколько видно ------------- *
+   *
+   * В деревне бывает и три жителя, и шестьсот, а панель показывает десяток.
+   * Раньше на КАЖДОГО заводилась строка с личным холстом-портретом: при 600
+   * это 600 <li> и 600 <canvas> в документе, и каждое обновление панели (8 раз
+   * в секунду) переписывало их все. Отсюда 92 раскладки и 169 мс раскладки за
+   * 3 секунды — почти всё это плата за строки, которых никто не видит
+   * (замер: research/villager-fps-2026-11-01).
+   *
+   * Теперь в документе живёт окно строк вокруг прокрутки (с запасом), а высоту
+   * списка держат две пустые строки — сверху и снизу. Что видно на экране — то
+   * же самое: те же строки, тот же порядок, те же портреты. Прокрутка меняет
+   * окно, полоса прокрутки доезжает до последнего.
+   * ---------------------------------------------------------------------- */
+  var OVERSCAN = 6;           // строк сверх видимого края
+  var winFirst = -1;          // индекс первого жителя в окне
+  var winCount = 0;           // сколько строк в окне
+  var winRowH = 0;            // высота строки с промежутком, померенная по факту
+  var winDirty = true;        // окно надо пересобрать (прокрутка, смена списка)
+  var winSig = '';            // какой список сейчас в окне
+  var winTotal = 0;           // сколько жителей в нём было
+
   function paintVillagers(st) {
     /* В «против деревни» в списке только свои: чужие жители — не деревня
        игрока, и их имена в панели сбивали бы с толку. */
@@ -1196,50 +1239,121 @@
       return v && (v.owner === undefined ? 0 : v.owner) === me;
     });
     var key = listKey(list);
-    if (key !== listSig) { rebuildRows(list); listSig = key; }
-    for (var i = 0; i < list.length && i < rows.length; i++) {
-      var v = list[i], row = rows[i];
+    if (key !== listSig) { listSig = key; winDirty = true; }
+    if (winDirty || winFirst < 0) syncWindow(list, key);
+    for (var j = 0; j < rows.length; j++) {
+      var v = list[winFirst + j];
+      if (!v) continue;
+      var row = rows[j];
       var text = homeText(v) + ' · ' + doing(v);
       if (row.doing.textContent !== text) row.doing.textContent = text;
       paintFace(row.face, v, row);
     }
+    if (el.villagerCount) el.villagerCount.textContent = list.length + ' чел.';
   }
 
-  function rebuildRows(list) {
+  /* Пустая строка заданной высоты: держит место непоказанных жителей. */
+  function spacer(h) {
+    var li = document.createElement('li');
+    li.className = 'villager-spacer';
+    li.setAttribute('aria-hidden', 'true');
+    /* flex: 0 0 auto — иначе flex-колонка сжимает пустую строку до нуля и
+       список теряет высоту непоказанных жителей (полоса прокрутки не доедет
+       до последнего). */
+    li.style.flex = '0 0 auto';
+    li.style.height = Math.max(0, h) + 'px';
+    return li;
+  }
+
+  /* Одна строка списка. Отдельной функцией — потому что строки теперь
+     создаются не все сразу, а окном. */
+  function buildRow(v, i) {
+    var li = document.createElement('li');
+    li.className = 'villager-row';
+    li.dataset.vid = villagerNo(v, i);
+
+    var wrap = document.createElement('span');
+    wrap.className = 'face-wrap';
+    var face = document.createElement('canvas');
+    // Атрибуты — буфер, размер на экране задаёт CSS (hud.css: .face-wrap).
+    face.width = 30;
+    face.height = 38;
+    wrap.appendChild(face);
+
+    var who = document.createElement('span');
+    who.className = 'villager-who';
+    var name = document.createElement('b');
+    name.textContent = villagerLabel(v, i);
+    var line = document.createElement('i');
+    line.textContent = '…';
+    who.appendChild(name);
+    who.appendChild(line);
+
+    li.appendChild(wrap);
+    li.appendChild(who);
+    return { li: li, doing: line, face: face, key: '', set: null };
+  }
+
+  /* Окно строк вокруг прокрутки: какие жители списка сейчас в документе. */
+  function syncWindow(list, key) {
     if (!el.villagerList) return;
-    var scroll = el.villagerList.scrollTop;
-    el.villagerList.innerHTML = '';
-    rows = [];
-    for (var i = 0; i < list.length; i++) {
-      var v = list[i];
-      var li = document.createElement('li');
-      li.className = 'villager-row';
-      li.dataset.vid = villagerNo(v, i);
-
-      var wrap = document.createElement('span');
-      wrap.className = 'face-wrap';
-      var face = document.createElement('canvas');
-      // Атрибуты — буфер, размер на экране задаёт CSS (hud.css: .face-wrap).
-      face.width = 30;
-      face.height = 38;
-      wrap.appendChild(face);
-
-      var who = document.createElement('span');
-      who.className = 'villager-who';
-      var name = document.createElement('b');
-      name.textContent = villagerLabel(v, i);
-      var line = document.createElement('i');
-      line.textContent = '…';
-      who.appendChild(name);
-      who.appendChild(line);
-
-      li.appendChild(wrap);
-      li.appendChild(who);
-      el.villagerList.appendChild(li);
-      rows.push({ li: li, doing: line, face: face, key: '', set: null });
+    var box = el.villagerList;
+    var total = list.length;
+    var scroll = box.scrollTop || 0;
+    var viewH = box.clientHeight || 0;
+    var rowH = winRowH;
+    /* Высоту строки мерим по факту: она задана CSS и меняется на узком окне
+       (hud.css: 30x38 на полном, 26x33 на узком). Пока строк нет — берём
+       заведомо больше, чем помещается, и уточним на следующем кадре. */
+    if (!rowH) rowH = 48;
+    var first = Math.max(0, Math.floor(scroll / rowH) - OVERSCAN);
+    var count = Math.max(1, Math.ceil((viewH || 400) / rowH) + OVERSCAN * 2);
+    if (rowH && first + count > total) count = Math.max(0, total - first);
+    if (count === 0 && total > 0) {
+      first = Math.max(0, total - 1);
+      count = 1;
     }
-    el.villagerList.scrollTop = scroll;
-    if (el.villagerCount) el.villagerCount.textContent = list.length + ' чел.';
+
+    /* Окно то же — пересобирать нечего. Сверяем и список: жителей могло
+       стать больше или меньше, тогда другая высота у пустых строк. */
+    var same = (first === winFirst && count === winCount && rows.length === count &&
+      key === winSig && total === winTotal);
+    if (same) { winDirty = false; return; }
+
+    box.innerHTML = '';
+    rows = [];
+    // Строки новые — померенный размер портрета тоже.
+    faceBox = null;
+    /* Высота списка держится ПУСТЫМИ СТРОКАМИ, а не отступами: отступ на
+       контейнере с прокруткой входит в clientHeight, тот на следующем кадре
+       «видит» список во всю длину и заказывает окно во весь список — цикл,
+       который и дал 291 строку вместо 21. Пустая строка в clientHeight не
+       входит: она внутри содержимого. */
+    if (first > 0) box.appendChild(spacer(first * rowH));
+    for (var i = first; i < first + count && i < total; i++) {
+      var rec = buildRow(list[i], i);
+      box.appendChild(rec.li);
+      rows.push(rec);
+    }
+    var rest = Math.max(0, total - first - count);
+    if (rest > 0) box.appendChild(spacer(rest * rowH));
+
+    var probe = rows.length ? rows[0].li : null;
+    if (probe) {
+      var h = probe.getBoundingClientRect().height;
+      var nextRowH = h > 0 ? Math.round(h) + 5 : 0;   // 5 — промежуток .villager-list
+      if (nextRowH && Math.abs(nextRowH - rowH) > 1) {
+        winRowH = nextRowH;
+        winDirty = true;      // окно пересоберётся с верной высотой
+      } else {
+        winRowH = nextRowH || rowH;
+      }
+    }
+    winFirst = first;
+    winCount = rows.length;
+    winSig = key;
+    winTotal = total;
+    winDirty = false;
     /* Пересборка снимает подсветку — возвращаем её сразу: выбранного жителя
        выбирают на карте, а смотрят в панели (и в панели найма тоже). */
     onFocus({ villager: global.Play.state.focus });
@@ -1266,7 +1380,19 @@
     if (!spr) return;
 
     var dpr = global.devicePixelRatio || 1;
-    var cssW = canvas.clientWidth || 30, cssH = canvas.clientHeight || 38;
+    /* Размер портрета в CSS-пикселях — ОДИН раз на пересборку списка, а не у
+       каждой строки на каждое обновление. `clientWidth` — это чтение
+       раскладки: оно заставляет браузер пересчитать документ прямо здесь, и
+       600 таких чтений восемь раз в секунду давали 92 раскладки и 169 мс за
+       3 секунды (замер — research/villager-fps-2026-11-01). Все строки
+       одинаковые, размер задаёт CSS (.face-wrap), поэтому мерить довольно
+       первую. */
+    if (!faceBox) {
+      var probe = rows.length ? rows[0].face : null;
+      var pw = probe ? probe.clientWidth : 0, ph = probe ? probe.clientHeight : 0;
+      faceBox = { w: pw || 30, h: ph || 38 };
+    }
+    var cssW = faceBox.w, cssH = faceBox.h;
     var w = Math.max(1, Math.round(cssW * dpr));
     var h = Math.max(1, Math.round(cssH * dpr));
     /* Размер буфера ставится, только если он ДЕЙСТВИТЕЛЬНО другой. Запись в
@@ -2061,7 +2187,22 @@
      карта острова, растянутая на канвас. Ключ округляет положение до
      четверти клетки: дрожание на полпикселя картинку не меняет, а лишний
      кадр стоит полного блита. */
-  var mmKey = '';
+  var mmKey = 0;      // хеш последнего нарисованного обзора
+  var mmSec = -1;     // секунда, на которой он рисовался (страховка от коллизии)
+
+  /* Ключ обзора — ЧИСЛО, а не строка.
+
+     Раньше на каждый кадр склеивалась строка из округлённых координат ВСЕХ
+     жителей: при 600 гуляющих это ~8 КБ текста в кадр, то есть мусор для
+     сборщика. Сравнивать надо то же самое, поэтому числа смешиваются в
+     32-битный хеш тем же порядком и с тем же округлением (1/4 клетки у
+     камеры, 1/8 у жителя) — от «перерисовать или нет» не меняется ничего,
+     кроме цены.
+
+     Страховка от совпадения хешей: раз в секунду обзор перерисовывается
+     принудительно. Пиксели от этого не меняются — тот же холст, тот же блит, —
+     а застывших точек на обзоре не будет даже при коллизии. */
+  function mmMix(h, x) { return (Math.imul(h ^ (x | 0), 2654435761) >>> 0); }
 
   function drawMinimap(force) {
     var renderer = global.Play.renderer();
@@ -2072,19 +2213,28 @@
        а не на каждый снимок. Раньше в ключе стояло число построек и обзор
        перерисовывался на каждое движение камеры и жителей, хотя сам холст
        обзора не менялся. */
-    var key = (Math.round(renderer.cam.x * 4) / 4) + ',' + (Math.round(renderer.cam.y * 4) / 4) +
-      ',' + (Math.round(renderer.cam.zoom * 4) / 4) + ',' +
-      (renderer.minimapVersion || 0) + '|';
+    var key = 2166136261 >>> 0;
+    key = mmMix(key, Math.round(renderer.cam.x * 4));
+    key = mmMix(key, Math.round(renderer.cam.y * 4));
+    key = mmMix(key, Math.round(renderer.cam.zoom * 4));
+    key = mmMix(key, renderer.minimapVersion || 0);
     for (var v = 0; v < st.villagers.length; v++) {
-      key += (Math.round(st.villagers[v].x * 8) / 8) + ',' + (Math.round(st.villagers[v].y * 8) / 8) + ';';
+      key = mmMix(key, Math.round(st.villagers[v].x * 8));
+      key = mmMix(key, Math.round(st.villagers[v].y * 8));
     }
     /* Метка угрозы живёт в том же холсте, но меняется по времени: без неё в
        ключе обзор не перерисовался бы и метка застыла. Четверть секунды —
        достаточно, чтобы кольцо пульсировало. */
     var th = evLog.threat;
-    if (th) key += '|threat:' + th.x + ',' + th.y + ',' + Math.floor((st.seconds || 0) * 4);
-    if (!force && key === mmKey) return;
+    if (th) {
+      key = mmMix(key, th.x * 4);
+      key = mmMix(key, th.y * 4);
+      key = mmMix(key, Math.floor((st.seconds || 0) * 4));
+    }
+    var sec = Math.floor(st.seconds || 0);
+    if (!force && key === mmKey && sec === mmSec) return;
     mmKey = key;
+    mmSec = sec;
 
     mmCtx.setTransform(mmDpr, 0, 0, mmDpr, 0, 0);
     mmCtx.clearRect(0, 0, MM, MM);

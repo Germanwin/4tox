@@ -205,7 +205,14 @@
       return { anim: meta.anim || 'idle', animInstance: inst, phase: phase };
     }
 
-    function pose(id, renderTime) {
+    /* Поза по времени отрисовки.
+
+       poseInto пишет в ГОТОВЫЙ объект, pose — в новый. Разница только в этом:
+       клиент зовёт позу на каждого жителя каждый кадр (600 жителей — 600
+       объектов в кадр), а читает поля сразу, ему новый объект незачем.
+       Приёмки и внешний код зовут pose и получают ровно тот же ответ. */
+    function poseInto(target, id, renderTime) {
+      var out = target || {};
       var list = byId.get(id);
       var meta = metaById.get(id) || null;
       var latestSnap = snapshots.length ? snapshots[snapshots.length - 1] : null;
@@ -218,33 +225,36 @@
       if (!list || !list.length) {
         if (!meta) return null;
         var ph0 = animOf(meta, renderTime);
-        return {
-          x: meta.x, y: meta.y, rot: meta.rot || 0,
-          anim: ph0 && ph0.anim, animInstance: ph0 && ph0.animInstance,
-          phase: ph0 ? ph0.phase : 0,
-          state: meta.state || '', flinch: meta.flinch || 0,
-          hidden: !!meta.hidden, mode: 'held', underflow: true, stale: stale
-        };
+        out.x = meta.x; out.y = meta.y; out.rot = meta.rot || 0;
+        out.anim = ph0 && ph0.anim;
+        out.animInstance = ph0 && ph0.animInstance;
+        out.phase = ph0 ? ph0.phase : 0;
+        out.state = meta.state || ''; out.flinch = meta.flinch || 0;
+        out.hidden = !!meta.hidden;
+        out.mode = 'held'; out.underflow = true; out.stale = stale;
+        return out;
       }
       var anim = animOf(meta, renderTime);
-      function out(s, x, y, rot, mode, underflow) {
+      function put(x, y, rot, mode, underflow) {
         var hidden = !!(meta && meta.hidden);
         if (meta && meta.spawnTimeMs !== undefined && renderTime < meta.spawnTimeMs) hidden = true;
         if (meta && meta.deathTimeMs !== undefined && renderTime >= meta.deathTimeMs) hidden = true;
-        return {
-          x: x, y: y, rot: rot,
-          anim: anim && anim.anim, animInstance: anim && anim.animInstance,
-          phase: anim ? anim.phase : 0, state: meta ? (meta.state || '') : '',
-          flinch: meta ? (meta.flinch || 0) : 0, hidden: hidden,
-          mode: mode, underflow: !!underflow, stale: stale
-        };
+        out.x = x; out.y = y; out.rot = rot;
+        out.anim = anim && anim.anim;
+        out.animInstance = anim && anim.animInstance;
+        out.phase = anim ? anim.phase : 0;
+        out.state = meta ? (meta.state || '') : '';
+        out.flinch = meta ? (meta.flinch || 0) : 0;
+        out.hidden = hidden;
+        out.mode = mode; out.underflow = !!underflow; out.stale = stale;
+        return out;
       }
       if (renderTime <= list[0].t) {
-        return out(list[0], list[0].x, list[0].y, list[0].rot, 'held', false);
+        return put(list[0].x, list[0].y, list[0].rot, 'held', false);
       }
       var last = list[list.length - 1];
       if (Math.abs(renderTime - last.t) < 1e-9) {
-        return out(last, last.x, last.y, last.rot, 'interpolated', false);
+        return put(last.x, last.y, last.rot, 'interpolated', false);
       }
       if (renderTime > last.t) {
         /* После последней точки экстраполяция разрешена ТОЛЬКО по
@@ -257,22 +267,26 @@
           if (span > 0) {
             var vx = (last.x - prev.x) / span;
             var vy = (last.y - prev.y) / span;
-            return out(last, last.x + vx * dt, last.y + vy * dt, last.rot,
-              'extrapolated', false);
+            return put(last.x + vx * dt, last.y + vy * dt, last.rot, 'extrapolated', false);
           }
         }
-        return out(last, last.x, last.y, last.rot, 'held', true);
+        return put(last.x, last.y, last.rot, 'held', true);
       }
       var i = findBracket(list, renderTime);
       var a = list[i - 1], b = list[i];
       var den = b.t - a.t;
-      if (!(den > 0)) return out(b, b.x, b.y, b.rot, 'held', true);
+      if (!(den > 0)) return put(b.x, b.y, b.rot, 'held', true);
       var alpha = (renderTime - a.t) / den;
-      return out(b,
+      return put(
         a.x + (b.x - a.x) * alpha,
         a.y + (b.y - a.y) * alpha,
         rotLerp(a.rot, b.rot, alpha),
         'interpolated', false);
+    }
+
+    function pose(id, renderTime) {
+      var out = poseInto({}, id, renderTime);
+      return out === null ? null : out;
     }
 
     function latest() { return snapshots.length ? snapshots[snapshots.length - 1] : null; }
@@ -290,6 +304,7 @@
     return {
       push: push,
       pose: pose,
+      poseInto: poseInto,
       latest: latest,
       lastAccepted: function () { return lastAccepted; },
       epoch: function () { return epoch; },

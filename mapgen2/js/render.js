@@ -320,6 +320,10 @@
   Renderer.prototype.setBuildings = function (list, opts) {
     this.buildings = list || [];
     this.invalidateOrder();
+    /* Список подменили (снимок сети, F5, новая партия) — маска «что закрыто
+       постройкой» к старому списку не относится. Версия по `_buildRev` такой
+       подмены не видит: она про правку построек, а не про новый список. */
+    this._cover = null;
     if (this.cache && (!opts || opts.minimap !== false)) this.buildMinimap();
   };
 
@@ -357,10 +361,12 @@
 
   /* Жители. Список ведёт app.js (он же их и двигает), рендер только рисует.
      Порядок глубины у них считается на каждый кадр, а не кэшируется, как у
-     построек: житель ходит, и его ключ x + y меняется каждый шаг. Жителей
-     единицы — сортировка тут дешевле, чем слежение за тем, когда кэш протух. */
+     построек: житель ходит, и его ключ x + y меняется каждый шаг. */
   Renderer.prototype.setVillagers = function (list) {
     this.villagers = list || [];
+    /* Новый список — новой длины: записи порядка пересоберутся в ближайшем
+       кадре, старые ссылки на жителей не переживут подмену. */
+    this._vOrder = null;
   };
 
   /* Атлас КОНКРЕТНОГО жителя. Воин — тот, кто уже вышел из казармы обученным
@@ -372,12 +378,33 @@
     return this.villagerSprites;
   };
 
-  Renderer.prototype.villagerOrder = function () {
-    var out = [];
-    for (var i = 0; i < this.villagers.length; i++) {
-      var v = this.villagers[i];
-      out.push({ v: v, key: v.x + v.y });
+  /* Порядок глубины жителей на кадр.
+
+     Записи массива и сам массив ПЕРЕИСПОЛЬЗУЮТСЯ: раньше на каждого жителя
+     каждый кадр выделялся объект `{v, key}` (при 600 жителях и 60 к/с — 36
+     тысяч объектов в секунду только на сортировку, см.
+     research/villager-fps-2026-11-01).
+
+     Жители за пределами кадра в список не попадают: их всё равно не рисуют
+     (та же проверка стоит в обходе), а сортировать их незачем. Порядок
+     оставшихся от этого не меняется — сравнение идёт по тому же ключу x + y,
+     а сортировка устойчивая.
+
+     box — охват кадра в клетках (`viewTiles`), как у остальных обходов.
+     Без box список полный: так его зовут приёмки и экспорт PNG. */
+  Renderer.prototype.villagerOrder = function (box) {
+    var list = this.villagers, out = this._vOrder || (this._vOrder = []);
+    var n = 0, i, v, rec;
+    for (i = 0; i < list.length; i++) {
+      v = list[i];
+      if (box && (v.x < box.x0 || v.x > box.x1 || v.y < box.y0 || v.y > box.y1)) continue;
+      rec = out[n];
+      if (!rec) { rec = out[n] = { v: v, key: 0 }; }
+      rec.v = v;
+      rec.key = v.x + v.y;
+      n++;
     }
+    out.length = n;
     out.sort(function (a, c) { return a.key - c.key; });
     return out;
   };
@@ -1606,15 +1633,29 @@
   /* Цвет команды по номеру владельца. В одиночной игре тоже есть цвет:
      тонкая цветная обводка спрайта — единственный признак «свой», когда
      городов несколько, и просто аккуратная обводка, когда один. */
+  /* Строка цвета считается ОДИН раз на (владелец, прозрачность) за партию, а
+     не на каждого жителя каждый кадр: цвет деревни за бой не меняется, а
+     склейка `rgba(...)` с тремя parseInt — это новая строка в кадр на
+     человека. Ключ сверяется по САМОМУ цвету из мира (`town.color`), поэтому
+     подмена мира или цвета деревни сбрасывает кэш сама, без отдельного
+     «не забыть очистить». */
   Renderer.prototype.teamColorFor = function (owner, alpha) {
     var w = this.world;
-    var t = w && w.towns && w.towns[owner === undefined ? 0 : owner];
-    var hex = t && t.color ? String(t.color).replace('#', '') : '4a90d9';
+    var idx = owner === undefined ? 0 : owner;
+    var t = w && w.towns && w.towns[idx];
+    var src = t && t.color ? t.color : null;
+    var a = alpha === undefined ? 1 : alpha;
+    var cache = this._teamColor || (this._teamColor = []);
+    var hit = cache[idx];
+    if (hit && hit.src === src && hit.a === a) return hit.out;
+    var hex = src ? String(src).replace('#', '') : '4a90d9';
     if (hex.length !== 6) hex = '4a90d9';
     var r = parseInt(hex.slice(0, 2), 16);
     var g = parseInt(hex.slice(2, 4), 16);
     var bl = parseInt(hex.slice(4, 6), 16);
-    return 'rgba(' + r + ',' + g + ',' + bl + ',' + (alpha === undefined ? 1 : alpha) + ')';
+    var out = 'rgba(' + r + ',' + g + ',' + bl + ',' + a + ')';
+    cache[idx] = { src: src, a: a, out: out };
+    return out;
   };
 
   /* Силуэт кадра в одном цвете. Кэшируется на самом спрайте: кадров немного,
@@ -2215,33 +2256,63 @@
    * а в генераторе призрак над деревом честно показывает, что тут будут рубить
    * (постановка их снесёт — settle).
    *
-   * Маска собирается на каждый обход, а не кэшируется: дом ведут за курсором
-   * десятки раз в секунду, и следить за тем, когда кэш протух, дороже, чем
-   * разложить по клеткам три десятка клеток на постройку.
+   * Маска живёт, пока стоят те же постройки: её версия — `world._buildRev`
+   * (его поднимает Buildings.touch на постановке, переносе, повороте и сносе)
+   * вместе с длиной списка и размером мира. Раньше она собиралась КАЖДЫЙ
+   * обход вместе с копией списка построек: при полутора сотнях домов это
+   * сотни записей в новый объект-хеш на каждый кадр, то есть мусор для GC
+   * (research/villager-fps-2026-11-01). Клетки хранятся в Uint8Array — по
+   * байту на клетку мира, а не по записи в хеше.
+   *
+   * Пока есть призрак или ожидающие постройки, маска НЕ кэшируется: дом ведут
+   * за курсором десятки раз в секунду, и место под ним меняется каждый кадр.
    * ---------------------------------------------------------------------- */
   Renderer.prototype.coverMask = function () {
     var B = global.Buildings, w = this.world;
     if (!B || !w || !B.coverCells) return null;
-    var out = {}, i, j, cells, c;
-    var list = (this.buildings || []).slice();
+    var i, cells, c, k;
+    var list = this.buildings || [];
+    var N = w.width * w.height;
+    var live = !!(this.ghost && this.ghost.b) || !!(this.pending && this.pending.length);
+    var ver = (w._buildRev || 0) + ':' + list.length + ':' + w.width + 'x' + w.height;
+    var cache = this._cover;
+    if (!live && cache && cache.version === ver) return cache.mask;
+
+    /* Пока постройку ведут (призрак) или ждут подтверждения (pending), маска
+       не кэшируется — но и кэш портить нельзя: иначе после «Отменить» мелочь
+       осталась бы спрятанной там, где стоял призрак. Поэтому живой случай
+       пишет в отдельный черновой массив. */
+    var mask;
+    if (live) {
+      mask = this._coverScratch;
+      if (!mask || mask.length !== N) mask = this._coverScratch = new Uint8Array(N);
+      else mask.fill(0);
+    } else {
+      mask = (cache && cache.mask && cache.mask.length === N) ? cache.mask : new Uint8Array(N);
+      mask.fill(0);
+    }
+
+    var put = function (b) {
+      if (!b) return;
+      cells = B.coverCells(b);
+      for (k = 0; k < cells.length; k++) {
+        c = cells[k];
+        if (c.x < 0 || c.y < 0 || c.x >= w.width || c.y >= w.height) continue;
+        mask[c.y * w.width + c.x] = 1;
+      }
+    };
+    for (i = 0; i < list.length; i++) put(list[i]);
     // Ожидающая постройка закрывает мелочь так же, как настоящая: куст под
     // ещё не подтверждённым домом читался бы как «внутри дома» (UX-01).
     if (this.pending && this.pending.length) {
-      for (i = 0; i < this.pending.length; i++) list.push(this.pending[i]);
+      for (i = 0; i < this.pending.length; i++) put(this.pending[i]);
     }
     // Призрак — та же постройка, только ещё не вставшая: спрашивается тем же
     // правилом, а не своим (иначе «что закроется» и «что закрыто» разошлись бы).
-    if (this.ghost && this.ghost.b) list.push(this.ghost.b);
-    for (i = 0; i < list.length; i++) {
-      if (!list[i]) continue;
-      cells = B.coverCells(list[i]);
-      for (j = 0; j < cells.length; j++) {
-        c = cells[j];
-        if (c.x < 0 || c.y < 0 || c.x >= w.width || c.y >= w.height) continue;
-        out[c.y * w.width + c.x] = 1;
-      }
-    }
-    return out;
+    if (this.ghost && this.ghost.b) put(this.ghost.b);
+
+    if (!live) this._cover = { version: ver, mask: mask };
+    return mask;
   };
 
   /* Обход всех спрайтов в порядке глубины: объекты мира, постройки и жители
@@ -2389,7 +2460,12 @@
       }
       blds.sort(function (a, c) { return a.key - c.key; });
     }
-    var vils = (onWalker && this.showVillagers) ? this.villagerOrder() : [];
+    /* Жители за охватом кадра в список не идут: их не рисуют, а сортировать
+       их каждый кадр — работа впустую (порядок остальных от этого не
+       меняется, см. villagerOrder). */
+    var vils = (onWalker && this.showVillagers)
+      ? this.villagerOrder((opts && opts.cull && opts.box) ? opts.box : null)
+      : [];
     var i = 0, j = 0, k = 0, o, b, v;
     while (i < objs.length || j < blds.length || k < vils.length) {
       /* Пропуск считается здесь, а не в drawObjects: обход один на экран и на

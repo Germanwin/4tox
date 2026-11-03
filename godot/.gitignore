@@ -1,0 +1,25 @@
+# Godot импорт и кэш: 114 МБ, в git не нужны — соберутся при первом открытии.
+.godot/
+*.godot.tmp
+
+# Кадры приёмки и отладки: 26 МБ. Снимаются тестами заново.
+shots/
+
+# Локальные логи и выгрузки.
+*.log
+export/
+
+# Состояние сервера, если тест запускал его из каталога godot/
+game/server/var/
+
+# Копии атласов и моделей: собираются tools/sync-assets.sh из mapgen2/assets
+# и art/**/out/*.glb. В историю не кладём (14 МБ копий + импорт).
+assets/
+models/
+
+# Эталонные и выходные кадры пиксельного гейта: 83 МБ. Снимаются прогоном
+# (capture_reference.js / visual.sh) на машине с Chrome.
+tests/fixtures/*.png
+tests/fixtures/*.png.import
+tests/fixtures/m96/
+tests/fixtures/m192/

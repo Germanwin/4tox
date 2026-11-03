@@ -1,0 +1,37 @@
+# diff --stat dc75820..HEAD
+ AGENTS.md                                          |  147 +-
+ docs/DEPLOY.md                                     |  123 ++
+ game/index.html                                    |   13 +-
+ game/js/boot.js                                    |  181 ++-
+ game/js/hud.js                                     |   69 +-
+ game/js/net.js                                     |  635 +++++++--
+ game/js/pending.js                                 |  414 ++++++
+ game/js/play.js                                    |  849 ++++++++++--
+ game/server/README.md                              |    6 +
+ game/server/server.js                              | 1410 +++++++++++++++++---
+ game/tools/http.js                                 |  817 ++++++++++++
+ game/tools/menu.js                                 |  349 ++++-
+ game/tools/mp.js                                   |  103 +-
+ game/tools/pending.js                              |  161 +++
+ game/tools/stream.js                               |  502 +++++++
+ mapgen2/js/combat.js                               |  163 ++-
+ mapgen2/js/metrics.js                              |    5 +
+ mapgen2/js/render.js                               |   46 +-
+ mapgen2/js/session.js                              |   22 +-
+ mapgen2/js/villager.js                             |  286 +++-
+ mapgen2/tools/combat-meet.js                       |  355 +++++
+ mapgen2/tools/path-defer.js                        |  288 ++++
+ .../4tox-logs-2026-10-26_1938.log                  |  131 ++
+ research/patch-2026-10-26-final/CONTRACTS.md       |  125 ++
+ research/patch-2026-10-26-final/REPORT.md          |  187 +++
+ .../patch-2026-10-26-final/prod-after-deploy.png   |  Bin 0 -> 959436 bytes
+ .../prod-smoke-2026-10-26.json                     |  265 ++++
+ 27 files changed, 7153 insertions(+), 499 deletions(-)
+
+# diff --shortstat dc75820..HEAD
+ 27 files changed, 7153 insertions(+), 499 deletions(-)
+
+# diff --stat рабочего дерева против HEAD
+
+# неотслеживаемые файлы (git status --porcelain, ?? строки)
+?? research/passport-2026-10-27/

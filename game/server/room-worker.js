@@ -91,6 +91,8 @@ async function initOnce(msg) {
       seed: msg.seed,
       size: msg.size,
       players: msg.players,
+      solo: !!msg.solo,
+      bot: !!msg.bot,
       epoch: msg.epoch || 1,
       dir: msg.stateDir || undefined,
       buildHash: msg.buildHash,
@@ -165,6 +167,13 @@ async function onMessage(msg) {
       commandState: commandState,
       requestId: msg.requestId
     });
+    return;
+  }
+  if (msg.type === 'checkPlace') {
+    let check;
+    try { check = runtime.checkPlace(msg.query || {}); }
+    catch (e) { check = { ok: false, reason: String(e && e.message || e), cells: [], exits: [] }; }
+    send('checkPlace', { check: check, requestId: msg.requestId });
     return;
   }
   if (msg.type === 'debugFill') {

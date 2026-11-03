@@ -129,10 +129,15 @@
 
   function standing(world) {
     var alive = aliveTowns(world);
+    /* Одна деревня в партии (одиночная игра через комнату) не «побеждает»
+       сама себя: партия кончается, когда пала она. Для двух и больше —
+       прежнее правило «остался один». */
+    var total = (world && world.towns) ? world.towns.length : 0;
+    var over = total <= 1 ? alive.length === 0 : alive.length <= 1;
     return {
       alive: alive,
-      over: alive.length <= 1,
-      winner: alive.length === 1 ? alive[0].owner : null
+      over: over,
+      winner: (alive.length === 1 && total > 1) ? alive[0].owner : null
     };
   }
 
@@ -884,6 +889,25 @@
     town.townhall = list.length ? list[0] : null;
     var home = list.length ? list[0] : null;
     return { home: home, buildings: list };
+  }
+
+  /* Чистое ядро одиночной ПАРТИИ для комнаты: та же деревня, что в браузере
+     (startHomeCore), плюс три жителя и одна запись деревни. Отдельно от
+     startHomeCore, потому что там нет жителей, а комната обязана начать мир
+     с людьми: иначе первый же снимок был бы без населения. */
+  function startSoloCore(world, opts) {
+    var st = startHomeCore(world, opts);
+    var town = (world.towns && world.towns[0]) || newTown(world, 0, 'Деревня');
+    world.towns = [town];
+    world.village = town;
+    world._buildings = st.buildings;
+    world._villagers = [];
+    spawnVillagersCore(world, st.buildings, st.home, {
+      count: VILLAGERS, owner: town.owner === undefined ? 0 : town.owner,
+      townId: town.id, idBase: 0
+    });
+    return { home: st.home, buildings: st.buildings, towns: [town],
+             villagers: world._villagers };
   }
 
   // Дом жителя в списке построек (или null: дом не поставился).
@@ -2178,6 +2202,7 @@
     startBot: startBot,
     startMulti: startMulti,
     startHomeCore: startHomeCore,
+    startSoloCore: startSoloCore,
     startBotCore: startBotCore,
     startMultiCore: startMultiCore,
     spawnVillagersCore: spawnVillagersCore,

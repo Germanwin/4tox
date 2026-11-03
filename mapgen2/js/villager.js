@@ -3070,10 +3070,32 @@
 
   /* Карта проходимости воина у лагеря: открыто кольцо территории, закрыта
      модель. `confine` дополнительно запирает ВСЁ за пределами пятна — по такой
-     карте воин не может выйти из лагеря, даже если цель стоит снаружи. */
+     карте воин не может выйти из лагеря, даже если цель стоит снаружи.
+
+     КАРТА КЭШИРУЕТСЯ на лагере. Она зависит ровно от трёх вещей: от карты
+     занятых клеток мира (её версия), от места и поворота лагеря и от того,
+     заперт ли воин внутри. Пока это всё то же — пересобирать нечего. Раньше
+     же на КАЖДЫЙ план КАЖДОГО воина выделялся массив размером с карту
+     (192-я карта — 38 КБ), заливался единицами, в него копировалась карта
+     занятости, и только потом открывалось кольцо. У сотни воинов, которые
+     перепланируют прогулку по нескольку раз в секунду, это была основная
+     статья расхода шага мира (замер: research/villager-fps-2026-11-01).
+
+     Кэш берётся только для ТОЙ карты занятости, которую ведёт сам движок
+     (`world._villagerBlocked.solid`): если карту передали снаружи (приёмки,
+     бой со своей картой), считаем как раньше — сравнивать нечем. */
   function campSolid(world, solid, camp, confine) {
     var B = global.Buildings, W = world.width, H = world.height;
-    var temp = new Uint8Array(solid.length || W * H);
+    var n = solid.length || W * H;
+    var blocked = world._villagerBlocked;
+    var ver = (blocked && blocked.solid === solid)
+      ? blocked.version + '|' + camp.x + ',' + camp.y + ',' + camp.rot + '|' +
+        (confine ? 1 : 0) + '|' + n
+      : null;
+    var slot = confine ? '_campSolidIn' : '_campSolidOut';
+    if (ver !== null && camp[slot] && camp[slot].ver === ver) return camp[slot].map;
+
+    var temp = new Uint8Array(n);
     if (confine) temp.fill(1);
     else temp.set(solid);
     var cells = B.patrolCells(camp), i, c, idx;
@@ -3083,6 +3105,7 @@
       idx = c.y * W + c.x;
       if (idx >= 0 && idx < temp.length) temp[idx] = 0;
     }
+    if (ver !== null) camp[slot] = { ver: ver, map: temp };
     return temp;
   }
 
@@ -3392,7 +3415,10 @@
      после тренировки; тогда годится любая другая, до которой есть дорога. */
   function routeToWarcamp(v, world, solid, camp) {
     var B = global.Buildings;
-    var cells = B.patrolCells(camp);
+    /* slice: patrolCells отдаёт КЭШ лагеря, а этот список сортируется под
+       конкретного воина — переставлять общий нельзя, иначе у следующего
+       воина порядок клеток будет от предыдущего. */
+    var cells = B.patrolCells(camp).slice();
     var fromX = v.x, fromY = v.y;
     cells.sort(function (a, b) {
       var da = (a.x + 0.5 - fromX) * (a.x + 0.5 - fromX) + (a.y + 0.5 - fromY) * (a.y + 0.5 - fromY);

@@ -1,0 +1,53 @@
+# read-only снимок прода, 2026-10-27 12:30:50 UTC
+# хост: 4tox-vps, публичный адрес: https://374412.fornex.cloud
+
+## systemctl show 4tox
+MainPID=225455
+NRestarts=0
+WorkingDirectory=/opt/4tox
+ActiveState=active
+SubState=running
+FragmentPath=/etc/systemd/system/4tox.service
+
+ExecStart={ path=/opt/node/bin/node ; argv[]=/opt/node/bin/node game/server/server.js --host 127.0.0.1 --port 8787 --no-upnp --public-url https://374412.fornex.cloud/game/ ; ignore_errors=no ; start_time=[Mon 2026-10-26 19:41:25 UTC] ; stop_time=[n/a] ; pid=225455 ; code=(null) ; status=0/0 }
+
+## процесс, память, время работы
+    PID    PPID     ELAPSED   RSS    VSZ %CPU %MEM COMMAND
+ 225455       1    16:49:29 163320 1792828 0.5  4.0 /opt/node/bin/node game/server/server.js --host 127.0.0.1 --port 8787 --no-upnp --public-url https://374412.fornex.cloud/game/
+
+node:
+v24.22.1
+
+версия ядра:
+6.8.0-147-generic
+
+uptime:
+ 12:30:55 up 10 days, 23:27,  1 user,  load average: 0.03, 0.06, 0.04
+
+## порты службы (только listen)
+State  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess                                                   
+LISTEN 0      511        127.0.0.1:8787       0.0.0.0:*    users:(("MainThread",pid=225455,fd=21))                  
+LISTEN 0      4096               *:443              *:*    users:(("caddy-naive",pid=20879,fd=10))                  
+LISTEN 0      4096               *:80               *:*    users:(("caddy-naive",pid=20879,fd=24))                  
+
+## caddy: конфиг, относящийся к /game (без ключей)
+active
+7-	encode zstd gzip
+8-
+9:	handle /game/* {
+10-		reverse_proxy 127.0.0.1:8787 {
+11-			flush_interval -1
+12-		}
+13-	}
+14-	handle /mapgen2/* {
+15-		reverse_proxy 127.0.0.1:8787 {
+
+## COMMIT в /opt/4tox
+1d842c45423d
+
+total 20
+drwxr-xr-x 4 4tox 4tox 4096 Oct 26 19:41 .
+drwxr-xr-x 7 root root 4096 Oct 26 07:36 ..
+-rw-r--r-- 1 4tox 4tox   13 Oct 26 19:41 COMMIT
+drwxr-xr-x 6 4tox 4tox 4096 Oct 26 19:40 game
+drwxr-xr-x 5 4tox 4tox 4096 Oct 26 19:40 mapgen2

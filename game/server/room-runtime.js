@@ -91,6 +91,11 @@ function RoomRuntime(options) {
   this.testMode = !!options.testMode;
   this.seed = options.seed;
   this.size = options.size || 64;
+  this.solo = !!options.solo;
+  /* bot — партия «против деревни»: одна деревня игрока и деревня врага под
+     управлением движка (Session.startBotCore). solo и bot несовместимы:
+     bot подразумевает одного игрока. */
+  this.bot = !!options.bot;
   this.players = (options.players || []).map((p, i) => ({
     sessionId: String(p.sessionId),
     playerId: p.playerId,
@@ -210,9 +215,12 @@ RoomRuntime.prototype.start = async function () {
      следующий запуск восстанавливается из него и читает журнал только после
      его offset, а не переигрывает партию с самого начала. */
   if (!this.seed) throw new Error('room_seed_required');
+  /* solo — та же одиночная партия, что в браузере: одна деревня и три
+     жителя (Session.startHomeCore), а не «multi» с минимум двумя городами. */
   this.sim = global.Simulation.create({
     seed: this.seed, size: this.size, players: this.players.length,
-    mode: 'multi', gameplay: this.gameplay
+    mode: this.bot ? 'bot' : (this.solo ? 'solo' : 'multi'),
+    gameplay: this.gameplay
   });
   this.epoch = this.epoch || 1;
   this.tick = 0;
@@ -545,6 +553,101 @@ RoomRuntime.prototype.makeSnapshot = function (opts) {
    приёмке, чтобы проверить сеть и отрисовку на 300 существах, не строя
    полсотни лагерей командами. Мир при этом остаётся настоящим: те же
    Villagers.blank, тот же шаг, та же репликация. */
+/* Подсказка для призрака постановки: можно ли поставить/двинуть/повернуть
+   постройку. Решение всё равно принимает команда (`build`/`edit`) — этот
+   ответ только красит ромб и говорит причину словами. Правил здесь нет:
+   те же Buildings.canPlace/checkAt, что в браузере. */
+RoomRuntime.prototype.checkPlace = function (query) {
+  const B = global.Buildings;
+  const state = this.sim && this.sim.state;
+  const q = query || {};
+  const empty = { ok: false, reason: 'мир не готов', cells: [], footprint: [0, 0], exits: [] };
+  if (!B || !state) return empty;
+  const who = q.owner === undefined ? 0 : q.owner;
+  const kind = String(q.kind || 'build');
+  const site = {
+    clearable: false, requireClear: true, yard: B.YARD,
+    villagers: state.villagers
+  };
+  const byId = function (id) {
+    return (state.buildings || []).find(function (x) { return x.id === id; });
+  };
+  let res = null;
+  let cand = null;
+  let x = Math.round(Number(q.x) || 0);
+  let y = Math.round(Number(q.y) || 0);
+  let rot = 0;
+  let type = String(q.buildingType || '');
+
+  if (kind === 'line') {
+    /* Серия домов: подсказка для полосы постановки. Считает её тот же
+       Buildings.planLine, что и команда buildLine, — клиент не повторяет
+       правила серии у себя. */
+    if (!B.planLine) return { ok: false, reason: 'серия не поддерживается', cells: [], footprint: [0, 0], exits: [] };
+    const src = { x: Math.round(Number(q.x) || 0), y: Math.round(Number(q.y) || 0) };
+    const dst = { x: Math.round(Number(q.x2) || 0), y: Math.round(Number(q.y2) || 0) };
+    const plan = B.planLine(state.world, state.buildings, {
+      type: q.buildingType, variant: q.variant || 'a', rot: q.rot || 0,
+      from: src, to: dst
+    }, site);
+    const price = global.Commands && global.Commands.buildPrice
+      ? global.Commands.buildPrice(q.buildingType) : 0;
+    const cells = (plan.items || []).map(function (it) { return [it.x, it.y]; });
+    return {
+      ok: !!plan.ok,
+      reason: plan.ok ? '' : (plan.reason || ''),
+      cells: cells, footprint: [0, 0], count: cells.length,
+      cost: cells.length * price, exits: []
+    };
+  }
+  if (kind === 'build') {
+    const variant = q.variant || (type === 'warcamp' ? 'x' : 'a');
+    cand = B.make({
+      type: type, variant: variant, rot: q.rot || 0,
+      x: x, y: y, owner: who, town: who, id: 'check:0'
+    });
+    res = B.canPlace(state.world, state.buildings, cand, site);
+  } else {
+    const b = byId(q.id);
+    if (!b) return { ok: false, reason: 'нет такой постройки', cells: [], footprint: [0, 0], exits: [] };
+    if ((b.owner === undefined ? 0 : b.owner) !== who) {
+      return { ok: false, reason: 'это не ваша постройка', cells: [], footprint: [0, 0], exits: [] };
+    }
+    if (kind === 'delete') {
+      const verdict = B.canEdit ? B.canEdit(b, 'delete') : { ok: true };
+      return {
+        ok: !!(verdict && verdict.ok), reason: (verdict && verdict.reason) || '',
+        cells: [], footprint: [0, 0], exits: []
+      };
+    }
+    rot = kind === 'rotate' ? (b.rot + 90) : b.rot;
+    type = b.type;
+    if (kind !== 'rotate') { x = q.x === undefined ? b.x : Math.round(Number(q.x) || 0); y = q.y === undefined ? b.y : Math.round(Number(q.y) || 0); }
+    const spot = kind === 'rotate' ? { rot: rot } : { x: x, y: y };
+    res = B.checkAt(state.world, state.buildings, b, spot, {
+      villagers: state.villagers, protectExits: true
+    });
+    if (kind === 'rotate') { x = b.x; y = b.y; }
+  }
+  if (!res) return empty;
+  const fp = B.footprint(rot, type);
+  const cells = [];
+  for (let j = 0; j < fp.h; j++) {
+    for (let i = 0; i < fp.w; i++) cells.push([x + i, y + j]);
+  }
+  return {
+    ok: !!res.ok,
+    reason: res.ok ? '' : (res.reason || ''),
+    footprint: [fp.w, fp.h],
+    cells: cells,
+    decor: (res.decor || []).length,
+    blocked: (res.blocked || []).length,
+    villagers: (res.villagers || []).length,
+    sealed: (res.sealed || []).length,
+    exits: (res.sealed || []).map(function (s) { return s && s.id ? s.id : null; })
+  };
+};
+
 RoomRuntime.prototype.debugFill = function (n) {
   n = Math.max(0, Math.min(3000, Number(n) || 0));
   const g = globalThis;

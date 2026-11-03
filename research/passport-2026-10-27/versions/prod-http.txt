@@ -1,0 +1,19 @@
+# GET публичных файлов: заголовки и sha256 ТЕЛА
+# время: 2026-10-27 12:31:02 UTC
+game/index.html | 200 |  | 36447 | f41b2f225ba861b047f5d5425c0a80d4667e82e55fe7c02aeb5edfdaf649e882 | "8e5f-1a1794c58a8" | Mon, 26 Oct 2026 17:40:09 GMT
+game/js/boot.js | 200 |  | 44315 | 06f49d35c6bd4b844322d48befc74edde7ae39693daa27ac1e458caff6c56d9d | "ad1b-1a17983d7b0" | Mon, 26 Oct 2026 18:40:46 GMT
+game/js/play.js | 200 |  | 240827 | 36d90a6c9a6ff9cca6a8ccee378e2bf88d78f694862790dff5f8b5e0c6f71088 | "3acbb-1a1799279c8" | Mon, 26 Oct 2026 18:56:45 GMT
+game/js/net.js | 200 |  | 53441 | bd5e3dd9f05c16742599eff56d03a0989dfd5336bc1712edeb2379a32b0ab45d | "d0c1-1a179766a30" | Mon, 26 Oct 2026 18:26:06 GMT
+game/js/pending.js | 200 |  | 18326 | c7e90c95208851f73a8e99b6e0e4146f7abff940620816d549d73c37113bfdb0 | "4796-1a17992df58" | Mon, 26 Oct 2026 18:57:11 GMT
+game/js/lobby.js | 200 |  | 25526 | 75b627ad26fc44f112a10f33912d80b811dd10161340f6aa1ee1525d2aef5728 | "63b6-1a16d86a0f0" | Sat, 24 Oct 2026 10:48:22 GMT
+game/js/hud.js | 200 |  | 131981 | cee0af878e281b93aee1d9bce250cc8b92b8f5f54c691a78c948d89c09fa38f4 | "2038d-1a17992b848" | Mon, 26 Oct 2026 18:57:01 GMT
+game/js/menu.js | 200 |  | 10828 | e4180a638b029214622e59ad1eba778c700579f44348ba028ea1d29de6a7bd7a | "2a4c-1a16d895070" | Sat, 24 Oct 2026 10:51:18 GMT
+mapgen2/js/serialize.js | 200 |  | 34262 | d42600f1722b2305813f7e0f919234e90cab1085c0da782020547d7a163c9e4d | "85d6-1a175c83af8" | Mon, 26 Oct 2026 01:16:59 GMT
+mapgen2/js/render.js | 200 |  | 161618 | 24d48ebb60dd8420b3681f0896e704f79f5c6806d6a5d3997a91b9be1d0d7f65 | "27752-1a179464dc8" | Mon, 26 Oct 2026 17:33:33 GMT
+mapgen2/js/session.js | 200 |  | 109346 | cdf304e2c3715f4b40c851150812c73cc33a626e9b713cd9bc292e449b167d15 | "1ab22-1a1794a58f0" | Mon, 26 Oct 2026 17:37:58 GMT
+mapgen2/js/villager.js | 200 |  | 238526 | db81f03db66e7d1f19c15d1e78665659708608cf1465f892ee0e489961d41fbc | "3a3be-1a17943d110" | Mon, 26 Oct 2026 17:30:50 GMT
+mapgen2/js/combat.js | 200 |  | 46829 | b44c0300ae546bb979bc4d705cb1bb126673788a06ca1c5579a28ffa8385eb83 | "b6ed-1a179764320" | Mon, 26 Oct 2026 18:25:56 GMT
+mapgen2/js/buildings.js | 200 |  | 137557 | 20a6a9ac7dcec0997bdf5edc801cfad490c1e4e2a52aa8d2a17940558820d1ba | "21955-1a175c63758" | Mon, 26 Oct 2026 01:14:47 GMT
+
+# /api/build
+{"ok":true,"build":"1d842c45423d","protocol":3,"cmdProto":2,"node":"v24.22.1","pid":225455,"uptimeMs":60601997,"startedAt":"2026-10-26T19:41:25.806Z"}

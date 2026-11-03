@@ -1039,10 +1039,14 @@
       emit({ type: state.netStale ? 'net-stale' : 'net-ok' });
     }
     var list = state.villagers || [];
+    /* Поза пишется в ОДИН переиспользуемый объект: полей из неё хватает ровно
+       на строки ниже, а новый объект на каждого жителя в каждом кадре — это
+       600 объектов в кадр на ровном месте (сборщик мусора платит за них). */
+    var pose = state.netPose || (state.netPose = {});
     for (var i = 0; i < list.length; i++) {
       var v = list[i];
       if (!v || v.id === undefined) continue;
-      var p = netBuffer.pose(v.id, t);
+      var p = netBuffer.poseInto(pose, v.id, t);
       if (!p) continue;
       v.x = p.x; v.y = p.y; v.rot = p.rot;
       if (p.anim) v.anim = p.anim;

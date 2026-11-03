@@ -87,6 +87,8 @@
       });
     } else if (mode === 'bot') {
       st = global.Session.startBotCore(world, { site: options.site });
+    } else if (mode === 'solo') {
+      st = global.Session.startSoloCore(world, options.site);
     } else {
       st = global.Session.startHomeCore(world, options.site);
     }

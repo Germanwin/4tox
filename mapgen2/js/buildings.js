@@ -952,9 +952,18 @@
   }
 
   /* Клетки территории лагеря, свободные для воина: всё пятно минус модель.
-     Порядок — по клеткам пятна, чтобы случайный выбор был воспроизводим. */
+     Порядок — по клеткам пятна, чтобы случайный выбор был воспроизводим.
+
+     Список кэшируется на постройке: он зависит только от её места и поворота,
+     а спрашивают его на КАЖДОГО воина на каждый план и на каждый шаг боя
+     (замер: research/villager-fps-2026-11-01 — у 100 воинов это была заметная
+     доля кадра). Кто хочет список ПЕРЕСОРТИРОВАТЬ, обязан взять копию
+     (`slice`): в villager.js так и делает routeToWarcamp. */
   function patrolCells(b) {
     if (!b || b.rubble || typeOf(b) !== 'warcamp') return [];
+    var key = b.x + ',' + b.y + ',' + b.rot;
+    var hit = b._patrol;
+    if (hit && hit.key === key) return hit.cells;
     var blocked = {}, i, c;
     var mc = modelCells(b);
     for (i = 0; i < mc.length; i++) blocked[mc[i].x + ',' + mc[i].y] = 1;
@@ -964,6 +973,7 @@
       if (blocked[c.x + ',' + c.y]) continue;
       out.push(c);
     }
+    b._patrol = { key: key, cells: out };
     return out;
   }
 

@@ -122,12 +122,29 @@
 
      При равном расстоянии побеждает больший угол — ровно так же, как это
      делал прежний Math.round(deg / 90): курс 45° при четырёх поворотах давал
-     90°, а не 0°. */
-  function nearestRot(byFrame, deg) {
-    var best = null, bd = Infinity;
+     90°, а не 0°.
+
+     `rots` — объявленные повороты атласа по возрастанию (`set.rots`).
+     Перебор идёт по НИМ, а не `for…in` по ключам кадра: порядок ключей в
+     объекте у числовых строк и так возрастающий, поэтому ответ тот же самый,
+     а стоит дешевле — жителей на карте сотни, и функция зовётся на каждого
+     каждый кадр. Без `rots` остаётся прежний перебор: так её зовут приёмки. */
+  function nearestRot(byFrame, deg, rots) {
+    var best = null, bd = Infinity, r, d, i;
+    if (rots && rots.length) {
+      for (i = 0; i < rots.length; i++) {
+        r = rots[i];
+        if (byFrame[r] === undefined) continue;   // этого поворота в кадре нет
+        d = Math.abs(((deg - r + 540) % 360) - 180);
+        if (d < bd - 1e-9 || (best !== null && Math.abs(d - bd) <= 1e-9 && r > best)) {
+          bd = d; best = r;
+        }
+      }
+      return best === null ? 0 : best;
+    }
     for (var k in byFrame) {
-      var r = +k;
-      var d = Math.abs(((deg - r + 540) % 360) - 180);
+      r = +k;
+      d = Math.abs(((deg - r + 540) % 360) - 180);
       if (d < bd - 1e-9 || (best !== null && Math.abs(d - bd) <= 1e-9 && r > best)) {
         bd = d; best = r;
       }
@@ -144,7 +161,7 @@
     var n = Math.max(1, frameCount(set, h.anim));
     var i = Math.floor(h.phase * n) % n;
     var byFrame = byAnim[i] || byAnim[0];
-    var rot = nearestRot(byFrame, h.rot);
+    var rot = nearestRot(byFrame, h.rot, set.rots);
     return byFrame[rot] || byFrame[0] || null;
   }
 

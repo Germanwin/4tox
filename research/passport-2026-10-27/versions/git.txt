@@ -1,0 +1,409 @@
+# git status --short
+?? research/passport-2026-10-27/
+
+# git remote -v (credentials вырезаны)
+origin	https://github.com/Germanwin/4tox.git (fetch)
+origin	https://github.com/Germanwin/4tox.git (push)
+
+# git branch -avv
++ agent/bld                               025839b (/private/tmp/4tox-w/bld) Постройки: жители в пятне, защита выходов, стройка линией
++ agent/diag                              d3d87a1 (/private/tmp/4tox-w/diag) Замеры: счётчики кадра, снимка, догона, заселения и памяти; profile с --entities, --ramp, рядом по минутам, gzip и apply
++ agent/nav                               c81d25c (/private/tmp/4tox-w/nav) B4: бронь клетки подхода боя, noPathKey, прямая для удара
++ agent/net                               ac22f47 (/private/tmp/4tox-w/net) Приёмка: команды — один путь, порядок sn, cmdDone и expired
++ agent/net-final                         987273a (/private/tmp/4tox-final-net) Приёмка: предупреждение о версии клиента не отказывает в старте
++ agent/pop                               eba00fa (/private/tmp/4tox-w/pop) fireAll проводит мир в fire: снос лагеря учитывает груз и после F5
++ agent/qa                                f61ba8f (/private/tmp/4tox-w/qa) Приёмка боя: CONFIG, замах, LOS, стоп и события; рождение без гонки
++ agent/sim                               8b823ff (/private/tmp/4tox-w/sim) Часы: бюджет догона; снимок v3 и гидратация жителей после F5
++ agent/ui                                6c7f97d (/private/tmp/4tox-w/ui) HUD: убрать двойной вызов роста и дубль .hidden после слияния
++ agent/war                               3af79e0 (/private/tmp/4tox-w/war) Войска: «Стоп» снимает приказ и бой, приказ снимает holdFire
+  master                                  cc25b46 [origin/master] Партия целиком: бой, войска, сеть, постройки и атласы
+* patch/4tox-stabilization                6b9f06b [origin/patch/4tox-stabilization: впереди 15] Прод: сырой smoke и кадр после выкладки
+  remotes/origin/HEAD                     -> origin/master
+  remotes/origin/master                   cc25b46 Партия целиком: бой, войска, сеть, постройки и атласы
+  remotes/origin/patch/4tox-stabilization dc75820 Отчёт: ground.js — три падения воспроизводятся на исходном коммите
+
+# git rev-parse HEAD
+6b9f06b52124cb24f1be12be147b15bdabd9c345
+
+# git describe --always --dirty
+6b9f06b
+
+# git log -40 --date=iso-strict --format=fuller
+commit 6b9f06b52124cb24f1be12be147b15bdabd9c345
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T22:46:11+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T22:46:11+03:00
+
+    Прод: сырой smoke и кадр после выкладки
+
+commit bef121c2f1b438dbb6e6284572380fcc3fba2f20
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T22:45:48+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T22:45:48+03:00
+
+    Прод: выкладка 1d842c4 на VPS, docs/DEPLOY.md и запись доступа
+
+commit 1d842c45423d88e25a0fb0334c1c50417a2a49cd
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T22:40:44+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T22:40:44+03:00
+
+    Сборка на проде: BUILD_ID/COMMIT вместо обязательного git
+
+commit 38e9b16f9ce3029cbf093333e5b52702463dcf4f
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T22:12:56+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T22:12:56+03:00
+
+    Отчёт финальной стабилизации: причины, числа до/после, матрица приёмки и NOT RUN
+
+commit afb570fadaab846e90557659a6a607d6443c9219
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T22:06:02+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T22:06:02+03:00
+
+    UX-01: ожидание найма/обучения/приказа в HUD; правила финальной стабилизации
+
+commit 400f5d569c2647a6356ac9cf8080618f671b6f96
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T21:55:58+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T21:55:58+03:00
+
+    UX-01 в оболочке и приёмке, LOOP-01 (таймер/отрисовка), OBS-01: след боя и ожидания пути
+
+commit bf3946a6a6115bbcddd508ebdf1fd5231e673107
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T21:19:39+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T21:19:39+03:00
+
+    INPUT-01: удержание слушает окно и распознаёт запаздывающий сдвиг; следы ввода для OBS-01
+
+commit 358e7c06ff915fa3607149d8011e90d189df23fc
+Merge: 5d8ab81 987273a
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T20:53:50+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T20:53:50+03:00
+
+    Merge branch 'agent/net-final' into patch/4tox-stabilization
+
+commit 5d8ab816aff6015d1c25511323a336778fc9b883
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T20:53:43+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T20:53:43+03:00
+
+    UX-01/INPUT-01/LOOP-01/OBS-01: ожидание гостя, жест без dblclick, граница кадра и диагностика
+
+commit 987273ad8c56d56039f384d9f892db9656eb71f8
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T20:48:20+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T20:48:20+03:00
+
+    Приёмка: предупреждение о версии клиента не отказывает в старте
+    
+    Проверяем, что protocolWarning есть и в лобби, и в стартовом пакете, а старт
+    с другой версией всё равно проходит (предупреждение — только поле).
+
+commit 8f835b220f2cbe0c0821a2e9caa2d4d2c2f273be
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T20:47:07+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T20:47:07+03:00
+
+    Приёмка NET-02 и ReadJson: таймауты, поколение, команды
+    
+    http.js грузит net.js со стабами и проверяет тело без конца, HTTP 500, битый
+    JSON, обрыв fetch, generation guard для create/status/command/snapshot, повтор
+    команды с тем же n, незалипание busy, unknown и deadline упаковки снимка.
+    На настоящем server.js — ReadJson (400/500/обрыв), смена лобби, ageMs, at,
+    ids/appliedSeq, /api/resume и идемпотентность после 2200 команд. FAIL даёт
+    код 1.
+
+commit 3f964979426b4a5eae0118fdd5ac5029a67260cc
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T20:47:07+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T20:47:07+03:00
+
+    Приёмка NET-01: настоящий SSE/gzip, медленный и быстрый клиенты
+    
+    stream.js поднимает server.js, создаёт лобби, открывает два потока (один не
+    читает, второй читает), шлёт 900 снимков по ~24 КБ, проверяет ограниченность
+    queue/gzip/socket/pending, рост dropped/coalesced, свежий seq у быстрого,
+    heapUsed по /api/diag, reconnect медленного, command-result за очередью,
+    чистку потоков и вариант без gzip (260 снимков). Числа печатаются; FAIL даёт
+    код 1.
+
+commit 6904705f748b20a97e51128bcb01860c565778ca
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T20:47:03+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T20:47:03+03:00
+
+    NET-02: deadline тела, поколение партии и честные ошибки команд
+    
+    - request держит таймер до конца r.text()+JSON.parse и снимает его в
+      finally на всех ветках; ошибки различаются kind: timeout/http/parse/
+      network/stale.
+    - generation растёт в reset/create/join/resume; поздние ответы
+      status/resume/command/command-state/snapshot не применяются и не снимают
+      busy новой партии. Экспорт Net.generation()/Net.isCurrent(gen).
+    - pumpBusy снимается в finally, отправка команд не застревает; snapshot
+      ограничен по времени упаковки gzip и всегда возвращает ошибку, а не висит.
+    - повтор команды идёт с тем же n; commandId отдаётся наружу; unknown —
+      «результат уточняется», а не отказ. ids/appliedSeq из результата
+      сохраняются.
+
+commit 95c8c980f298673c07b90092d83e4aef54902bcd
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T20:46:57+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T20:46:57+03:00
+
+    Сеть: backpressure SSE/gzip, coalesce снимков и диагностика OBS-01
+    
+    - stream: у каждого потока свой конвейер control/снимок; предел по
+      gzip writable+readable и res.writableLength, пауза на drain, освобождение
+      zlib/сокета/таймера по close/error; снимки склеиваются в последний.
+    - queue в ответе на снимок включает gzip+сокет+pending, а не только
+      res.writableLength.
+    - /api/stream-stats и /api/diag (только хосту), /api/build, кольцо журнала
+      200 записей без токенов, heap/RSS и event-loop delay.
+    - старт/resume несут build/protocol; предупреждение о версии — только поле.
+    - команды: ageMs по серверным часам на момент выдачи, at сохранён;
+      результаты хранят ids/appliedSeq; история ответов 2000 + компактные
+      надгробия 8192, повтор после >1000 не выполняется второй раз.
+    - ReadJson: parse и dispatch раздельно; битый JSON/gzip 400, исключение
+      callback 500 один раз, обрыв сокета без callback.
+
+commit a4a2c8f7e1172b4d004f357d79cc68897775ac6a
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T20:31:47+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T20:31:47+03:00
+
+    BATTLE-01/PATH-01: стычка по пути, самозащита без поводка, пакетный удар; явный результат A* и очередь справедливости
+
+commit dc75820bbc44625656b69e8c407db2cef628ae3b
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T05:05:15+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T05:05:15+03:00
+
+    Отчёт: ground.js — три падения воспроизводятся на исходном коммите
+
+commit fac64aa02c2673d44cda8747097f8dd8fe3656d4
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T05:04:04+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T05:04:04+03:00
+
+    Отчёт: controls и панель войск приняты
+
+commit 752ff3b342bec428be1318150ce7873f2a06f10e
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T05:03:50+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T05:03:50+03:00
+
+    AGENTS: приёмки патча и честные NOT RUN
+
+commit 607891e70e19ffaa8482406caa859a0c95357a27
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T05:03:35+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T05:03:35+03:00
+
+    Отчёт: place.js принят
+
+commit 31a0d076df6c9dfd100fcf7694aae550fcc53107
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T05:03:23+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T05:03:23+03:00
+
+    Отчёт: menu.js 276 проверок
+
+commit 7a27e09290eb769786f05d02904bf73cb6d11714
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T04:58:00+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T04:58:00+03:00
+
+    Отчёт: сводка изменений и причина ошибки замера ping
+
+commit 081733ba489712de23503fca9360d72d2e64fe71
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T04:55:25+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T04:55:25+03:00
+
+    Ping: буфер Resource Timing 4096 записей — снимки заполняли 250
+
+commit dca094cf511ff0d5eb7f31c519b6a500322cf996
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T04:52:52+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T04:52:52+03:00
+
+    Контракт событий: lost-cargo и net-lost
+
+commit 307d49d3e63a6902f4776c64844150c449a7b271
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T04:52:44+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T04:52:44+03:00
+
+    Ping: ждать запись PerformanceObserver до 0.8 с; приёмки переезда без лотереи
+
+commit 3ef34a4443e1536fa97890f81298b9b29d1018b2
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T04:47:15+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T04:47:15+03:00
+
+    STRUCTURE: chrome.js в инструментах
+
+commit eff69fd6bdb82e50dd7d83279b64ab91f5d4676b
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T04:47:04+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T04:47:04+03:00
+
+    Сетевая приёмка поворота: дом на месте, где законны оба угла
+
+commit aa634b6c7d976f2a42767f39d4034727978ad125
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T04:44:15+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T04:44:15+03:00
+
+    Приёмка: счёт новой партии терпит загруженную машину (но не старый счёт)
+
+commit 24454dbecf76c4c94abb18a435a4cd9dbba0d0ff
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T04:38:52+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T04:38:52+03:00
+
+    Приёмка правки: поворот проверяется на месте, где законны оба угла
+
+commit b1ae4936f94033badd284d7bc2c7dfcd84328051
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T04:37:44+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T04:37:44+03:00
+
+    Ping: PerformanceObserver, буфер Resource Timing переполнен снимками
+
+commit 041a21ec55f3caa3338d2d78df504dac17a64ec9
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T04:35:16+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T04:35:16+03:00
+
+    Отчёт: независимые замеры и остаточные риски
+
+commit 39f20d69e620c90024f0ffe5f9cb46667463cc58
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T04:35:03+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T04:35:03+03:00
+
+    Ping: не стирать буфер Resource Timing (два круга внахлёст)
+
+commit 63d025fc526ff436d8ad38c116a1150728498912
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T04:29:36+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T04:31:19+03:00
+
+    HUD: убрать двойной вызов роста и дубль .hidden после слияния
+
+commit 44bdd34c4d05204101fe8c788c17d58ade881056
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T04:31:06+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T04:31:19+03:00
+
+    Замеры: счётчики кадра, снимка, догона, заселения и памяти; profile с --entities, --ramp, рядом по минутам, gzip и apply
+
+commit e2ad1d01a57265ef56f5981a7379eb91b8718362
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T04:31:03+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T04:31:03+03:00
+
+    Отчёт: матрица проверок и честные NOT RUN
+
+commit 28b7e38902f3f8b4075bf21fab63d5f35a26931a
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T04:30:43+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T04:30:43+03:00
+
+    Ping: сетевой стек и без requestStart; до двух дочитываний записи
+
+commit eb1be10dc6351f90d7660fee958596053170c757
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T04:28:28+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T04:28:28+03:00
+
+    AGENTS: обновить устаревшие правила времени, F5, команд, места и боя
+
+commit 172b6c8bfc88fbafc15a42a0b58f9e80ed58d16e
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T04:23:16+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T04:23:16+03:00
+
+    Regress: выход постройки и серия из приёмки агента 10 (56 проверок)
+
+commit 2dd0cf1bc1da989259f5eee904e6b0c9ecfa3ff4
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T04:22:51+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T04:22:51+03:00
+
+    Отчёт: числа до/после, баланс боя и снимка
+
+commit 5007c96b3634f478b75bf476d96b1866423e1098
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T04:22:34+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T04:22:34+03:00
+
+    Приёмка боя под CONFIG/LOS/stop; рождение в menu.js без гонки (агент 10)
+
+commit c70700428f001335f055886470d0058d566ed9c9
+Author:     Germanwin <timelapser7766005@gmail.com>
+AuthorDate: 2026-10-26T04:22:15+03:00
+Commit:     Germanwin <timelapser7766005@gmail.com>
+CommitDate: 2026-10-26T04:22:15+03:00
+
+    HUD: рост и экономия из движка; regress: защищённый выход
+
+# коммиты BASE..HEAD (первая ветка)
+6b9f06b52124cb24f1be12be147b15bdabd9c345 2026-10-26T22:46:11+03:00 Germanwin Прод: сырой smoke и кадр после выкладки
+bef121c2f1b438dbb6e6284572380fcc3fba2f20 2026-10-26T22:45:48+03:00 Germanwin Прод: выкладка 1d842c4 на VPS, docs/DEPLOY.md и запись доступа
+1d842c45423d88e25a0fb0334c1c50417a2a49cd 2026-10-26T22:40:44+03:00 Germanwin Сборка на проде: BUILD_ID/COMMIT вместо обязательного git
+38e9b16f9ce3029cbf093333e5b52702463dcf4f 2026-10-26T22:12:56+03:00 Germanwin Отчёт финальной стабилизации: причины, числа до/после, матрица приёмки и NOT RUN
+afb570fadaab846e90557659a6a607d6443c9219 2026-10-26T22:06:02+03:00 Germanwin UX-01: ожидание найма/обучения/приказа в HUD; правила финальной стабилизации
+400f5d569c2647a6356ac9cf8080618f671b6f96 2026-10-26T21:55:58+03:00 Germanwin UX-01 в оболочке и приёмке, LOOP-01 (таймер/отрисовка), OBS-01: след боя и ожидания пути
+bf3946a6a6115bbcddd508ebdf1fd5231e673107 2026-10-26T21:19:39+03:00 Germanwin INPUT-01: удержание слушает окно и распознаёт запаздывающий сдвиг; следы ввода для OBS-01
+358e7c06ff915fa3607149d8011e90d189df23fc 2026-10-26T20:53:50+03:00 Germanwin Merge branch 'agent/net-final' into patch/4tox-stabilization
+5d8ab816aff6015d1c25511323a336778fc9b883 2026-10-26T20:53:43+03:00 Germanwin UX-01/INPUT-01/LOOP-01/OBS-01: ожидание гостя, жест без dblclick, граница кадра и диагностика
+a4a2c8f7e1172b4d004f357d79cc68897775ac6a 2026-10-26T20:31:47+03:00 Germanwin BATTLE-01/PATH-01: стычка по пути, самозащита без поводка, пакетный удар; явный результат A* и очередь справедливости
+
+# всего коммитов BASE..HEAD
+15

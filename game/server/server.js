@@ -53,6 +53,7 @@ const WS = require('./ws');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const NetWire = require(path.join(ROOT, 'game', 'shared', 'net-wire.js'));
+const WorldWire = require(path.join(ROOT, 'game', 'shared', 'world-wire.js'));
 /* Сетевые числа сервера и клиента — одна таблица. Протокол 4: мир считает
    worker комнаты, браузерный хост больше не публикует снимки. */
 const NET = require(path.join(ROOT, 'game', 'shared', 'net-config.js'));
@@ -491,6 +492,10 @@ function makeLobby(max) {
   const lobby = {
     code: c, max: Math.max(2, Math.min(MAX_PLAYERS, max || 4)),
     players: [], started: false, seed: null, size: 192, streams: new Map(),
+    /* Локальная одиночная партия (solo) и партия против деревни (bot):
+       аддитивные флаги, которые ставит клиент в /api/lobby или /api/start.
+       Без них лобби по-прежнему требует двух игроков. */
+    solo: false, bot: false,
     /* WebSocket-клиенты комнаты: playerId → Conn. Это основной канал; SSE
        остаётся запасным и для старых сборок. */
     ws: new Map(),
@@ -548,9 +553,36 @@ const MAX_ACTIVE_ROOMS = Math.max(1, parseInt(process.env.MAX_ACTIVE_ROOMS || '1
    авторизации, и раньше 20 000 пустых лобби съедали ~60 МБ до первого
    sweep. TTL остаётся, предел закрывает всплеск. */
 const MAX_LOBBIES = Math.max(8, parseInt(process.env.MAX_LOBBIES || '256', 10) || 256);
+/* Встроенный Node-супервизор Godot-клиента не может задать рабочий каталог
+   дочернему процессу, поэтому STATE_DIR можно передать флагом --state-dir.
+   Без флага поведение прежнее: каталог рядом с рабочим каталогом запуска. */
+const STATE_DIR_OPT = opt('state-dir', null);
 const STATE_DIR = process.env.STATE_DIR
   ? path.resolve(process.env.STATE_DIR)
-  : path.resolve(process.cwd(), 'game', 'server', 'var', 'rooms');
+  : (typeof STATE_DIR_OPT === 'string' && STATE_DIR_OPT
+    ? path.resolve(STATE_DIR_OPT)
+    : path.resolve(process.cwd(), 'game', 'server', 'var', 'rooms'));
+/* --log-file: тот же вывод, что в консоль, дополнительно в файл. Нужен
+   приложению: у запущенного двойным кликом процесса консоли нет, а лог
+   обязан остаться. */
+const LOG_FILE_OPT = opt('log-file', null);
+if (typeof LOG_FILE_OPT === 'string' && LOG_FILE_OPT) {
+  try {
+    fs.mkdirSync(path.dirname(path.resolve(LOG_FILE_OPT)), { recursive: true });
+    const logStream = fs.createWriteStream(path.resolve(LOG_FILE_OPT), { flags: 'a' });
+    const tee = function (orig) {
+      return function () {
+        const text = Array.prototype.map.call(arguments, function (a) {
+          return typeof a === 'string' ? a : String(a);
+        }).join(' ');
+        try { orig.apply(console, arguments); } catch (e) {}
+        try { logStream.write(new Date().toISOString() + ' ' + text + '\n'); } catch (e) {}
+      };
+    };
+    console.log = tee(console.log);
+    console.error = tee(console.error);
+  } catch (e) { /* лог не обязателен для работы */ }
+}
 const roomRecords = new Map();   // lobby.code -> record
 let roomGeneration = 0;
 
@@ -584,6 +616,7 @@ function saveLobbyMeta(lobby) {
     const meta = {
       code: lobby.code, max: lobby.max, hostId: lobby.hostId,
       seed: lobby.seed, size: lobby.size, createdAt: lobby.createdAt,
+      solo: !!lobby.solo, bot: !!lobby.bot,
       players: lobby.players.map(function (p) {
         return {
           id: p.id, token: p.token, name: p.name, color: p.color,
@@ -618,6 +651,8 @@ function restoreLobbies() {
     lobby.hostId = meta.hostId === undefined ? meta.players[0].id : meta.hostId;
     lobby.seed = meta.seed || null;
     lobby.size = meta.size || 192;
+    lobby.solo = !!meta.solo;
+    lobby.bot = !!meta.bot;
     lobby.createdAt = meta.createdAt || now();
     lobby.started = true;
     lobby.startPayload = null;
@@ -642,6 +677,9 @@ function buildStartPayload(lobby, rec, opts) {
     seed: lobby.seed, size: lobby.size, sites: opts.sites || [],
     hostId: lobby.hostId,
     snapGzip: true,
+    mode: lobby.bot ? 'bot' : (lobby.solo ? 'solo' : 'multi'),
+    solo: !!lobby.solo,
+    bot: !!lobby.bot,
     cmdProto: CMD_PROTO,
     protocol: PROTOCOL,
     transport: ['ws', 'sse'],
@@ -788,6 +826,15 @@ function createRoomWorker(lobby) {
       }
       return;
     }
+    if (msg.type === 'checkPlace') {
+      const p = rec.pending.get(msg.requestId);
+      if (p) {
+        rec.pending.delete(msg.requestId);
+        if (p.timer) clearTimeout(p.timer);
+        p.resolve(msg);
+      }
+      return;
+    }
     if (msg.type === 'diagnostics') {
       const p = rec.pending.get(msg.requestId);
       if (p) {
@@ -865,6 +912,9 @@ async function startRoomOnce(lobby) {
     rec.worker.postMessage({
       type: 'init', roomId: rec.roomId, workerGeneration: rec.generation,
       seed: start.seed, size: start.size, players: players,
+      /* Одиночная партия: мир как в соло браузера — одна деревня.
+         bot — вторая деревня под управлением движка (Session.startBotCore). */
+      solo: !!lobby.solo, bot: !!lobby.bot,
       epoch: 1, stateDir: STATE_DIR, buildHash: buildId(),
       protocol: NetConfig.protocol,
       testMode: process.env.MP_TEST_HOOKS === '1'
@@ -2308,6 +2358,13 @@ function pendingCommands(lobby, snapshot) {
 /* ------------------------------- старт -------------------------------- */
 function chooseStart(lobby) {
   const n = lobby.players.length;
+  if (lobby.seed) {
+    try {
+      const world = WG.generate({ seed: lobby.seed, size: lobby.size });
+      const sites = WG.spawnSites(world, n);
+      if (sites.length >= n) return { seed: lobby.seed, size: lobby.size, sites: sites };
+    } catch (e) { /* выбранный сид не подошёл — берём случайный */ }
+  }
   for (let attempt = 0; attempt < 40; attempt++) {
     const seed = randomSeed();
     try {
@@ -2328,7 +2385,10 @@ function startBlock(lobby) {
   if (lobby.hostGone) {
     return { reason: 'хост потерял связь', waiting: 1 };
   }
-  if (lobby.players.length < 2) {
+  /* Одиночная партия (solo:true на /api/start) — правило то же, но второй
+     игрок не нужен: один игрок и одна деревня. Флаг ставит только явный
+     solo:true; по умолчанию лобби по-прежнему требует двоих. */
+  if (!lobby.solo && lobby.players.length < 2) {
     return { reason: 'нужен ещё один игрок', waiting: 2 - lobby.players.length };
   }
   const notReady = lobby.players.filter(function (p) { return !p.ready; });
@@ -2758,6 +2818,53 @@ async function handleRequest(req, res) {
     return json(res, 200, buildInfo());
   }
 
+  /* Готовность сервера — без токена. Нужна встроенному Node-супервизору
+     Godot-клиента: он поднимает сервер и ждёт именно этот ответ, а не
+     открытый TCP-порт (порт открывается раньше, чем готовы модули движка). */
+  if (req.method === 'GET' && u.pathname === '/api/health') {
+    return json(res, 200, {
+      ok: true, build: buildId(), protocol: PROTOCOL, cmdProto: CMD_PROTO,
+      wsProtocol: NetWire.VERSION,
+      rooms: roomRecords.size, maxRooms: MAX_ACTIVE_ROOMS,
+      lobbies: lobbies.size, maxLobbies: MAX_LOBBIES,
+      uptimeMs: Math.round(process.uptime() * 1000), t: now()
+    });
+  }
+
+  /* Проверка места для призрака (build/move/rotate). Это подсказка, а не
+     решение: команду всё равно проверяет комната при применении. Правил
+     здесь нет — их считает Buildings.canPlace/checkAt в worker'е. */
+  if (req.method === 'POST' && u.pathname === '/api/check') {
+    return readJson(req, res, function (body) {
+      const lobby = lobbyForRequest(body || {});
+      const p = playerByToken(lobby, body && body.token);
+      if (!lobby || !p) return json(res, 403, { ok: false, reason: 'нет доступа' });
+      if (!lobby.started) return json(res, 409, { ok: false, reason: 'ещё не начали' });
+      const rec = roomFor(lobby);
+      if (!rec || !rec.worker || rec.fault) {
+        return json(res, 409, { ok: false, reason: 'комната не готова', code: 'room_unavailable' });
+      }
+      touchPlayer(p);
+      const q = body.query && typeof body.query === 'object' ? body.query : body;
+      const kind = String(q.kind || q.action || 'build');
+      if (['build', 'move', 'rotate', 'delete', 'line'].indexOf(kind) < 0) {
+        return json(res, 400, { ok: false, reason: 'неизвестная проверка' });
+      }
+      roomRequest(rec, 'checkPlace', {
+        query: {
+          kind: kind, buildingType: q.buildingType, variant: q.variant,
+          rot: q.rot, x: q.x, y: q.y, x2: q.x2, y2: q.y2, id: q.id,
+          owner: p.owner === undefined ? 0 : p.owner
+        }
+      }, 4000).then(function (msg) {
+        const result = msg.check || { ok: false, reason: 'нет ответа комнаты' };
+        json(res, 200, result);
+      }, function (e) {
+        json(res, 503, { ok: false, reason: String(e && e.message || e) });
+      });
+    });
+  }
+
   /* Диагностика лобби — только хосту. Чужие токены и тела команд сюда не
      попадают: в журнале ключи с token/secret вырезаны. */
   if (req.method === 'GET' && u.pathname === '/api/diag') {
@@ -2795,6 +2902,15 @@ async function handleRequest(req, res) {
         });
       }
       const lobby = makeLobby(body.max);
+      /* Тестовый/хостовый выбор мира: сид и размер можно задать заранее.
+         Правила игры это не меняет — только какой остров генерировать. */
+      if (body.seed) lobby.seed = String(body.seed).slice(0, 80);
+      if (body.solo === true) lobby.solo = true;
+      if (body.bot === true) { lobby.bot = true; lobby.solo = true; }
+      if (body.size) {
+        const sz = parseInt(body.size, 10);
+        if ([48, 64, 96, 128, 192, 256].indexOf(sz) >= 0) lobby.size = sz;
+      }
       const p = addPlayer(lobby, body.name || 'Хост', body.protocol, body.build);
       lobby.hostId = p.id;
       json(res, 200, {
@@ -2862,6 +2978,8 @@ async function handleRequest(req, res) {
       if (!lobby || !p) return json(res, 403, { ok: false, reason: 'нет доступа' });
       if (p.id !== lobby.hostId) return json(res, 403, { ok: false, reason: 'начинает хост' });
       touchPlayer(p);
+      if (body && body.solo === true) lobby.solo = true;
+      if (body && body.bot === true) { lobby.bot = true; lobby.solo = true; }
       /* Старт асинхронный: worker должен успеть поднять мир и отдать первый
          committed baseline. Пока его нет, лобби остаётся `starting`, а не
          отдаёт пустую running-партию. */
@@ -2963,6 +3081,39 @@ async function handleRequest(req, res) {
   /* Возврат в уже начатую партию после перезагрузки страницы. Токен тот же —
      нового игрока не создаём. Снимок нужен и хосту (по нему он поднимает
      мир), и клиенту (чтобы не мигать пустым островом до первого кадра). */
+  /* Статический мир один раз на матч. Браузер его не спрашивает — он
+     генерирует остров сам; Godot-клиент генерировать не должен. */
+  if (req.method === 'GET' && u.pathname === '/api/world') {
+    const lobby = lobbyForRequest({ code: u.searchParams.get('code') });
+    const p = playerByToken(lobby, u.searchParams.get('token'));
+    if (!lobby || !p) return json(res, 403, { ok: false, reason: 'нет доступа' });
+    if (!lobby.started || !lobby.seed) {
+      return json(res, 409, { ok: false, reason: 'партия ещё не началась' });
+    }
+    if (!lobby.worldPayload) {
+      try {
+        const world = WG.generate({ seed: lobby.seed, size: lobby.size });
+        lobby.worldPayload = Buffer.from(WorldWire.pack({
+          width: world.width, height: world.height,
+          islandSize: world.islandSize, seed: world.seed,
+          hash: WG.hashWorld(world),
+          tile: world.tile, isLand: world.isLand,
+          distLand: world.distLand, distWater: world.distWater,
+          objects: world.objects
+        }));
+      } catch (e) {
+        return json(res, 500, { ok: false, reason: String(e && e.message || e) });
+      }
+    }
+    res.writeHead(200, {
+      'content-type': 'application/octet-stream',
+      'content-length': lobby.worldPayload.length,
+      'cache-control': 'no-store'
+    });
+    res.end(lobby.worldPayload);
+    return;
+  }
+
   if (req.method === 'GET' && u.pathname === '/api/resume') {
     const lobby = lobbyForRequest({ code: u.searchParams.get('code') });
     const p = playerByToken(lobby, u.searchParams.get('token'));
