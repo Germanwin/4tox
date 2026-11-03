@@ -33,6 +33,9 @@
 - **возврат в партию** после падения/перезапуска приложения: сессия
   `user://net-session.cfg`, `GET /api/resume`, тот же игрок и мир (для VPS и
   живого сервера; штатный выход сессию стирает);
+- **сеть через VPS** — прод `374412.fornex.cloud` обновлён до build
+  `7b7d4da4e3ce`: 443 и 8443 отдают `/api/world`, `solo` и `4TX1`, кроссплей
+  Godot↔Chrome проходит на обоих входах;
 - **экран итога** — победа/поражение, «Новый остров» / «В меню».
 
 ## Базовая линия (до правок этой волны)
@@ -70,6 +73,8 @@
 | Кроссплей Godot ↔ Chrome через тот же WS | `test_crossplay.gd` 16/16 |
 | Возврат в партию по `/api/resume` | `test_resume.gd` 15/15 (падение клиента, тот же мир/дерево, команда) |
 | Автовозврат при запуске приложения | `test_main_resume.gd` 13/13 (новый main сам входит в ту же комнату) |
+| VPS: health/WLD1/solo/WS/leave на 443 и 8443 | `node tests/vps_smoke.js <origin>` — PASS оба входа, build `7b7d4da4e3ce` |
+| Кроссплей через VPS на 443 и 8443 | `test/vps_crossplay.gd` — 17/17 на обоих |
 | Руины: атлас по типу, ppu/mul кадра | `test_ruins.gd` — 30/30; кадр `shots/ruins.png` (5 завалов) |
 
 Полный headless-набор этой волны: `./tests/run.sh` — **20 наборов PASS + 2
@@ -100,12 +105,11 @@ Git: ветка `godot-port`, коммиты порта — исходники, 
 
 ## Блокеры
 
-- **VPS не выложен.** `./tests/vps.sh` (2026-11-03): build `d3b2720542c5`,
-  `/api/health` 404, `/api/world` 404, `/game/` 200. На VPS нет `WLD1`,
-  `solo`, `bot`, `/api/health`. Локально всё это работает.
-  Выкладка по `docs/DEPLOY.md` — отдельное решение владельца: нужен коммит
-  всех незакоммиченных правок, rsync и `systemctl restart 4tox.service`.
-  Caddy не трогаем.
+- **VPS выложен 2026-11-03**: build `7b7d4da4e3ce`, бэкап
+  `/root/4tox-backup-20261103-021918.tgz`, рестарт только `4tox.service`
+  (Caddy не трогали, VPN жив). `tests/vps.sh`, `vps_smoke.js` (443/8443),
+  `vps_crossplay.gd` (443/8443) — зелёные. Ограничение `MAX_ACTIVE_ROOMS=1`
+  остаётся: одновременно одна партия.
 - **Шаблоны экспорта Godot не установлены** (`export_templates` пуст), поэтому
   `.app`/`.exe` не собраны. `tools/package.sh` и `export_presets.cfg` готовы и
   честно падают с инструкцией.
@@ -116,13 +120,10 @@ Git: ветка `godot-port`, коммиты порта — исходники, 
 1. Reconnect WS (300/600/1200), SSE-fallback, бейдж сети/пинга, host-left.
 3. Тряска деревьев `treeHits`, пни, подписи, кольца патруля.
 4. Боевой сценарий в `play.sh` (приказ, стоп, HP, падение ратуши).
-5. Выкладка на VPS после коммита и проверка `/api/world`, `solo`, `bot`,
-   `4TX1`, `/api/leave` на 443 и 8443.
-6. Установить шаблоны, собрать `.app`/`.exe`, прогнать на чистой машине.
+5. Установить шаблоны, собрать `.app`/`.exe`, прогнать на чистой машине.
 
 ## Не сделано (честно)
 
-- Сеть через VPS (локально лобби и кроссплей работают).
 - SSE-fallback, reconnect, пинг-бейдж, host-left/peer-left.
 - Наблюдатель, лента событий с кликом, диагностический экран.
 - Тряска деревьев/пни, подписи жителей, кольца патруля, `hold fire`
@@ -143,5 +144,8 @@ cd godot
 node ../game/tools/mp.js  # браузерная регрессия
 node ../game/tools/menu.js
 node ../mapgen2/tools/game.js
-./tests/vps.sh            # прод: /api/build, /api/health, /api/world (сейчас 404)
+./tests/vps.sh            # прод: /api/build, /api/health, /api/world
+node tests/vps_smoke.js https://374412.fornex.cloud:8443
+node tests/vps_smoke.js https://374412.fornex.cloud
+TOX_VPS_URL=https://374412.fornex.cloud:8443 Godot --headless --path . -s res://tests/vps_crossplay.gd
 ```

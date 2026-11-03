@@ -18,6 +18,9 @@ const CHROME = require(path.join(REPO, 'mapgen2/tools/chrome.js'));
 
 const port = Number(process.argv[2]);
 const code = String(process.argv[3] || '');
+/* База игры: локальный сервер (по умолчанию) или VPS/релей.
+   TOX_HOST_URL=https://374412.fornex.cloud:8443 — origin без /game/. */
+const HOST_URL = (process.env.TOX_HOST_URL || ('http://127.0.0.1:' + port)).replace(/\/+$/, '');
 const outPath = String(process.argv[4] || '/tmp/4tox-guest.json');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const getJSON = (u) => new Promise((res, rej) => {
@@ -57,7 +60,7 @@ const getJSON = (u) => new Promise((res, rej) => {
     };
     await send('Page.enable');
     await send('Runtime.enable');
-    await send('Page.navigate', { url: 'http://127.0.0.1:' + port + '/game/' });
+    await send('Page.navigate', { url: HOST_URL + '/game/' });
     const waitFor = async (expr, ms) => {
       const t = Date.now();
       while (Date.now() - t < ms) {
