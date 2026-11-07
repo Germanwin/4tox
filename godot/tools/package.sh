@@ -25,12 +25,16 @@ if ! ls "$TPL_DIR" 2>/dev/null | grep -q .; then
   exit 2
 fi
 
-OUT="build"
-rm -rf "$OUT"
+# Куда класть сборку. Переопределяется OUT=... — так можно собрать в
+# сторонний каталог, не трогая работающую сборку в build/.
+OUT="${OUT:-build}"
+# Каталоги сборки чистим по отдельности: build/cache (node.exe) и готовый
+# установщик Windows не должны исчезать из-за пересборки .app.
+rm -rf "$OUT/macos" "$OUT/windows"
 mkdir -p "$OUT/macos" "$OUT/windows"
 
-echo "== macOS"
-"$GODOT" --headless --path . --export-release "macOS" "$OUT/macos/4tox.app"
+echo "== macOS (${EXPORT_MODE:-release})"
+"$GODOT" --headless --path . --export-${EXPORT_MODE:-release} "macOS" "$OUT/macos/4tox-client.app"
 
 echo "== Windows"
 if "$GODOT" --headless --path . --export-release "Windows" "$OUT/windows/4tox.exe"; then
@@ -42,6 +46,7 @@ fi
 echo "== бандл Node"
 bundle_server() {
   local dest="$1"           # каталог, где приложение ищет server/
+  local platform="$2"       # macos | windows
   mkdir -p "$dest/game/server" "$dest/mapgen2"
   cp -R "$ROOT/game/shared" "$dest/game/"
   cp -R "$ROOT/game/server/." "$dest/game/server/"
@@ -49,20 +54,27 @@ bundle_server() {
   cp -R "$ROOT/mapgen2/js" "$dest/mapgen2/"
   cp -R "$ROOT/mapgen2/assets" "$dest/mapgen2/"
   cp "$ROOT/package.json" "$dest/" 2>/dev/null || true
-  local node_bin
-  node_bin="$(command -v node || true)"
-  if [ -n "$node_bin" ]; then
-    cp "$node_bin" "$dest/node"
-    chmod +x "$dest/node"
+  if [ "$platform" = windows ]; then
+    # На Windows нужен именно node.exe: macOS-бинарь там не запускается.
+    local node_win
+    node_win="$("$ROOT/godot/tools/windows/fetch-node.sh")"
+    cp "$node_win/node.exe" "$dest/node.exe"
   else
-    echo "  ВНИМАНИЕ: node не найден; положите его в $dest/node"
+    local node_bin
+    node_bin="$(command -v node || true)"
+    if [ -n "$node_bin" ]; then
+      cp "$node_bin" "$dest/node"
+      chmod +x "$dest/node"
+    else
+      echo "  ВНИМАНИЕ: node не найден; положите его в $dest/node"
+    fi
   fi
 }
-bundle_server "$OUT/macos/4tox.app/Contents/Resources/server"
-bundle_server "$OUT/windows/server"
+bundle_server "$OUT/macos/4tox-client.app/Contents/Resources/server" macos
+bundle_server "$OUT/windows/server" windows
 
 echo "== проверка собранного сервера"
-S="$OUT/macos/4tox.app/Contents/Resources/server"
+S="$OUT/macos/4tox-client.app/Contents/Resources/server"
 PORT=8861
 "$S/node" "$S/game/server/server.js" --local --no-upnp --port $PORT \
   --state-dir "$OUT/state" --log-file "$OUT/server.log" >/dev/null 2>&1 &
@@ -79,6 +91,10 @@ else
   echo "  ОШИБКА: сервер из бандла не ответил; лог $OUT/server.log"
   exit 1
 fi
+
+echo "== обёртка macOS: повторный клик по 4tox.app открывает новое окно"
+"$ROOT/godot/tools/wrap_macos.sh" "$OUT/macos/4tox-client.app" "$OUT/macos/4tox.app"
+rm -rf "$OUT/macos/4tox-client.app"
 
 APP="$(find "$OUT/macos/4tox.app/Contents/MacOS" -maxdepth 1 -type f -perm -111 2>/dev/null | head -1)"
 if [ -n "$APP" ] && [ -x "$APP" ]; then
@@ -109,11 +125,16 @@ if command -v hdiutil >/dev/null 2>&1 && [ -d "$OUT/macos/4tox.app" ]; then
 fi
 if command -v zip >/dev/null 2>&1 && [ -f "$OUT/windows/4tox.exe" ]; then
   echo "== zip Windows"
-  rm -f "$OUT/4tox-windows.zip"
-  (cd "$OUT/windows" && zip -qry "$OLDPWD/$OUT/4tox-windows.zip" 4tox.exe server)
-  unzip -tq "$OUT/4tox-windows.zip" >/dev/null
-  echo "  zip целый: $(unzip -l "$OUT/4tox-windows.zip" | tail -1 | awk '{print $2}') файлов"
-  ls -lh "$OUT/4tox-windows.zip" | awk '{print "  "$5" "$9}'
+  # Абсолютный путь: после cd в $OUT/windows относительный "$OUT/..." уже не
+  # тот, а прежний "$OLDPWD/$OUT" ломался, стоило задать OUT=/абсолютный/путь.
+  ZIP="$(cd "$OUT" && pwd)/4tox-windows.zip"
+  rm -f "$ZIP"
+  (cd "$OUT/windows" && zip -qry "$ZIP" 4tox.exe server \
+      EOSSDK-Win64-Shipping.dll libeosg.windows.template_release.x86_64.dll \
+      xaudio2_9redist.dll 2>/dev/null)
+  unzip -tq "$ZIP" >/dev/null
+  echo "  zip целый: $(unzip -l "$ZIP" | tail -1 | awk '{print $2}') файлов"
+  ls -lh "$ZIP" | awk '{print "  "$5" "$9}'
 fi
 
 echo "готово: $OUT/"

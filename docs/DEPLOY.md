@@ -1,5 +1,15 @@
 # Прод 4tox: VPS, выкладка и откат
 
+**2026-11-07: установлен координатор Godot EOS.** Публичный HTTPS-маршрут
+`/api/eos-coordinator/*` проходит через существующий сервер игры; сам
+координатор слушает только `127.0.0.1:8798`. Добавлены служба
+`4tox-coordinator.service`, её отдельное зашифрованное состояние и точечный
+маршрут в `game/server/server.js`. `COMMIT` остался прежним, Caddy и VPN не
+перезапускались. Резервная копия кода и конфигурации до изменения —
+`/root/4tox-eos-deploy-sLkFzN0Q/`. Координатор проходит публичный HTTPS smoke,
+клиент EOS настроен; подробности, включая ключ и откат —
+`godot/PUBLIC-EOS-OPERATIONS.md`.
+
 **2026-10-28: протокол 4 выложен на прод.** Build `013dd8513c0f`, protocol 4,
 cmdProto 3. Создана `/opt/4tox-var/rooms` (0700, `4tox:4tox`) и drop-in
 `/etc/systemd/system/4tox.service.d/state.conf` с

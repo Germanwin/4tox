@@ -3,7 +3,9 @@ extends Node
 const HybridDemo = preload("res://scripts/hybrid_demo.gd")
 const Supervisor = preload("res://scripts/server_supervisor.gd")
 const NetLobby = preload("res://scripts/net_lobby.gd")
+const EosLobby = preload("res://scripts/eos/lobby.gd")
 const LiveRoom = preload("res://scripts/live_room.gd")
+const ClientProfile = preload("res://scripts/client_profile.gd")
 
 enum State { MENU, LOBBY, PLAY, PAUSE, OVER, GALLERY, DEMO }
 
@@ -16,6 +18,7 @@ var net: ToxNet
 var gallery: ToxModelGallery
 var demo: Node2D
 var net_lobby = null
+var eos_lobby = null
 var server = null
 var ui_layer: CanvasLayer
 var loading_layer: CanvasLayer
@@ -40,9 +43,21 @@ var pending_order: Array = []
 var preview_size := 64
 var _gallery_return := State.MENU
 var _smoke_mode := false
+var _eos_room_probe := false
+## Игрок сам нажал «Играть»: авто-возврат в сохранённую сетевую партию уже не
+## должен открываться вторым миром.
+var _manual_start := false
 
 func _ready() -> void:
 	ToxAtlasDB.ensure_loaded()
+	# Каждое окно — отдельный клиент: свой номер в заголовке (чтобы не путать
+	# окна при тесте VPS/EOS) и лёгкий сдвиг, чтобы окна не легли друг на
+	# друга ровно.
+	var client_id := ClientProfile.id()
+	if client_id > 1:
+		get_window().title = ClientProfile.title(client_id)
+		var shift := mini(client_id - 1, 6) * 42
+		get_window().position += Vector2i(shift, shift)
 	get_tree().root.size_changed.connect(_on_resized)
 	view = ToxWorldView.new()
 	view.name = "WorldView"
@@ -54,6 +69,7 @@ func _ready() -> void:
 	add_child(demo)
 	server = Supervisor.new()
 	server.name = "ServerSupervisor"
+	server.profile = client_id
 	add_child(server)
 	server.status.connect(_on_server_status)
 	server.failed.connect(_on_server_failed)
@@ -82,6 +98,12 @@ func _ready() -> void:
 	ui_layer.add_child(net_lobby)
 	net_lobby.match_ready.connect(_on_net_match_ready)
 	net_lobby.back.connect(_on_net_lobby_back)
+	eos_lobby = EosLobby.new()
+	eos_lobby.name = "EosLobby"
+	eos_lobby.visible = false
+	ui_layer.add_child(eos_lobby)
+	eos_lobby.match_ready.connect(_on_eos_match_ready)
+	eos_lobby.back.connect(_on_eos_back)
 	_connect_menu()
 	_connect_hud()
 	_connect_net()
@@ -91,13 +113,24 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a == "--smoke":
 			_smoke_mode = true
+		if a == "--eos-probe":
+			call_deferred("_auto_eos_probe")
+		if a == "--eos-room-probe":
+			_eos_room_probe = true
+			call_deferred("_auto_eos_room_probe")
 	menu.show_main(false)
 	call_deferred("_make_preview", 64)
 	if _smoke_mode:
 		call_deferred("_auto_smoke")
-	else:
+	elif not _eos_room_probe:
 		call_deferred("_auto_resume")
 	call_deferred("_auto_shot")
+
+func _exit_tree() -> void:
+	# Штатный выход снимает замок сразу: следующее окно снова станет клиентом 1
+	# и вернётся в свою сессию, не дожидаясь, пока удар сердца протухнет.
+	ClientProfile.release_current()
+
 
 func _build_loading() -> void:
 	loading_layer = CanvasLayer.new()
@@ -220,6 +253,9 @@ func _on_play(size: int, seed_text: String, mode: String) -> void:
 	if mode == "net":
 		_open_net_lobby(size, seed_text)
 		return
+	if mode == "eos":
+		_open_eos_lobby(size, seed_text)
+		return
 	_start_hybrid(size, seed_text, mode == "bot")
 
 ## Гибридная партия: приложение само поднимает Node-сервер и начинает
@@ -227,6 +263,9 @@ func _on_play(size: int, seed_text: String, mode: String) -> void:
 func _start_hybrid(size: int, seed_text: String, bot: bool) -> void:
 	if starting:
 		return
+	_manual_start = true
+	if net_lobby != null:
+		net_lobby.abort_resume()
 	starting = true
 	_enter_demo_shell()
 	var ok: bool = await server.start_server()
@@ -267,6 +306,8 @@ func _close_hybrid_to_menu() -> void:
 	demo.close()
 	if net_lobby != null and net_lobby.room != null:
 		net_lobby.close_room()
+	if eos_lobby != null:
+		eos_lobby.close_room()
 	if server != null:
 		server.stop()
 	state = State.MENU
@@ -286,6 +327,57 @@ func _close_hybrid_to_menu() -> void:
 ## Проверка СОБРАННОГО приложения: поднять встроенный сервер, начать
 ## одиночную партию, дождаться мира и кадра, выйти с кодом 0. Запускается
 ## флагом `-- --smoke`; так package.sh проверяет .app, а не только проект.
+## Диагностика собранного приложения: поднять настоящий EOS и сказать, где
+## именно отказ. Запуск: 4tox --headless -- --eos-probe
+func _auto_eos_probe() -> void:
+	print("EOSPROBE: старт")
+	var script = load("res://scripts/eos/p2p_link.gd")
+	if script == null or not script.can_instantiate():
+		print("EOSPROBE: p2p_link не загрузился")
+		get_tree().quit(1)
+		return
+	var link = script.new()
+	link.failed.connect(func(t: String) -> void: print("EOSPROBE: failed ", t))
+	link.set_coordinator_url(EosLobby.DEFAULT_COORDINATOR)
+	print("EOSPROBE: available=", link.available())
+	var ok: bool = await link.start_host()
+	print("EOSPROBE: start=", ok, " err=", link.error_text())
+	link.shutdown()
+	await get_tree().create_timer(0.5).timeout
+	get_tree().quit(0 if ok else 1)
+
+
+## Проверка именно экспортированного приложения: настоящий EOS, Node и
+## координатор, без вывода кода, полномочий или идентификаторов игрока.
+func _auto_eos_room_probe() -> void:
+	var temp := OS.get_environment("TMPDIR")
+	if temp == "":
+		temp = ProjectSettings.globalize_path("user://state")
+	var dir := temp.path_join("4tox-app-eos-probe-" + Crypto.new().generate_random_bytes(12).hex_encode())
+	eos_lobby.session_override = dir.path_join("session.cfg")
+	eos_lobby.open(64, "app-eos-probe")
+	eos_lobby._transport.select(0)
+	eos_lobby._name.text = "Probe"
+	await eos_lobby.host_game()
+	var ok: bool = eos_lobby.joined and eos_lobby.is_host
+	if ok:
+		var deadline := Time.get_ticks_msec() + 15000
+		ok = false
+		while Time.get_ticks_msec() < deadline:
+			var state: Dictionary = await eos_lobby.coordinator.request("heartbeat", {})
+			if state.get("backupAvailable", false):
+				ok = true
+				break
+			await get_tree().create_timer(0.5).timeout
+	print("EOSROOMPROBE: ", "PASS" if ok else "FAIL")
+	if not ok:
+		print("EOSROOMPROBE: ", eos_lobby._status_label.text)
+	await eos_lobby.close_room()
+	if DirAccess.dir_exists_absolute(dir):
+		DirAccess.remove_absolute(dir)
+	get_tree().quit(0 if ok else 1)
+
+
 func _auto_smoke() -> void:
 	print("SMOKE: старт приложения")
 	await _start_hybrid(64, "тихая-долина-701", false)
@@ -310,7 +402,7 @@ func _auto_smoke() -> void:
 
 
 func _auto_resume() -> void:
-	if net_lobby == null or not LiveRoom.session_exists():
+	if _manual_start or net_lobby == null or not LiveRoom.session_exists():
 		return
 	var info := LiveRoom.session_info()
 	var saved_base := str(info.get("base", ""))
@@ -354,6 +446,42 @@ func _on_net_match_ready(room) -> void:
 	_enter_demo_shell()
 	net_lobby.visible = false
 	demo.open_room(room, {"mode": "multi"})
+
+
+## Отдельный режим EOS: свой экран, свой LiveRoom, тот же мир на Node.
+func _open_eos_lobby(size: int, seed_text: String) -> void:
+	if starting:
+		return
+	starting = true
+	state = State.LOBBY
+	menu.visible = false
+	hud.visible = false
+	gallery.visible = false
+	lobby.visible = false
+	if net_lobby != null:
+		net_lobby.visible = false
+	view.input_enabled = false
+	view.fit_island()
+	view._arrival_t = -1.0
+	eos_lobby.open(size, seed_text)
+	starting = false
+
+
+func _on_eos_match_ready(room) -> void:
+	_enter_demo_shell()
+	eos_lobby.visible = false
+	demo.open_room(room, {"mode": "multi"})
+
+
+func _on_eos_back() -> void:
+	state = State.MENU
+	eos_lobby.visible = false
+	view.visible = true
+	has_game = false
+	menu.show_main(false)
+	view.input_enabled = false
+	view.fit_island()
+	view._arrival_t = -1.0
 
 
 func _open_lobby(size: int, seed_text: String) -> void:
@@ -832,6 +960,7 @@ func _on_game_over(win: bool) -> void:
 	hud.show_end(win, text)
 
 func _process(_dt: float) -> void:
+	ClientProfile.tick()
 	var now := Time.get_ticks_msec()
 	if last_ms == 0:
 		last_ms = now

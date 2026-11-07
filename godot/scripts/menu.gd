@@ -38,6 +38,8 @@ var _veil: ColorRect
 var _board: PanelContainer
 var _sign_wrap: Control
 var _right_hint: Label
+var _dev_row: HBoxContainer
+var _dev_btn: Button
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -57,6 +59,15 @@ func _build_veil() -> void:
 	_veil.color = Color(0.025, 0.09, 0.16, 0.52)
 	_veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_veil)
+	# Виньетка из процедурной текстуры: один квад, кадр не нагружает.
+	var vig := TextureRect.new()
+	vig.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	vig.texture = ToxUI.vignette_texture()
+	vig.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	vig.stretch_mode = TextureRect.STRETCH_SCALE
+	vig.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	vig.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(vig)
 
 func _build_board() -> void:
 	var margin := MarginContainer.new()
@@ -77,8 +88,24 @@ func _build_board() -> void:
 	row.add_child(left)
 	_sign_wrap = Control.new()
 	_sign_wrap.custom_minimum_size = Vector2(0, 196)
+	_sign_wrap.clip_contents = true
 	left.add_child(_sign_wrap)
 	var sign_wrap := _sign_wrap
+	var glow := TextureRect.new()
+	glow.texture = ToxUI.glow_texture()
+	glow.position = Vector2(-10, -36)
+	glow.size = Vector2(580, 250)
+	glow.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	glow.stretch_mode = TextureRect.STRETCH_SCALE
+	glow.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	glow.modulate = Color(1, 0.9, 0.72, 0.30)
+	sign_wrap.add_child(glow)
+	var glow_tw := glow.create_tween().set_loops()
+	glow_tw.tween_property(glow, "modulate:a", 0.48, 2.6) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	glow_tw.tween_property(glow, "modulate:a", 0.26, 2.6) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	var sign_panel := PanelContainer.new()
 	sign_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	sign_panel.custom_minimum_size = Vector2(500, 124)
@@ -119,8 +146,11 @@ func _build_board() -> void:
 		card.toggle_mode = true
 		card.button_group = group
 		card.pressed.connect(func() -> void: _select_size(s))
-		card.add_theme_stylebox_override("pressed", _green_box())
-		card.add_theme_stylebox_override("hover_pressed", _green_box())
+		var pressed_set := ToxUI.button_set("primary")
+		card.add_theme_stylebox_override("pressed", pressed_set["pressed"])
+		card.add_theme_stylebox_override("hover_pressed", pressed_set["hover"])
+		card.add_theme_color_override("font_pressed_color", ToxUI.CREAM)
+		card.add_theme_color_override("font_hover_pressed_color", ToxUI.CREAM)
 		_size_grid.add_child(card)
 		_cards[s] = card
 	_cards[selected_size].button_pressed = true
@@ -151,8 +181,9 @@ func _build_board() -> void:
 	mode_row.add_theme_constant_override("separation", 8)
 	_main_page.add_child(mode_row)
 	var mgroup := ButtonGroup.new()
-	var mode_names := {"solo": "Один", "bot": "Против деревни", "net": "Сеть"}
-	for m in ["solo", "bot", "net"]:
+	var mode_names := {"solo": "Один", "bot": "Против деревни", "net": "Сеть",
+		"eos": "EOS"}
+	for m in ["solo", "bot", "net", "eos"]:
 		var b := ToxUI.button(str(mode_names[m]), 15)
 		b.toggle_mode = true
 		b.button_group = mgroup
@@ -160,17 +191,22 @@ func _build_board() -> void:
 		b.custom_minimum_size = Vector2(0, 42)
 		b.button_pressed = (m == selected_mode)
 		b.pressed.connect(func() -> void: _select_mode(m))
-		b.add_theme_stylebox_override("pressed", _green_box())
-		b.add_theme_stylebox_override("hover_pressed", _green_box())
+		var pressed_set := ToxUI.button_set("primary")
+		b.add_theme_stylebox_override("pressed", pressed_set["pressed"])
+		b.add_theme_stylebox_override("hover_pressed", pressed_set["hover"])
+		b.add_theme_color_override("font_pressed_color", ToxUI.CREAM)
+		b.add_theme_color_override("font_hover_pressed_color", ToxUI.CREAM)
 		mode_row.add_child(b)
 		_mode_buttons[m] = b
 	if _mode_buttons.has("net"):
 		_mode_buttons["net"].tooltip_text = "Хозяин создаёт лобби, друзья подключаются по адресу"
+	if _mode_buttons.has("eos"):
+		_mode_buttons["eos"].tooltip_text = "Отдельный режим: сервер у хозяина, гость через EOS P2P или петлю"
 
 	var play_row := HBoxContainer.new()
 	play_row.add_theme_constant_override("separation", 10)
 	_main_page.add_child(play_row)
-	_play_btn = ToxUI.button("Играть", 22)
+	_play_btn = ToxUI.button("Играть", 22, "primary")
 	_play_btn.custom_minimum_size = Vector2(0, 58)
 	_play_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_play_btn.pressed.connect(_on_play)
@@ -181,6 +217,21 @@ func _build_board() -> void:
 	_continue_btn.pressed.connect(func() -> void: emit_signal("continue_pressed"))
 	play_row.add_child(_continue_btn)
 
+	# Отладочные входы не мозолят глаза в главном меню: они прячутся за
+	# маленькой шестерёнкой. Для приёмок они по-прежнему на месте в дереве.
+	_dev_row = HBoxContainer.new()
+	_dev_row.add_theme_constant_override("separation", 8)
+	_dev_row.visible = false
+	_main_page.add_child(_dev_row)
+	var hybrid := ToxUI.button("Новый рендер", 14, "ghost")
+	hybrid.custom_minimum_size = Vector2(160, 36)
+	hybrid.pressed.connect(func() -> void: emit_signal("hybrid_pressed"))
+	_dev_row.add_child(hybrid)
+	var live := ToxUI.button("Живая комната", 14, "ghost")
+	live.custom_minimum_size = Vector2(160, 36)
+	live.pressed.connect(func() -> void: emit_signal("live_pressed"))
+	_dev_row.add_child(live)
+
 	var bottom := HBoxContainer.new()
 	bottom.add_theme_constant_override("separation", 8)
 	_main_page.add_child(bottom)
@@ -188,18 +239,16 @@ func _build_board() -> void:
 	models.custom_minimum_size = Vector2(120, 38)
 	models.pressed.connect(func() -> void: emit_signal("models_pressed"))
 	bottom.add_child(models)
-	var hybrid := ToxUI.button("Новый рендер", 14)
-	hybrid.custom_minimum_size = Vector2(150, 38)
-	hybrid.pressed.connect(func() -> void: emit_signal("hybrid_pressed"))
-	bottom.add_child(hybrid)
-	var live := ToxUI.button("Живая комната", 14)
-	live.custom_minimum_size = Vector2(150, 38)
-	live.pressed.connect(func() -> void: emit_signal("live_pressed"))
-	bottom.add_child(live)
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bottom.add_child(spacer)
-	var note := ToxUI.ink_label("Godot 4 · перенос 4tox", 12)
+	_dev_btn = ToxUI.button("⚙", 15, "ghost")
+	_dev_btn.custom_minimum_size = Vector2(40, 38)
+	_dev_btn.tooltip_text = "Отладка: новый рендер и живая комната"
+	_dev_btn.pressed.connect(func() -> void:
+		_dev_row.visible = not _dev_row.visible)
+	bottom.add_child(_dev_btn)
+	var note := ToxUI.ink_label("4tox · Godot 4", 12)
 	note.add_theme_color_override("font_color", ToxUI.INK_SOFT)
 	bottom.add_child(note)
 
@@ -226,7 +275,7 @@ func _build_board() -> void:
 		stats_grid.add_child(v)
 		_stat_labels[key] = v
 	_pause_page.add_child(ToxUI.hsep(6))
-	_pause_continue = ToxUI.button("Продолжить", 20)
+	_pause_continue = ToxUI.button("Продолжить", 20, "primary")
 	_pause_continue.custom_minimum_size = Vector2(0, 54)
 	_pause_continue.pressed.connect(func() -> void: emit_signal("continue_pressed"))
 	_pause_page.add_child(_pause_continue)
@@ -315,6 +364,7 @@ func show_main(has_saved: bool = false) -> void:
 	_continue_btn.visible = has_saved
 	modulate.a = 1.0
 	visible = true
+	call_deferred("_animate_menu")
 
 func show_pause(stats: Dictionary, net_mode: bool = false) -> void:
 	_show_main(false)
@@ -323,10 +373,20 @@ func show_pause(stats: Dictionary, net_mode: bool = false) -> void:
 	_subtitle.text = "матч не останавливается" if net_mode else "остров не останавливается"
 	_sign_wrap.visible = false
 	visible = true
+	call_deferred("_animate_menu")
 	if _pause_new_btn != null:
 		_pause_new_btn.visible = not net_mode
 	for key in _stat_labels.keys():
 		_stat_labels[key].text = str(stats.get(key, "—"))
+
+func _animate_menu() -> void:
+	if not visible:
+		return
+	if _board != null and _board.is_inside_tree():
+		ToxUI.pop_in(_board, 0.24)
+	if _sign_wrap != null and _sign_wrap.visible and _sign_wrap.is_inside_tree():
+		ToxUI.pop_in(_sign_wrap, 0.3)
+
 
 func _show_main(v: bool) -> void:
 	_main_page.visible = v

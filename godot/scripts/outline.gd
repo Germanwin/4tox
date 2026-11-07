@@ -1,14 +1,57 @@
 class_name ToxOutline
 extends RefCounted
 
-## Coloured rim over the atlas' black contour, same construction as
-## Renderer.spriteEdge: tint the silhouette, erase a slightly scaled copy,
-## keep the border. Alpha and a bottom clip (villagers' baked shadow) are
-## parameters, so one builder serves buildings and people.
+## Coloured rim around a sprite in the colour of its owner.
+##
+## The rim used to be built per thickness in sprite pixels (`build_image`):
+## tint the silhouette, erase a slightly scaled copy, keep the border. Because
+## the thickness is a SCREEN number (1.4 px) and the sprite is scaled by the
+## zoom, the thickness in sprite pixels changed with every zoom step — and the
+## whole rim was rebuilt by a GDScript pixel loop for every building and every
+## villager frame. A smooth zoom rebuilt dozens of 400x400 images per second:
+## 120 fps at rest against 27 fps while zooming, with single frames of 0.5 s.
+##
+## Now the rim is a flat silhouette drawn UNDER the sprite, a hair larger than
+## it (`silhouette`). It is the same 1.4 px on screen at any zoom, needs no
+## rebuild while zooming, and costs one masked blit (C++) once per frame and
+## colour. The atlas' own black contour stays visible; the team colour sits
+## just outside it instead of covering its outer half.
+##
+## `build`/`build_image` remain for the standalone prototype layers and tests.
 
 static func build(atlas_img: Image, f: Dictionary, color: Color, alpha: float,
 		px: int, clip: int) -> Texture2D:
 	var img := build_image(atlas_img, f, color, alpha, px, clip)
+	if img == null:
+		return null
+	return ImageTexture.create_from_image(img)
+
+
+## Flat silhouette of one atlas frame in `color`, alpha = the sprite's alpha
+## (times `color.a`), everything below `clip` erased (a villager's baked shadow
+## must not get a rim of its own). All the work is Image C++ ops, so it costs
+## ~3 ms per 430x400 frame instead of ~105 ms of GDScript per-pixel math, and
+## it does not depend on the zoom at all.
+static func silhouette_image(atlas_img: Image, f: Dictionary, color: Color,
+		alpha: float, clip: int) -> Image:
+	var fw := int(f["w"])
+	var fh := int(f["h"])
+	if fw <= 0 or fh <= 0:
+		return null
+	var src := atlas_img.get_region(Rect2i(int(f["x"]), int(f["y"]), fw, fh))
+	src.convert(Image.FORMAT_RGBA8)
+	var flat := Image.create(fw, fh, false, Image.FORMAT_RGBA8)
+	flat.fill(Color(color.r, color.g, color.b, clampf(alpha, 0.0, 1.0)))
+	var out := Image.create(fw, fh, false, Image.FORMAT_RGBA8)
+	out.blend_rect_mask(flat, src, Rect2i(0, 0, fw, fh), Vector2i.ZERO)
+	if clip > 0 and clip < fh:
+		out.fill_rect(Rect2i(0, clip, fw, fh - clip), Color(0, 0, 0, 0))
+	return out
+
+
+static func silhouette(atlas_img: Image, f: Dictionary, color: Color,
+		alpha: float, clip: int) -> Texture2D:
+	var img := silhouette_image(atlas_img, f, color, alpha, clip)
 	if img == null:
 		return null
 	return ImageTexture.create_from_image(img)

@@ -39,9 +39,19 @@ const DOUBLE_MS := 500
 const ARRIVAL := 1.4
 const PAN_SPEED := 900.0
 const INTERP_DELAY_MS := 150.0
+## Зум: шаг мягче браузерного (1.17 за щелчок), но с плавным доведением.
+## Слишком крупный шаг на трекпаде давал «телепорт» через пол-карты.
+const ZOOM_STEP := 1.10
+const ZOOM_EASE := 16.0
+const ZOOM_IMPULSE := 0.28
 
 var cam := {"x": 104.0, "y": 93.5, "zoom": 40.0}
 var zoom := 40.0
+## Куда едет зум. Сам `zoom` доводится до цели в `_process`, а камера держит
+## точку под курсором на месте — как `Renderer.zoomAt` в браузере.
+var zoom_target := 40.0
+var _zoom_focus := Vector2(-1, -1)
+var _zoom_focus_world := Vector2.ZERO
 
 var _ui: CanvasLayer
 var _hint: Label
@@ -58,7 +68,18 @@ var _fixture_loaded := false
 var _snapshot_seq := -1
 var _live = null
 var _live_objects: Array = []
+## Полный список природы, каким его прислал сервер. Битовая карта `removed`
+## адресует именно его индексы, поэтому фильтровать надо от базы, а не от
+## уже отфильтрованного списка (иначе второе срубленное дерево оставалось).
+var _base_objects: Array = []
+var _removed_hex := ""
 var _live_hall_done := false
+## Оптимистичные действия: дом стоит и живёт в кадре сразу, команда
+## подтверждается сервером параллельно. В мир эти объекты не входят — только
+## в отображение; снимок и результат команды снимают ожидание.
+var _pending_builds: Array = []
+var _pending_edits: Dictionary = {}
+var _pending_seq := 0
 var _hud = null
 var _ghost = null
 var _selected := ""
@@ -68,6 +89,17 @@ var _hover_cell := Vector2i(-1, -1)
 var _live_url := ""
 var _place_type := ""
 var _place_rot := 90
+# Перенос постройки: локальный призрак, команда — по «Применить».
+var _move_id := ""
+var _move_building: Dictionary = {}
+var _move_cell := Vector2i(-1, -1)
+var _move_grab := Vector2i.ZERO
+var _move_placed := false
+var _move_valid := true
+var _move_reason := ""
+var _move_check_cell := Vector2i(-999, -999)
+var _move_check_seq := 0
+var _move_check_at := 0
 var _last_snap: Dictionary = {}
 var _mode := "solo"                 # solo | bot | multi
 var _bot := false
@@ -82,6 +114,9 @@ var _press_cell := Vector2i(-1, -1)
 var _panning := false
 var _hold_fired := false
 var _last := Vector2.ZERO
+## Последняя точка мыши по событиям, а не по OS: в headless/на синтетических
+## InputEvent get_viewport().get_mouse_position() не двигается.
+var _last_mouse := Vector2.ZERO
 var _last_click_ms := 0
 var _last_click_id := ""
 var _keys: Dictionary = {}
@@ -113,7 +148,31 @@ var _ping_t := 0.0
 func _ready() -> void:
 	visible = false
 	set_process(false)
+	set_process_input(true)
 	set_process_unhandled_input(false)
+
+
+## Потеря фокуса окна — отпускание кнопки, которого мы не увидим: иначе
+## панорама оставалась включённой после Alt+Tab.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
+		_pressed = false
+		_panning = false
+		_hold_fired = false
+
+
+## Отпускание над панелью HUD не доходит до `_unhandled_input`: сбрасываем
+## панораму здесь, иначе карта продолжала бы ехать после отпускания.
+func _input(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.button_index == MOUSE_BUTTON_LEFT and not mb.pressed \
+				and (_pressed or _panning):
+			var hover := get_viewport().gui_get_hovered_control()
+			if hover != null:
+				_pressed = false
+				_panning = false
+				_hold_fired = false
 
 
 func open() -> void:
@@ -159,9 +218,7 @@ func open_live(url: String, opts := {}) -> void:
 	_selected_villager = ""
 	_hud.reset()
 	_show_loading("Подключаемся к локальному серверу…\n" + url)
-	if _live != null:
-		_live.queue_free()
-		_live = null
+	_detach_live()
 	_live = LiveRoom.new()
 	_owns_live = true
 	add_child(_live)
@@ -197,6 +254,8 @@ func open_room(room, opts := {}) -> void:
 	_clear_shell()
 	_mode = "multi"
 	_bot = false
+	if _live != null and _live != room:
+		_detach_live()
 	_owns_live = false
 	_live = room
 	_live_url = str(room.base)
@@ -243,15 +302,33 @@ func close() -> void:
 		_canvas.visible = false
 	set_process(false)
 	set_process_unhandled_input(false)
-	if _live != null:
-		_live.leave()
-		if _owns_live:
-			_live.queue_free()
-		_live = null
+	_detach_live()
 	_hud = null
 	_ghost = null
 	_fx = null
 	_clear_shell()
+
+
+## Отцепить прошлую комнату: снять ВСЕ её сигналы, закрыть сессию и, если
+## комната наша (solo), освободить. Иначе старая комната продолжает присылать
+## снимки в тот же _layer: мир прыгает между двумя партиями, газоны
+## перепекаются на каждом снимке, fps падает до 1–3.
+func _detach_live() -> void:
+	var old = _live
+	_live = null
+	if old == null:
+		return
+	for spec in [["status", _on_live_status], ["world_ready", _on_live_world],
+			["snapshot", _on_live_snapshot], ["failed", _on_live_failed],
+			["command_done", _on_command_done], ["connection", _on_live_connection],
+			["latency", _on_live_latency], ["net_event", _on_net_event]]:
+		var sig: String = str(spec[0])
+		var cb: Callable = spec[1]
+		if old.has_signal(sig) and old.is_connected(sig, cb):
+			old.disconnect(sig, cb)
+	old.leave()
+	if _owns_live:
+		old.queue_free()
 
 
 func _ensure_ui() -> void:
@@ -304,6 +381,7 @@ func _hide_loading() -> void:
 
 
 func _clear_shell() -> void:
+	cancel_move()
 	if _canvas != null:
 		_canvas.queue_free()
 	_canvas = null
@@ -396,6 +474,8 @@ func _fit_island() -> void:
 	var map_h := float(_world.width + _world.height) * 0.25
 	var z := minf((size.x - 40.0) / map_w, (size.y - 40.0) / map_h)
 	zoom = clampf(z, MIN_ZOOM, MAX_ZOOM)
+	zoom_target = zoom
+	_zoom_focus = Vector2(-1, -1)
 	cam["x"] = float(_world.width) * 0.5
 	cam["y"] = float(_world.height) * 0.5
 	_clamp()
@@ -451,6 +531,15 @@ func hud():
 
 ## Текст в загрузочном экране (статус супервизора и комнаты).
 func set_status(text: String) -> void:
+	# После старта партии экран загрузки больше не показываем: статус идёт в
+	# строку HUD. Иначе поздний «в комнате…» снова накрывал игру дощечкой
+	# «Готовим остров», и интерфейс выглядел сломанным.
+	if _match_emitted or _layer != null:
+		if _hud != null:
+			_hud.status_text = text
+			_hud.refresh()
+		_set_hint(text)
+		return
 	if _loading_label != null:
 		_loading_label.text = text
 	else:
@@ -473,6 +562,12 @@ func _on_live_connection(state: String, detail: String) -> void:
 		_hud.status_text = "связь: " + detail
 	elif state == "lost":
 		_hud.status_text = "связь потеряна"
+	elif state == "migrating":
+		_snapshot_seq = -1
+		_last_snap = {}
+		_samples.clear()
+		_show_loading("Восстанавливаем подключение…")
+		_hud.status_text = "Восстанавливаем подключение…"
 	_hud.refresh()
 
 
@@ -511,11 +606,18 @@ func _on_live_latency(ms: int) -> void:
 
 
 func _on_live_status(text: String) -> void:
+	if _match_emitted or _layer != null or (_hud != null and not _hud.snap.is_empty()):
+		_set_hint(text)
+		if _hud != null:
+			_hud.refresh()
+		return
 	_show_loading(text)
 	_set_hint("живая комната · " + text)
 
 
 func _on_live_world(world) -> void:
+	_base_objects = world.objects
+	_removed_hex = ""
 	_live_objects = world.objects
 	await _build_shell(world, world.objects, [], [], ["#4a90d9"])
 	if not _last_snap.is_empty():
@@ -531,13 +633,10 @@ func _on_live_snapshot(s: Dictionary) -> void:
 	_snapshot_seq = int(s.get("revision", s.get("seq", 0)))
 	if _snapshot_seq < prev_seq:
 		return
-	if not _live_objects.is_empty():
-		var filtered := _filter_removed(_live_objects, str(s.get("removed", "")))
-		if filtered.size() != _layer.objects.size():
-			_layer.objects = filtered
-			_layer.reset_objects()
-			_live_objects = []
-	_layer.buildings = s.get("buildings", [])
+	_apply_removed(str(s.get("removed", "")))
+	var auth_buildings: Array = s.get("buildings", [])
+	_reconcile_pending(auth_buildings)
+	_layer.buildings = _display_buildings(auth_buildings)
 	var colors: Array = []
 	for t in s.get("towns", []):
 		colors.append(str(t.get("color", "#4a90d9")))
@@ -561,7 +660,7 @@ func _on_live_snapshot(s: Dictionary) -> void:
 			_live.latency_ms if _live != null else -1,
 			_live.is_host if _live != null else false,
 			_live.connected if _live != null else false)
-		_hud.on_snapshot(s)
+		_hud.on_snapshot(_display_snapshot(s))
 	if not _match_emitted:
 		_match_emitted = true
 		match_started.emit()
@@ -585,6 +684,8 @@ func _start_arrival(hall: Dictionary) -> void:
 		"y": float(hall.get("y", 0.0)) + float(fp.y) * 0.5,
 	}
 	zoom = float(from["zoom"])
+	zoom_target = zoom
+	_zoom_focus = Vector2(-1, -1)
 	cam["x"] = float(from["x"])
 	cam["y"] = float(from["y"])
 	_clamp()
@@ -594,6 +695,22 @@ func _start_arrival(hall: Dictionary) -> void:
 func _on_live_failed(text: String) -> void:
 	_show_loading("Нет связи с локальным сервером.\n" + text)
 	_set_hint("нет связи: " + text)
+
+
+## Применить битовую карту срубленного. Карта только растёт, поэтому
+## сравниваем строку целиком и фильтруем ОТ ПОЛНОГО списка: так второе,
+## десятое и сотое дерево исчезают так же, как первое.
+func _apply_removed(hex: String) -> void:
+	if hex == _removed_hex:
+		return
+	if _base_objects.is_empty():
+		_base_objects = _live_objects.duplicate()
+	_removed_hex = hex
+	var filtered := _filter_removed(_base_objects, hex)
+	_live_objects = filtered
+	if _layer != null:
+		_layer.objects = filtered
+		_layer.reset_objects()
 
 
 func _filter_removed(objects: Array, hex: String) -> Array:
@@ -611,6 +728,159 @@ func _filter_removed(objects: Array, hex: String) -> Array:
 			continue
 		out.append(objects[i])
 	return out
+
+
+# ------------------------------------------------- оптимистичные действия
+
+## Поставить дом в отображение СРАЗУ. Возвращает словарь ожидания с id.
+## Правил места здесь нет: `/api/check` уже покрасил ромб, а команду всё равно
+## проверит сервер; при отказе ожидание снимается и дом исчезает.
+func add_pending_build(spec: Dictionary, owner: int) -> Dictionary:
+	_pending_seq += 1
+	var b := {
+		"id": "pend:%d" % _pending_seq,
+		"type": str(spec.get("type", "house")),
+		"variant": str(spec.get("variant", "a")),
+		"rot": int(spec.get("rot", 90)),
+		"x": int(spec.get("x", 0)), "y": int(spec.get("y", 0)),
+		"owner": owner, "town": owner,
+		"hp": int(spec.get("hp", 100)), "maxHp": int(spec.get("maxHp", 100)),
+		"rubble": false, "pending": true,
+		"pendingCost": int(spec.get("cost", 0)),
+		"pendingAt": Time.get_ticks_msec(),
+	}
+	_pending_builds.append(b)
+	_refresh_pending_view()
+	return b
+
+
+func drop_pending_build(id: String) -> void:
+	for i in range(_pending_builds.size() - 1, -1, -1):
+		if str(_pending_builds[i].get("id", "")) == id:
+			_pending_builds.remove_at(i)
+	_refresh_pending_view()
+
+
+func pending_builds() -> Array:
+	return _pending_builds.duplicate()
+
+
+## Сколько брёвен занято ожидающими постройками: витрина казны не должна
+## показывать деньги, которые уже потрачены клиентом.
+func reserved_logs(owner: int) -> int:
+	var sum := 0
+	for b in _pending_builds:
+		if int(b.get("owner", 0)) == owner:
+			sum += int(b.get("pendingCost", 0))
+	return sum
+
+
+## Показать перенос/поворот/снос сразу. Цель запоминается до снимка: грязный
+## снимок может прийти со старым местом, и ожидание перекроет его.
+func apply_pending_edit(id: String, action: String, x := 0, y := 0, rot := 0) -> void:
+	if id == "":
+		return
+	_pending_edits[id] = {"action": action, "x": int(x), "y": int(y),
+		"rot": int(rot), "at": Time.get_ticks_msec()}
+	_refresh_pending_view()
+
+
+func drop_pending_edit(id: String) -> void:
+	if _pending_edits.has(id):
+		_pending_edits.erase(id)
+		_refresh_pending_view()
+
+
+func pending_edits() -> Dictionary:
+	return _pending_edits.duplicate(true)
+
+
+## Снимок — правда. Ожидание живёт, пока правда его не подтвердит; отказ
+## снимается HUD-ом по результату команды, просрочка — по времени.
+func _reconcile_pending(auth: Array) -> void:
+	var now := Time.get_ticks_msec()
+	for i in range(_pending_builds.size() - 1, -1, -1):
+		var p: Dictionary = _pending_builds[i]
+		var matched := false
+		for b in auth:
+			if int(b.get("x", -999)) == int(p.get("x", 0)) \
+					and int(b.get("y", -999)) == int(p.get("y", 0)) \
+					and str(b.get("type", "")) == str(p.get("type", "")) \
+					and int(b.get("rot", 0)) == int(p.get("rot", 0)) \
+					and int(b.get("owner", -1)) == int(p.get("owner", 0)):
+				matched = true
+				break
+		if matched or now - int(p.get("pendingAt", now)) > 12000:
+			_pending_builds.remove_at(i)
+	for id in _pending_edits.keys():
+		var e: Dictionary = _pending_edits[id]
+		var found: Dictionary = {}
+		for b in auth:
+			if str(b.get("id", "")) == str(id):
+				found = b
+				break
+		var act := str(e.get("action", ""))
+		var done := false
+		if act == "delete":
+			done = found.is_empty()
+		elif act == "move":
+			done = not found.is_empty() and int(found.get("x", -999)) == int(e.get("x", 0)) \
+				and int(found.get("y", -999)) == int(e.get("y", 0))
+		elif act == "rotate":
+			done = not found.is_empty() and int(found.get("rot", -1)) == int(e.get("rot", 0))
+		if done or now - int(e.get("at", now)) > 12000:
+			_pending_edits.erase(id)
+
+
+## Список для отрисовки: авторитетные постройки с наложенными ожиданиями.
+func _display_buildings(auth: Array) -> Array:
+	var out: Array = []
+	for b in auth:
+		var e: Variant = _pending_edits.get(str(b.get("id", "")))
+		if e == null:
+			out.append(b)
+			continue
+		var act := str(e.get("action", ""))
+		if act == "delete":
+			continue
+		var copy: Dictionary = b.duplicate()
+		if act == "move":
+			copy["x"] = int(e.get("x", copy.get("x", 0)))
+			copy["y"] = int(e.get("y", copy.get("y", 0)))
+		elif act == "rotate":
+			copy["rot"] = int(e.get("rot", copy.get("rot", 0)))
+		copy["pendingEdit"] = act
+		out.append(copy)
+	for p in _pending_builds:
+		out.append(p)
+	return out
+
+
+## Снимок для отображения: ожидающие дома уже стоят, а их брёвна уже
+## зарезервированы в казне — игрок видит правду клиента, не дожидаясь сервера.
+func _display_snapshot(s: Dictionary) -> Dictionary:
+	if _pending_builds.is_empty() and _pending_edits.is_empty():
+		return s
+	var d: Dictionary = s.duplicate()
+	if _layer != null:
+		d["buildings"] = _layer.buildings
+	if not _pending_builds.is_empty():
+		var towns: Array = (s.get("towns", []) as Array).duplicate(true)
+		for t in towns:
+			var who := int(t.get("owner", 0))
+			t["logs"] = maxi(0, int(t.get("logs", 0)) - reserved_logs(who))
+		d["towns"] = towns
+	return d
+
+
+## Пересобрать кадр после ожидания, не дожидаясь следующего снимка.
+func _refresh_pending_view() -> void:
+	if _layer == null:
+		return
+	var auth: Array = _last_snap.get("buildings", [])
+	_layer.buildings = _display_buildings(auth)
+	if _hud != null and not _last_snap.is_empty():
+		_hud.on_snapshot(_display_snapshot(_last_snap))
 
 
 # -------------------------------------------------------------- жители/поза
@@ -714,7 +984,161 @@ func _interpolate_villagers() -> void:
 
 # ------------------------------------------------------------------ команды
 
+# ------------------------------------------------------------- перенос
+
+## Начать ведение постройки. grab — за какую клетку пятна взялись (при
+## удержании); у кнопки «Двигать» его нет, и пятно встаёт углом под курсор.
+func begin_move(id: String, grab := Vector2i(-1, -1)) -> bool:
+	var b := building_by_id(id)
+	if b.is_empty() or bool(b.get("pending", false)):
+		# Ожидающий дом ещё не имеет серверного id — двигать нечего.
+		return false
+	cancel_place_only()
+	_move_id = id
+	_move_building = b.duplicate()
+	_move_cell = Vector2i(int(b.get("x", 0)), int(b.get("y", 0)))
+	_move_grab = grab if grab.x >= 0 and grab.y >= 0 else Vector2i.ZERO
+	_move_placed = false
+	_move_valid = true
+	_move_reason = ""
+	_move_check_cell = Vector2i(-999, -999)
+	_update_move_ghost()
+	_request_move_check()
+	return true
+
+
+func move_active() -> bool:
+	return _move_id != ""
+
+
+func move_placed() -> bool:
+	return _move_placed
+
+
+func move_target() -> Vector2i:
+	return _move_cell
+
+
+func move_valid() -> bool:
+	return _move_valid
+
+
+func move_reason() -> String:
+	return _move_reason
+
+
+func move_id() -> String:
+	return _move_id
+
+
+## Курсор ведёт призрак. same-cell и Drag не дёргают сервер каждую клетку.
+func move_follow(cell: Vector2i) -> void:
+	if _move_id == "" or _move_placed:
+		return
+	var target := cell - _move_grab
+	if target == _move_cell:
+		return
+	_move_cell = target
+	_update_move_ghost()
+	var now := Time.get_ticks_msec()
+	if now - _move_check_at >= 50:
+		_move_check_at = now
+		_request_move_check()
+
+
+## Клик по карте: постройка встала, но сервер ещё не тронут — команда уйдёт
+## только по «Применить».
+func place_move(cell: Vector2i) -> void:
+	if _move_id == "":
+		return
+	if not _move_placed:
+		_move_cell = cell - _move_grab
+	_move_placed = true
+	_update_move_ghost()
+	_request_move_check()
+
+
+## Забрать место для команды. Пустой словарь — перенос не выбран.
+func commit_move() -> Dictionary:
+	if _move_id == "" or not _move_placed:
+		return {}
+	var out := {"id": _move_id, "x": _move_cell.x, "y": _move_cell.y}
+	cancel_move()
+	return out
+
+
+func cancel_move() -> void:
+	_move_id = ""
+	_move_building = {}
+	_move_cell = Vector2i(-1, -1)
+	_move_placed = false
+	_move_valid = true
+	_move_reason = ""
+	_move_check_cell = Vector2i(-999, -999)
+	if _ghost != null:
+		_ghost.sprite_tex = null
+		_ghost.visible = _place_type != ""
+		_ghost.queue_redraw()
+
+
+func cancel_place_only() -> void:
+	_place_type = ""
+	_place_rot = 90
+	if _ghost != null and _move_id == "":
+		_ghost.visible = false
+
+
+func _update_move_ghost() -> void:
+	if _ghost == null or _move_id == "" or _layer == null:
+		return
+	var fake := _move_building.duplicate()
+	fake["x"] = _move_cell.x
+	fake["y"] = _move_cell.y
+	var info: Dictionary = _layer.building_screen(fake, zoom)
+	if info.is_empty():
+		return
+	var f: Dictionary = info["f"]
+	var fp_a: Array = f["fp"]
+	_ghost.cell = _move_cell
+	_ghost.footprint = Vector2i(int(fp_a[0]), int(fp_a[1]))
+	_ghost.sprite_tex = info["tex"]
+	_ghost.sprite_region = info["region"]
+	_ghost.sprite_dst = info["dst"]
+	_ghost.sprite_tint = Color(1.0, 0.72, 0.68, 0.62) if not _move_valid \
+		else Color(1, 1, 1, 0.58 if _move_placed else 0.48)
+	_ghost.valid = _move_valid
+	_ghost.valid_known = true
+	_ghost.reason = _move_reason
+	_ghost.zoom = zoom
+	_ghost.cam = cam
+	_ghost.css = get_viewport_rect().size
+	_ghost.visible = true
+	_ghost.queue_redraw()
+
+
+func _request_move_check() -> void:
+	if _live == null or _move_id == "":
+		return
+	if _move_cell == _move_check_cell:
+		return
+	_move_check_cell = _move_cell
+	_move_check_seq += 1
+	var seq := _move_check_seq
+	var asked := _move_cell
+	_move_valid = true
+	_move_reason = ""
+	var r: Dictionary = await _live.check_place("move", {
+		"id": _move_id, "x": asked.x, "y": asked.y})
+	if seq != _move_check_seq or asked != _move_cell or _move_id == "":
+		return
+	_move_valid = bool(r.get("ok", false))
+	_move_reason = str(r.get("reason", ""))
+	_update_move_ghost()
+
+
 func set_place_hint(type: String, rot: int) -> void:
+	if type != "" and _move_id != "":
+		cancel_move()
 	if _ghost == null:
 		return
 	_ghost.visible = type != ""
@@ -790,6 +1214,7 @@ func _request_check() -> void:
 
 
 func _process(dt: float) -> void:
+	_step_zoom(dt)
 	_update_view()
 	# Пинг сети раз в 2,5 с — только для бейджа, на игру не влияет.
 	if _mode == "multi" and _live != null and _live.is_started():
@@ -802,6 +1227,7 @@ func _process(dt: float) -> void:
 		var k := minf(1.0, float(_arrival["t"]) / float(_arrival["dur"]))
 		var e := 1.0 - pow(1.0 - k, 3.0)
 		zoom = lerpf(float(_arrival["from"]["zoom"]), float(_arrival["to"]["zoom"]), e)
+		zoom_target = zoom
 		cam["x"] = lerpf(float(_arrival["from"]["x"]), float(_arrival["to"]["x"]), e)
 		cam["y"] = lerpf(float(_arrival["from"]["y"]), float(_arrival["to"]["y"]), e)
 		_clamp()
@@ -821,11 +1247,14 @@ func _process(dt: float) -> void:
 	if vx != 0.0 or vy != 0.0:
 		_arrival = null
 		_follow_id = ""
+		_zoom_focus = Vector2(-1, -1)
 		var l := sqrt(vx * vx + vy * vy)
 		_pan_screen(vx / l * PAN_SPEED * dt, vy / l * PAN_SPEED * dt)
 		_hover_cell = screen_to_cell(get_viewport().get_mouse_position())
 	# Слежение за жителем: камера едет к нему, но не прыгает.
 	if _follow_id != "":
+		_zoom_focus = Vector2(-1, -1)
+		zoom_target = zoom
 		for v in _view_villagers:
 			if str(v.get("id", "")) == _follow_id:
 				var k := clampf(dt * 8.0, 0.0, 1.0)
@@ -837,7 +1266,7 @@ func _process(dt: float) -> void:
 	# нужны — 0,5 с, как EDIT_HOLD_MS в браузере).
 	var now := Time.get_ticks_msec()
 	if _pressed and not _panning and not _hold_fired:
-		var reach := get_viewport().get_mouse_position().distance_to(_press_pos)
+		var reach := _last_mouse.distance_to(_press_pos)
 		if now - _press_ms >= HOLD_MS and reach <= HOLD_SLOP:
 			_hold_fired = true
 			_open_edit_at(_press_cell)
@@ -846,6 +1275,27 @@ func _process(dt: float) -> void:
 		_check_at = now
 		_request_check()
 	_interpolate_villagers()
+
+
+## Плавное доведение зума до цели. Камера при этом держит точку, которая была
+## под курсором в момент щелчка, — иначе плавность уводила бы карту из-под
+## руки. `_zoom_focus = (-1,-1)` значит «якоря нет»: панорама/полёт его снимают.
+func _step_zoom(dt: float) -> void:
+	if is_equal_approx(zoom_target, zoom):
+		zoom = zoom_target
+		_zoom_focus = Vector2(-1, -1)
+		return
+	var k := 1.0 - exp(-dt * ZOOM_EASE)
+	zoom = lerpf(zoom, zoom_target, k)
+	if absf(zoom - zoom_target) < 0.01:
+		zoom = zoom_target
+	if _zoom_focus.x >= 0.0:
+		var after := screen_to_world(_zoom_focus)
+		cam["x"] = float(cam["x"]) + (_zoom_focus_world.x - after.x)
+		cam["y"] = float(cam["y"]) + (_zoom_focus_world.y - after.y)
+		_clamp()
+	if is_equal_approx(zoom_target, zoom):
+		_zoom_focus = Vector2(-1, -1)
 
 
 func _update_view() -> void:
@@ -876,6 +1326,8 @@ func _update_view() -> void:
 		_fx.show_patrol = _hud != null and _hud.panel == "army"
 		_fx.queue_redraw()
 	_ghost_update()
+	if _move_id != "":
+		_update_move_ghost()
 	if _hud != null:
 		_hud.set_zoom(z)
 		_hud.set_minimap_camera(float(cam["x"]), float(cam["y"]), z, size)
@@ -900,37 +1352,63 @@ func _team_color(owner: int, alpha: float) -> Color:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
 		var mm := event as InputEventMouseMotion
+		_last_mouse = mm.position
 		_hover_cell = screen_to_cell(mm.position)
-		if _pressed and not _panning:
-			var reach := mm.position.distance_to(_press_pos)
-			if reach > _slop():
-				_panning = true
-		if _panning:
-			var d := mm.position - _last
-			if d.length() > 0.0:
-				_pan_screen(d.x, d.y)
+		if _move_id != "" and not _move_placed:
+			# Ведём постройку: это не панорама, карта стоит под курсором.
+			_panning = false
+			move_follow(_hover_cell)
+		else:
+			if _pressed and not _panning:
+				var reach := mm.position.distance_to(_press_pos)
+				if reach > _slop():
+					_panning = true
+			# Панорама живёт только пока кнопка нажата. Без `_pressed` камера
+			# продолжала ехать за курсором после отпускания — та самая жалоба.
+			if _pressed and _panning:
+				var d := mm.position - _last
+				if d.length() > 0.0:
+					_pan_screen(d.x, d.y)
 		_last = mm.position
 		_ghost_update()
+	elif event is InputEventPanGesture:
+		# macOS: два пальца по трекпаду — это PanGesture, а не колесо. Без
+		# этой ветки на маке зум не работал вовсе.
+		var pg := event as InputEventPanGesture
+		if absf(pg.delta.y) > 0.001:
+			# Шаг на одно событие трекпада маленький: раньше 1.17 в степени
+			# delta за один жест перескакивал через пол-карты.
+			_zoom_at(pg.position, clampf(pow(1.06, -pg.delta.y), 0.92, 1.08))
+	elif event is InputEventMagnifyGesture:
+		# Щипок двумя пальцами: усилие щипка сглаживаем, чтобы не было рывка.
+		var mg := event as InputEventMagnifyGesture
+		_zoom_at(mg.position, clampf(pow(mg.factor, 0.72), 0.85, 1.18))
 	elif event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_WHEEL_UP and mb.pressed:
-			_zoom_at(mb.position, 1.17)
+			_zoom_at(mb.position, ZOOM_STEP)
 		elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN and mb.pressed:
-			_zoom_at(mb.position, 1.0 / 1.17)
+			_zoom_at(mb.position, 1.0 / ZOOM_STEP)
 		elif mb.button_index == MOUSE_BUTTON_LEFT:
 			if mb.pressed:
 				_pressed = true
 				_panning = false
 				_hold_fired = false
 				_press_pos = mb.position
+				_last_mouse = mb.position
 				_press_ms = Time.get_ticks_msec()
+				# Клетка нажатия — по самой точке нажатия, а не по последнему
+				# движению: иначе удержание без движения брало старую клетку.
+				_hover_cell = screen_to_cell(mb.position)
 				_press_cell = _hover_cell
 				_last = mb.position
 			else:
 				_pressed = false
+				var was_panning := _panning
+				_panning = false
 				var reach := mb.position.distance_to(_press_pos)
 				var limit := _slop()
-				if not _panning and not _hold_fired and reach <= limit:
+				if not was_panning and not _hold_fired and reach <= limit:
 					_left_click(mb.position)
 		elif mb.button_index == MOUSE_BUTTON_RIGHT and mb.pressed:
 			_cancel_action()
@@ -987,6 +1465,10 @@ func _key_down(key: int) -> void:
 		focus_selected()
 	elif key == KEY_C:
 		toggle_follow()
+	elif key == KEY_EQUAL or key == KEY_PLUS or key == KEY_KP_ADD:
+		zoom_step(1)
+	elif key == KEY_MINUS or key == KEY_KP_SUBTRACT:
+		zoom_step(-1)
 
 
 func _escape() -> void:
@@ -1015,20 +1497,36 @@ func rotate_place() -> void:
 	_ghost_update()
 
 
+## Шаг зума кнопками/клавишами — к центру экрана, а не к мыши.
+func zoom_step(dir: int) -> void:
+	var size := get_viewport_rect().size
+	_zoom_at(size * 0.5, ZOOM_STEP if dir > 0 else 1.0 / ZOOM_STEP)
+
+
 func _zoom_at(pos: Vector2, factor: float) -> void:
-	var before := screen_to_world(pos)
-	zoom = clampf(zoom * factor, MIN_ZOOM, MAX_ZOOM)
-	_arrival = null
-	cam["zoom"] = zoom
+	var target := clampf(zoom_target * factor, MIN_ZOOM, MAX_ZOOM)
+	if is_equal_approx(target, zoom_target) and absf(zoom - target) < 0.001:
+		return
+	_zoom_focus = pos
+	_zoom_focus_world = screen_to_world(pos)
+	zoom_target = target
+	# Первый маленький шаг делаем сразу: щелчок отзывается в том же кадре, а
+	# остаток доводится плавно в `_step_zoom`.
+	zoom = lerpf(zoom, zoom_target, ZOOM_IMPULSE)
+	if absf(zoom - zoom_target) < 0.01:
+		zoom = zoom_target
 	var after := screen_to_world(pos)
-	cam["x"] = float(cam["x"]) + (before.x - after.x)
-	cam["y"] = float(cam["y"]) + (before.y - after.y)
+	cam["x"] = float(cam["x"]) + (_zoom_focus_world.x - after.x)
+	cam["y"] = float(cam["y"]) + (_zoom_focus_world.y - after.y)
+	cam["zoom"] = zoom
+	_arrival = null
 	_clamp()
 	_update_view()
 
 
 func _pan_screen(vx: float, vy: float) -> void:
 	var z := zoom
+	_zoom_focus = Vector2(-1, -1)
 	cam["x"] = float(cam["x"]) - (vy * 2.0 + vx) / z
 	cam["y"] = float(cam["y"]) - (vy * 2.0 - vx) / z
 	_clamp()
@@ -1149,11 +1647,28 @@ func _open_edit_at(cell: Vector2i) -> void:
 	var b := building_at(cell)
 	if b.is_empty():
 		return
+	if bool(b.get("pending", false)):
+		select_building_info(b)
+		_set_hint("дом ещё подтверждается сервером")
+		return
 	var own: bool = int(b.get("owner", 0)) == (_live.my_owner if _live != null else 0)
 	if not own or bool(b.get("rubble", false)):
 		select_building_info(b)
 		return
 	_select_building(b)
+	# Удержание сразу берёт постройку в руку, как в браузере: дом не прыгает,
+	# потому что запоминается клетка, за которую взялись.
+	var grab := Vector2i.ZERO
+	if _layer != null and _layer.bdata != null:
+		var f: Dictionary = _layer.bdata.frame_for(str(b.get("type", "townhall")),
+			str(b.get("variant", "a")), int(b.get("rot", 0)))
+		if not f.is_empty():
+			var fp: Array = f["fp"]
+			grab = Vector2i(
+				clampi(cell.x - int(b.get("x", 0)), 0, maxi(0, int(fp[0]) - 1)),
+				clampi(cell.y - int(b.get("y", 0)), 0, maxi(0, int(fp[1]) - 1)))
+	if _hud != null:
+		_hud.begin_move_hold(str(b.get("id", "")), grab)
 
 
 func _clear_selection() -> void:
@@ -1231,10 +1746,12 @@ func mode() -> String:
 
 func focus_cell(cell: Vector2i, z := -1.0) -> void:
 	_arrival = null
+	_zoom_focus = Vector2(-1, -1)
 	cam["x"] = float(cell.x) + 0.5
 	cam["y"] = float(cell.y) + 0.5
 	if z > 0.0:
 		zoom = clampf(z, MIN_ZOOM, MAX_ZOOM)
+		zoom_target = zoom
 	_clamp()
 	_update_view()
 

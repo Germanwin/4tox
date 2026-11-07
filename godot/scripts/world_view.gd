@@ -88,6 +88,17 @@ var _press_grab := Vector2i.ZERO
 var _cover_key := ""
 var _cover: Dictionary = {}
 
+## Заставка меню: природа острова собирается в мировой меш ОДИН раз. Иначе
+## кадр на 256-й карте перебирал десятки тысяч деревьев по одному — 6–10 fps
+## в меню и ещё хуже в лобби, которое открывалось поверх той же заставки.
+var nature_mesh_builds := 0
+var static_nature_quads := 0
+var nature_draw_calls := 0
+var _nature_sim: Variant = null
+var _nature_meshes: Array = []
+var _shadow_mesh: ArrayMesh = null
+var _shadow_tex: Texture2D = null
+
 func _ready() -> void:
 	texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 	camera = Camera2D.new()
@@ -478,9 +489,176 @@ func _draw() -> void:
 		draw_texture_rect(water_tex, vr.grow(200.0), true, Color(0.45, 0.65, 0.9, 0.12))
 	var dest := Rect2(terrain_origin, Vector2(terrain_tex.get_width(), terrain_tex.get_height()) * terrain_scale)
 	draw_texture_rect(terrain_tex, dest, false)
-	_draw_entities(vr)
+	ensure_nature_mesh()
+	if _shadow_mesh != null and _shadow_tex != null:
+		draw_mesh(_shadow_mesh, _shadow_tex)
+	for m in _nature_meshes:
+		draw_mesh(m["mesh"], m["tex"])
+	_draw_buildings_villagers()
 	_draw_overlays()
 	_draw_waves()
+
+## Собрать природу острова в мировой меш. Мировые координаты переживают
+## панораму и зум, поэтому в кадре меш только рисуется.
+func ensure_nature_mesh() -> void:
+	if sim == null:
+		return
+	if _nature_sim == sim and (not _nature_meshes.is_empty() or static_nature_quads > 0):
+		return
+	_nature_sim = sim
+	_nature_meshes.clear()
+	_shadow_mesh = null
+	static_nature_quads = 0
+	nature_draw_calls = 0
+	var cover := _cover_cells()
+	var groups: Dictionary = {}
+	var sv := PackedVector3Array()
+	var su := PackedVector2Array()
+	var si := PackedInt32Array()
+	for o in sim.world.objects:
+		if o.get("removed", false):
+			continue
+		var cy := floori(float(o.y))
+		var cx := floori(float(o.x))
+		if cover.has(Vector2i(cx, cy)) and ToxBuildings.decor(o):
+			continue
+		var frame := ToxAtlasDB.sprite_frame(o)
+		if frame.is_empty():
+			continue
+		var sc := ToxAtlasDB.sprite_scale() * float(o.get("scale", 1.0))
+		var size: Vector2 = frame.size * sc
+		var pos := world_from_cell(Vector2(float(o.x), float(o.y)))
+		var dest := Rect2(pos - size * Vector2(frame.ax, frame.ay), size)
+		var tex: Texture2D = frame.tex
+		var key := tex.get_instance_id()
+		var g: Dictionary = groups.get(key, {})
+		if g.is_empty():
+			g = {"tex": tex, "v": PackedVector3Array(),
+				"u": PackedVector2Array(), "i": PackedInt32Array()}
+			groups[key] = g
+		_quad(g, dest, frame.region, tex.get_size())
+		static_nature_quads += 1
+		var kind := str(o.get("kind", ""))
+		var r := 0.0
+		if kind == "tree":
+			r = 0.36 * float(o.get("scale", 1.0))
+		elif kind == "stone":
+			r = 0.24 * float(o.get("scale", 1.0))
+		elif kind == "bush":
+			r = 0.20 * float(o.get("scale", 1.0))
+		if r > 0.0:
+			var sd := Rect2(pos - Vector2(r * 1.25, r * 0.55), Vector2(r * 2.5, r * 1.1))
+			_shadow_quad(sv, su, si, sd)
+	for key in groups:
+		var g: Dictionary = groups[key]
+		if (g["v"] as PackedVector3Array).is_empty():
+			continue
+		_nature_meshes.append({"tex": g["tex"], "mesh": _make_mesh(g["v"], g["u"], g["i"])})
+	if not sv.is_empty():
+		_shadow_tex = _shadow_texture()
+		_shadow_mesh = _make_mesh(sv, su, si)
+	nature_mesh_builds += 1
+
+
+func _quad(g: Dictionary, dest: Rect2, region: Rect2, tex_size: Vector2) -> void:
+	var v: PackedVector3Array = g["v"]
+	var u: PackedVector2Array = g["u"]
+	var idx: PackedInt32Array = g["i"]
+	var n := v.size()
+	v.append(Vector3(dest.position.x, dest.position.y, 0))
+	v.append(Vector3(dest.end.x, dest.position.y, 0))
+	v.append(Vector3(dest.end.x, dest.end.y, 0))
+	v.append(Vector3(dest.position.x, dest.end.y, 0))
+	var u0 := region.position.x / tex_size.x
+	var v0 := region.position.y / tex_size.y
+	var u1 := region.end.x / tex_size.x
+	var v1 := region.end.y / tex_size.y
+	u.append(Vector2(u0, v0))
+	u.append(Vector2(u1, v0))
+	u.append(Vector2(u1, v1))
+	u.append(Vector2(u0, v1))
+	idx.append(n)
+	idx.append(n + 1)
+	idx.append(n + 2)
+	idx.append(n)
+	idx.append(n + 2)
+	idx.append(n + 3)
+
+
+func _shadow_quad(v: PackedVector3Array, u: PackedVector2Array,
+		idx: PackedInt32Array, dest: Rect2) -> void:
+	var n := v.size()
+	v.append(Vector3(dest.position.x, dest.position.y, 0))
+	v.append(Vector3(dest.end.x, dest.position.y, 0))
+	v.append(Vector3(dest.end.x, dest.end.y, 0))
+	v.append(Vector3(dest.position.x, dest.end.y, 0))
+	u.append(Vector2(0, 0))
+	u.append(Vector2(1, 0))
+	u.append(Vector2(1, 1))
+	u.append(Vector2(0, 1))
+	idx.append(n)
+	idx.append(n + 1)
+	idx.append(n + 2)
+	idx.append(n)
+	idx.append(n + 2)
+	idx.append(n + 3)
+
+
+func _make_mesh(v: PackedVector3Array, u: PackedVector2Array,
+		idx: PackedInt32Array) -> ArrayMesh:
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = v
+	arrays[Mesh.ARRAY_TEX_UV] = u
+	arrays[Mesh.ARRAY_INDEX] = idx
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
+
+
+func _shadow_texture() -> Texture2D:
+	if _shadow_tex != null:
+		return _shadow_tex
+	var img := Image.create_empty(64, 32, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	for y in range(32):
+		for x in range(64):
+			var dx := (float(x) - 31.5) / 31.5
+			var dy := (float(y) - 15.5) / 15.5
+			var d := sqrt(dx * dx + dy * dy)
+			var a := clampf(1.0 - d, 0.0, 1.0)
+			a = a * a * 0.55
+			if a > 0.0:
+				img.set_pixel(x, y, Color(0.03, 0.07, 0.03, a))
+	return ImageTexture.create_from_image(img)
+
+
+## Постройки и жители поверх статичной природы — их единицы, поштучная
+## отрисовка здесь дешевле отдельных мешей и сохраняет порядок по глубине.
+func _draw_buildings_villagers() -> void:
+	var blds: Array = sim.buildings.duplicate()
+	blds.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return ToxBuildings.depth(a) < ToxBuildings.depth(b))
+	var vils: Array = []
+	for v in sim.villagers:
+		if not v.dead and v.visible():
+			vils.append(v)
+	vils.sort_custom(func(a: ToxVillager, b: ToxVillager) -> bool:
+		return (a.x + a.y) < (b.x + b.y))
+	var j := 0
+	var k := 0
+	while j < blds.size() or k < vils.size():
+		var b: Variant = blds[j] if j < blds.size() else null
+		var v: Variant = vils[k] if k < vils.size() else null
+		var kb: float = ToxBuildings.depth(b) if b != null else INF
+		var kv: float = (float(v.x) + float(v.y)) if v != null else INF
+		if b != null and kb <= kv:
+			_draw_building(b)
+			j += 1
+		else:
+			_draw_villager(v)
+			k += 1
+
 
 func _draw_plots() -> void:
 	for b in sim.buildings:

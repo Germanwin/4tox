@@ -104,9 +104,13 @@ func _run() -> void:
 		await process_frame
 	var t0 := Time.get_ticks_usec()
 	var pan := OS.get_cmdline_user_args().has("pan")
+	var zoom := OS.get_cmdline_user_args().has("zoom")
 	for i in range(FRAMES):
 		if pan:
 			layer.cam["x"] = float(layer.cam["x"]) + 0.01
+		if zoom:
+			# Плавный зум туда-обратно: природа в мировом меше не пересобирается.
+			layer.cam["zoom"] = 40.0 + sin(float(i) * 0.08) * 6.0
 		layer.queue_redraw()
 		await process_frame
 	var total := float(Time.get_ticks_usec() - t0) / 1000.0

@@ -44,3 +44,8 @@ research/passport-2026-10-27/4tox-current-passport-20261027 2/
 research/passport-2026-10-27/runs/
 research/passport-2026-10-27/runs-baseline/
 research/passport-2026-10-27/4tox-current-passport-20261027.zip
+# EOS-аддон: GDExtension-бинарники (~40 МБ) ставятся из релиза, в git не едут.
+godot/eos-client.cfg
+godot/addons/epic-online-services-godot/bin/
+config.bat
+node_modules

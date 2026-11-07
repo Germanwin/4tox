@@ -34,6 +34,8 @@ const FRINGE := [Color8(94, 152, 70), Color8(118, 180, 88), Color8(140, 200, 104
 const PER_CELL := BAKE / 2.23606797749979
 
 static var _base_tile: Image = null
+## Сколько газонов запечено за процесс — для приёмки кеша и диагностики.
+static var bakes := 0
 
 
 ## Deterministic LCG — the browser's `rnd()` inside plotGrassEdge / the fringe.
@@ -48,15 +50,34 @@ class Lcg:
 		return float(state) / 4294967296.0
 
 
-static func build_for(buildings: Array, bdata) -> Array:
+## cache — словарь на слой мира: ключ постройки → готовый газон. Запекание
+## одного газона стоит 0,25–2 с, поэтому перепекать ВСЕ газоны на каждое
+## изменение состава (и тем более на каждый снимок) нельзя: это и давало
+## «1–3 fps». Кеш живёт, пока жив слой; уехавшая постройка получает новый
+## ключ, а старая запись просто перестаёт использоваться.
+## Ключ постройки в кеше газонов: место, тип, вариант и поворот. Один и тот
+## же для синхронной запечки и для фоновой — иначе кеш не находил бы запись.
+static func key_for(b: Dictionary) -> String:
+	return "%s|%s|%s|%s|%s|%s" % [str(b.get("id", "")),
+		str(b.get("type", "townhall")), str(b.get("variant", "a")),
+		str(b.get("x", 0)), str(b.get("y", 0)), str(b.get("rot", 0))]
+
+
+static func build_for(buildings: Array, bdata, cache: Dictionary = {}) -> Array:
 	var out: Array = []
 	for b in buildings:
 		# Под завалом газона нет: участок принадлежит целой постройке.
 		if bool(b.get("rubble", false)):
 			continue
-		var t0 := Time.get_ticks_msec()
+		var key := key_for(b)
+		if cache.has(key):
+			var hit: Variant = cache[key]
+			if hit != null:
+				out.append(hit)
+			continue
+		bakes += 1
 		var img = _one(b, bdata)
-		print("plot bake ", b.get("type", "?"), " ", Time.get_ticks_msec() - t0, " ms")
+		cache[key] = img
 		if img != null:
 			out.append(img)
 	return out
@@ -77,13 +98,11 @@ static func draw_layers(ci: CanvasItem, layers: Array, cam: Dictionary, z: float
 		ci.draw_texture_rect(tex, Rect2(pos, tex.get_size() * s), false)
 
 
-static func _one(b: Dictionary, bdata) -> Variant:
-	if bdata == null:
-		return null
-	var type := str(b.get("type", "townhall"))
-	var f: Dictionary = bdata.frame_for(type, str(b.get("variant", "a")), int(b.get("rot", 0)))
+## Только картинка и её место — без Texture2D. Эту часть можно звать в
+## фоновом потоке: здесь нет ни сцены, ни загрузки ресурсов.
+static func bake_image(b: Dictionary, f: Dictionary) -> Dictionary:
 	if f.is_empty():
-		return null
+		return {}
 	var fp: Array = f["fp"]
 	var x0 := float(b["x"]) + INSET
 	var y0 := float(b["y"]) + INSET
@@ -116,13 +135,13 @@ static func _one(b: Dictionary, bdata) -> Variant:
 	if seed == 0:
 		seed = 0x9E3779B9
 	var lcg := Lcg.new(seed)
-	sides_edges = []
+	var edges: Array = []
 	var sides := {"x0": x0, "y0": y0, "x1": x1, "y1": y1}
-	sides["top"] = _seg(lcg, x0, y0, x1, y0, 0.0, -1.0, x0, x1)
-	sides["right"] = _seg(lcg, x1, y0, x1, y1, 1.0, 0.0, y0, y1)
-	sides["bot"] = _seg(lcg, x1, y1, x0, y1, 0.0, 1.0, x1, x0)
-	sides["left"] = _seg(lcg, x0, y1, x0, y0, -1.0, 0.0, y1, y0)
-	sides["edges"] = sides_edges
+	sides["top"] = _seg(lcg, x0, y0, x1, y0, 0.0, -1.0, x0, x1, edges)
+	sides["right"] = _seg(lcg, x1, y0, x1, y1, 1.0, 0.0, y0, y1, edges)
+	sides["bot"] = _seg(lcg, x1, y1, x0, y1, 0.0, 1.0, x1, x0, edges)
+	sides["left"] = _seg(lcg, x0, y1, x0, y0, -1.0, 0.0, y1, y0, edges)
+	sides["edges"] = edges
 
 	for py in range(ch):
 		for px in range(cw):
@@ -157,13 +176,27 @@ static func _one(b: Dictionary, bdata) -> Variant:
 	_fringe(out, cw, ch, ox, oy, b, x0, y0, x1, y1, sides["edges"])
 
 	var img := Image.create_from_data(cw, ch, false, Image.FORMAT_RGBA8, out)
-	return {"tex": ImageTexture.create_from_image(img), "ox": ox, "oy": oy}
+	return {"image": img, "ox": ox, "oy": oy}
+
+
+## Синхронный вариант для приёмки и стартового прогрева: картинка + текстура.
+static func _one(b: Dictionary, bdata) -> Variant:
+	if bdata == null:
+		return null
+	var f: Dictionary = bdata.frame_for(str(b.get("type", "townhall")),
+		str(b.get("variant", "a")), int(b.get("rot", 0)))
+	if f.is_empty():
+		return null
+	var d := bake_image(b, f)
+	if d.is_empty():
+		return null
+	return {"tex": ImageTexture.create_from_image(d["image"]), "ox": d["ox"], "oy": d["oy"]}
 
 
 ## One jittered side. `tab` holds n random offsets plus the exact-grow corner
 ## point the browser pushes after each side. Returns {tab, n, base, len}.
 static func _seg(lcg: Lcg, ax: float, ay: float, bx: float, by: float,
-		nx: float, ny: float, along0: float, along1: float) -> Dictionary:
+		nx: float, ny: float, along0: float, along1: float, edges: Array) -> Dictionary:
 	var dx := bx - ax
 	var dy := by - ay
 	var ln := sqrt(dx * dx + dy * dy)
@@ -175,13 +208,10 @@ static func _seg(lcg: Lcg, ax: float, ay: float, bx: float, by: float,
 		var t := float(i) / float(n)
 		var w := EDGE + (lcg.f() - 0.5) * EDGE_JITTER * 2.0
 		tab.append(w)
-		sides_edges.push_back([ax + dx * t + nx * w, ay + dy * t + ny * w,
+		edges.push_back([ax + dx * t + nx * w, ay + dy * t + ny * w,
 			nx, ny, dx / ln, dy / ln])
 	tab.append(EDGE)
 	return {"tab": tab, "n": n, "base": along0, "len": ln, "dir": 1.0 if along1 >= along0 else -1.0}
-
-
-static var sides_edges: Array = []
 
 
 static func _side_val(side: Dictionary, along: float) -> float:
@@ -327,6 +357,12 @@ static func _blend(out: PackedByteArray, o: int, c: Color, cov: float) -> void:
 	out[o + 1] = int((cg * cov + float(out[o + 1]) * ad * (1.0 - cov)) / ao)
 	out[o + 2] = int((cb * cov + float(out[o + 2]) * ad * (1.0 - cov)) / ao)
 	out[o + 3] = int(ao * 255.0)
+
+
+## Прогреть статичную плитку на главном потоке до старта фонового запекания:
+## load() из чужого потока — не наша история.
+static func warm() -> void:
+	_tile(0, 0, 0)
 
 
 static func _tile(bx: int, by: int, rot: int) -> Image:

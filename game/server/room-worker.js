@@ -48,6 +48,7 @@ const FILES = [
 for (const f of FILES) loadEngine(f);
 
 const RoomRuntime = require('./room-runtime').RoomRuntime;
+const Migration = require('./migration-bundle');
 
 const roomId = workerData && workerData.roomId;
 const generation = (workerData && workerData.workerGeneration) || 1;
@@ -139,6 +140,15 @@ async function onMessage(msg) {
       const p = pendingSnapshot;
       pendingSnapshot = null;
       shipSnapshot(p);
+    }
+    return;
+  }
+  if (msg.type === 'migrationCapture') {
+    try {
+      const bundle = await Migration.capture(runtime, msg.lobby);
+      send('migrationCapture', { requestId: msg.requestId, result: Migration.encode(bundle) });
+    } catch (e) {
+      send('migrationCapture', { requestId: msg.requestId, error: 'capture_failed' });
     }
     return;
   }

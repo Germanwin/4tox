@@ -26,8 +26,19 @@ signal net_event(kind: String, data: Dictionary)
 const Wire = preload("res://scripts/wire.gd")
 const WorldWire = preload("res://scripts/world_wire.gd")
 const WorldData = preload("res://scripts/world_data.gd")
+const ClientProfile = preload("res://scripts/client_profile.gd")
 
 var base := "http://127.0.0.1:8787"
+## Запасной вход того же сервера. 443 на VPS делит листенер с naive-прокси и
+## при включённом VPN теряет соединение; 8443 — отдельный сайт без прокси.
+## Пусто — второго входа нет, не пробуем.
+var fallback_base := ""
+## Запрос ушёл на запасной вход, потому что основной не ответил.
+var used_fallback := false
+## Почему последняя попытка не удалась, словами для экрана сети. «Нет связи»,
+## «прокси ответил 407» и «сервер отказал» — разные вещи: путать их значит
+## отправлять игрока проверять адрес, который верный.
+var last_error := ""
 var code := ""
 var token := ""
 var player_id: Variant = 0
@@ -60,14 +71,22 @@ var world = null
 var latest_snapshot: Dictionary = {}
 var lobby_players: Array = []
 var _start_done := false
+var migration_paused := false
+var watch_stall := false
+var _last_frame_at := 0
+var _migration_serial := 0
 
 ## Сессия последней партии: по ней приложение возвращается в ту же комнату
 ## после перезапуска (GET /api/resume). Файл лежит в user:// и переживает
 ## падение приложения; явный выход в меню его стирает.
-const SESSION_PATH := "user://net-session.cfg"
-## Один процесс — одна сессия. Второй клиент (тест, отладка) может выключить
-## запись, чтобы не перетирать сессию основного.
+##
+## У каждого окна своя сессия (`--client=N`): иначе второе окно перетирает
+## место первого, и F5 возвращает не туда. Внутри одного окна второй LiveRoom
+## (тест, отладка) по-прежнему может выключить запись.
 var persist_session := true
+## -1 — номер этого процесса; тесты и второй клиент в одном процессе задают
+## номер явно.
+var session_profile := -1
 
 var _ws: WebSocketPeer = null
 var _started := false
@@ -75,6 +94,16 @@ var _lobby_timer := 0.0
 var _polling := false
 ## Переподключение WS: 300 → 600 → 1200 → 2400 мс, не больше пяти попыток.
 const RETRY_MS := [0.3, 0.6, 1.2, 2.4, 2.4]
+## Сеть до VPS: 443 через VPN теряет ПЕРВОЕ соединение и отвечает со второго
+## раза. Повторяем только сбои ДО отправки — тогда повтор ничего не создаёт
+## дважды (второго лобби, второй команды).
+const NET_TRIES := 3
+const NET_RETRY_PAUSE := 0.35
+const NET_ERRORS := [
+	HTTPRequest.RESULT_CANT_CONNECT,
+	HTTPRequest.RESULT_CANT_RESOLVE,
+	HTTPRequest.RESULT_TLS_HANDSHAKE_ERROR,
+]
 var _want_ws := false
 var _reconnect_timer := 0.0
 var _reconnect_attempt := 0
@@ -138,7 +167,8 @@ func create_lobby(url: String, name: String, p_seed := "", p_size := 0,
 		body["seed"] = seed_text
 	if world_size > 0:
 		body["size"] = world_size
-	var lobby := await _json("POST", "/api/lobby", body)
+	used_fallback = false
+	var lobby := await _entry("POST", "/api/lobby", body)
 	if not lobby.get("ok", false):
 		failed.emit("лобби: " + str(lobby.get("reason", "нет ответа")))
 		return false
@@ -159,7 +189,8 @@ func join_lobby(url: String, p_code: String, name: String) -> bool:
 	wait_guest = false
 	is_host = false
 	code = p_code.strip_edges().to_upper()
-	var r := await _json("POST", "/api/join", {"code": code, "name": name})
+	used_fallback = false
+	var r := await _entry("POST", "/api/join", {"code": code, "name": name})
 	if not r.get("ok", false):
 		failed.emit("вход: " + str(r.get("reason", "нет ответа")))
 		return false
@@ -175,7 +206,10 @@ func join_lobby(url: String, p_code: String, name: String) -> bool:
 func lobby_status() -> Dictionary:
 	if code == "":
 		return {"ok": false}
+	var serial := _migration_serial
 	var st := await _json("GET", "/api/status?code=%s&token=%s" % [code, token], null)
+	if serial != _migration_serial:
+		return {"ok": false, "reason": "migration"}
 	if not st.get("ok", false):
 		failed.emit("статус: " + str(st.get("reason", "нет ответа")))
 		return st
@@ -312,10 +346,11 @@ func _run() -> void:
 
 ## Общий путь после старта: снимок старта → WLD1 → WebSocket. Повторный
 ## вызов безопасен: мир и WS поднимаются один раз.
-func _after_start(start: Dictionary) -> void:
+func _after_start(start: Dictionary, announce := true) -> void:
 	if _start_done:
 		return
 	_start_done = true
+	var serial := _migration_serial
 	start_payload = start
 	protocol = int(start_payload.get("protocol", 0))
 	room_id = str(start_payload.get("roomId", code))
@@ -329,10 +364,13 @@ func _after_start(start: Dictionary) -> void:
 			my_owner = int(p.get("owner", 0))
 			is_host = is_host or int(p.get("id", -1)) == int(start_payload.get("hostId", -1))
 			break
-	room_started.emit()
+	if announce:
+		room_started.emit()
 
 	status.emit("мир…")
 	var wbytes := await _raw("/api/world?code=%s&token=%s" % [code, token])
+	if serial != _migration_serial:
+		return
 	print("live: мир ", wbytes.size(), " байт, режим ",
 		"bot" if bot else ("solo" if solo else "multi"))
 	if wbytes.is_empty():
@@ -353,6 +391,7 @@ func _after_start(start: Dictionary) -> void:
 		_ws = null
 		return
 	_started = true
+	_last_frame_at = Time.get_ticks_msec()
 	_want_ws = true
 	if not is_spectator:
 		_save_session()
@@ -370,21 +409,22 @@ func _save_session() -> void:
 	cfg.set_value("net", "token", token)
 	cfg.set_value("net", "player", player_id)
 	cfg.set_value("net", "host", is_host)
-	cfg.save(SESSION_PATH)
+	cfg.save(ClientProfile.session_path(session_profile))
 
 
 func _clear_session() -> void:
-	if FileAccess.file_exists(SESSION_PATH):
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(SESSION_PATH))
+	var path := ClientProfile.session_path(session_profile)
+	if FileAccess.file_exists(path):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 
-static func session_exists() -> bool:
-	return FileAccess.file_exists("user://net-session.cfg")
+static func session_exists(profile := -1) -> bool:
+	return FileAccess.file_exists(ClientProfile.session_path(profile))
 
 
-static func session_info() -> Dictionary:
+static func session_info(profile := -1) -> Dictionary:
 	var cfg := ConfigFile.new()
-	if cfg.load("user://net-session.cfg") != OK:
+	if cfg.load(ClientProfile.session_path(profile)) != OK:
 		return {}
 	return {
 		"base": str(cfg.get_value("net", "base", "")),
@@ -395,16 +435,17 @@ static func session_info() -> Dictionary:
 	}
 
 
-static func clear_session() -> void:
-	if FileAccess.file_exists("user://net-session.cfg"):
-		DirAccess.remove_absolute(ProjectSettings.globalize_path("user://net-session.cfg"))
+static func clear_session(profile := -1) -> void:
+	var path := ClientProfile.session_path(profile)
+	if FileAccess.file_exists(path):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 
 ## Вернуться в сохранённую партию: тот же токен, тот же игрок, тот же мир.
 ## `/api/resume` отдаёт старт и последний снимок комнаты; WLD1 и WS клиент
 ## поднимает обычным путём. Возвращает false, если сессии уже нет (403/404).
 func resume(url := "") -> bool:
-	var info := ToxLiveRoom.session_info()
+	var info := ToxLiveRoom.session_info(session_profile)
 	if info.is_empty():
 		return false
 	base = url if url != "" else str(info["base"])
@@ -414,7 +455,7 @@ func resume(url := "") -> bool:
 	player_id = int(info["player"])
 	is_host = bool(info["host"])
 	solo = false
-	var st := await _json("GET", "/api/resume?code=%s&token=%s" % [code, token], null)
+	var st := await _entry("GET", "/api/resume?code=%s&token=%s" % [code, token], null)
 	if not st.get("ok", false):
 		_clear_session()
 		return false
@@ -534,6 +575,7 @@ func _parse_sse() -> void:
 		if kind == "snapshot":
 			latest_snapshot = d
 			frames += 1
+			_last_frame_at = Time.get_ticks_msec()
 			snapshot.emit(d)
 		elif kind in ["peer-left", "peer-back", "host-left", "host-back", "room-fault", "room-recovered"]:
 			net_event.emit(kind, d)
@@ -594,13 +636,15 @@ func _poll_fallback() -> void:
 			connected = false
 			transport = "none"
 			connection.emit("lost", "опрос не отвечает")
-			failed.emit("связь потеряна: опрос не отвечает")
+			if not watch_stall:
+				failed.emit("связь потеряна: опрос не отвечает")
 		return
 	_fallback_fails = 0
 	var snap: Variant = r.get("snapshot", {})
 	if snap is Dictionary and not (snap as Dictionary).is_empty():
 		latest_snapshot = snap
 		frames += 1
+		_last_frame_at = Time.get_ticks_msec()
 		snapshot.emit(snap)
 
 
@@ -642,6 +686,13 @@ func ping() -> int:
 
 
 func _process(dt: float) -> void:
+	if migration_paused:
+		return
+	if watch_stall and _started and _last_frame_at > 0 and Time.get_ticks_msec() - _last_frame_at > 8000:
+		_last_frame_at = 0
+		connection.emit("stalled", "поток состояния остановился")
+		if migration_paused:
+			return
 	# Переподключение WS: пока комната жива, клиент сам возвращается в неё
 	# (300/600/1200/2400 мс). Сервер на новом WS присылает baseline.
 	if _ws == null and _want_ws and code != "" and _start_done and not _fallback:
@@ -702,6 +753,7 @@ func _process(dt: float) -> void:
 			var r: Dictionary = Wire.unpack(pkt)
 			if r.get("ok", false):
 				frames += 1
+				_last_frame_at = Time.get_ticks_msec()
 				latest_snapshot = r["snapshot"]
 				snapshot.emit(latest_snapshot)
 	elif st == WebSocketPeer.STATE_CLOSED and _started:
@@ -720,7 +772,8 @@ func _process(dt: float) -> void:
 ## проверяет токен и отвечает 403 на /api/command.
 func spectate(base_url: String, room_code: String, player_name: String) -> bool:
 	base = base_url.rstrip("/")
-	var r := await _json("POST", "/api/spectate",
+	used_fallback = false
+	var r := await _entry("POST", "/api/spectate",
 		{"code": room_code, "name": player_name})
 	if not r.get("ok", false):
 		failed.emit(str(r.get("reason", "не удалось войти наблюдателем")))
@@ -786,23 +839,108 @@ func _status_players(st) -> Array:
 	return (lb as Dictionary).get("players", [])
 
 
+## Первый запрос входа: если основной адрес не ответил по сети, а запасной
+## задан — идём запасным и запоминаем его. Только для сбоев ДО отправки:
+## после доставленного POST второй лобби не создаём.
+func _entry(method: String, path: String, body) -> Dictionary:
+	var r := await _json(method, path, body)
+	# 407 — ответ прокси/VPN, а не игры: до мира такой запрос не дошёл, значит
+	# и повтор запасным входом безопасен (второго лобби не будет).
+	if (bool(r.get("net", false)) or bool(r.get("proxy", false))) and fallback_base != "":
+		var dead := base
+		base = fallback_base.rstrip("/")
+		fallback_base = ""
+		used_fallback = true
+		print("live: основной вход ", dead, " не ответил, запасной ", base)
+		status.emit("основной вход не ответил — идём через " + base)
+		r = await _json(method, path, body)
+	return r
+
+
 func _json(method: String, path: String, body) -> Dictionary:
+	# Прошлая причина к этому запросу не относится: экран не должен показывать
+	# старый отказ, если нынешний удался.
+	last_error = ""
 	var res: Array = await _request(method, path, body)
-	var text := (res[1] as PackedByteArray).get_string_from_utf8()
-	if res[0] != 200:
-		print("live: ", method, " ", path, " -> ", res[0], " ", text.substr(0, 160))
-	var data: Variant = JSON.parse_string(text)
-	if data == null or not (data is Dictionary):
-		return {"ok": false, "reason": "HTTP %d" % int(res[0])}
-	return data
+	var result := int(res[0])
+	var http := int(res[1])
+	var text := (res[2] as PackedByteArray).get_string_from_utf8()
+	# Разбор без ругани движка: 407/404 — это HTML, и «Parse JSON failed» в
+	# журнале тут не ошибка, а ожидаемый ответ не игры.
+	var data: Variant = null
+	var json := JSON.new()
+	if text.strip_edges() != "" and json.parse(text) == OK:
+		data = json.data
+	if data is Dictionary:
+		# Сервер ответил по-своему, даже если код не 200: причина важнее кода
+		# (`/api/join` на чужой код — 404 и слова «лобби не найдено»).
+		if not bool((data as Dictionary).get("ok", true)):
+			last_error = str((data as Dictionary).get("reason", "сервер отказал"))
+		return data
+	var why := _http_reason(result, http, text)
+	last_error = why
+	print("live: ", method, " ", path.get_slice("?", 0), " -> result ", result, " http ", http,
+		" ", text.substr(0, 160))
+	return {"ok": false, "reason": why, "net": result in NET_ERRORS,
+		"proxy": http == 407, "http": http}
+
+
+## Причина словами. «Нет связи» — это сеть (VPN, прокси, DNS), «HTTP N» —
+## ответ не игры; смешивать их нельзя: игрок чинит то, что названо.
+func _http_reason(result: int, http: int, text: String) -> String:
+	if result == HTTPRequest.RESULT_REQUEST_FAILED and http == 0:
+		return "адрес не принят: нужен http:// или https://"
+	if result != HTTPRequest.RESULT_SUCCESS or http == 0:
+		return "нет связи: " + _net_reason(result)
+	if http == 407:
+		return "HTTP 407 — это прокси или VPN, а не игровой сервер"
+	if http == 404:
+		return "HTTP 404 — на этом адресе нет игры (нужен origin без /game/)"
+	if http == 502 or http == 503 or http == 504:
+		return "HTTP %d — шлюз не достучался до сервера" % http
+	var line := ""
+	for part in text.strip_edges().split("\n"):
+		if part.strip_edges() != "":
+			line = part.strip_edges().substr(0, 80)
+			break
+	return "сервер ответил HTTP %d%s" % [http, (" — " + line) if line != "" else ""]
+
+
+func _net_reason(result: int) -> String:
+	match result:
+		HTTPRequest.RESULT_CANT_CONNECT:
+			return "не удалось соединиться"
+		HTTPRequest.RESULT_CANT_RESOLVE:
+			return "имя не разрешилось в адрес"
+		HTTPRequest.RESULT_CONNECTION_ERROR:
+			return "соединение оборвалось"
+		HTTPRequest.RESULT_TLS_HANDSHAKE_ERROR:
+			return "TLS-рукопожатие не прошло"
+		HTTPRequest.RESULT_NO_RESPONSE:
+			return "сервер перестал отвечать"
+		HTTPRequest.RESULT_TIMEOUT:
+			return "истекло время ожидания"
+	return "ошибка запроса %d" % result
 
 
 func _raw(path: String) -> PackedByteArray:
 	var res: Array = await _request("GET", path, null)
-	return res[1]
+	return res[2]
 
 
+## [код результата HTTPRequest, HTTP-код, тело]. Сетевой сбой до отправки
+## повторяем: на VPN-пути 443 теряет первое соединение, а адрес верный.
 func _request(method: String, path: String, body) -> Array:
+	var res: Array = []
+	for attempt in range(NET_TRIES):
+		res = await _request_once(method, path, body)
+		if not (int(res[0]) in NET_ERRORS) or attempt == NET_TRIES - 1:
+			break
+		await get_tree().create_timer(NET_RETRY_PAUSE).timeout
+	return res
+
+
+func _request_once(method: String, path: String, body) -> Array:
 	var http := HTTPRequest.new()
 	http.timeout = 12.0
 	add_child(http)
@@ -812,10 +950,11 @@ func _request(method: String, path: String, body) -> Array:
 	var err := http.request(base + path, headers, m, payload)
 	if err != OK:
 		http.queue_free()
-		return [0, PackedByteArray()]
+		# Адрес не принят (нет схемы) — это не «нет связи», а ошибка адреса.
+		return [HTTPRequest.RESULT_REQUEST_FAILED, 0, PackedByteArray()]
 	var res: Array = await http.request_completed
 	http.queue_free()
-	return [int(res[1]), res[3]]
+	return [int(res[0]), int(res[1]), res[3]]
 
 
 ## Подсказка для призрака: можно ли поставить/двинуть/повернуть. Это НЕ
@@ -838,11 +977,14 @@ func check_place(kind: String, payload: Dictionary) -> Dictionary:
 ## /api/command-state по commandId. HTTP 200 значит только «принято в
 ## очередь»; applied/rejected читаются из состояния.
 func send_command(type: String, payload: Dictionary) -> Dictionary:
+	if migration_paused:
+		return {"ok": false, "state": "rejected", "reason": "восстанавливаем подключение"}
 	if is_spectator:
 		return {"ok": false, "state": "rejected", "reason": "наблюдатель не командует"}
 	if instance.is_empty():
 		return {"ok": false, "state": "rejected", "reason": "нет комнаты"}
 	cmd_seq += 1
+	var serial := _migration_serial
 	var cid := "%s:%d" % [instance, cmd_seq]
 	var env := {
 		"protocol": protocol, "roomId": room_id, "epoch": epoch,
@@ -851,6 +993,8 @@ func send_command(type: String, payload: Dictionary) -> Dictionary:
 	}
 	var r := await _json("POST", "/api/command",
 		{"code": code, "token": token, "command": env})
+	if serial != _migration_serial:
+		return {"ok": false, "state": "unknown", "reason": "результат уточняется после восстановления"}
 	if not r.get("ok", false):
 		var bad := {"ok": false, "state": "rejected", "commandId": cid,
 			"reason": str(r.get("reason", "сервер отказал"))}
@@ -861,6 +1005,8 @@ func send_command(type: String, payload: Dictionary) -> Dictionary:
 		await get_tree().create_timer(0.2).timeout
 		var st := await _json("GET", "/api/command-state?code=%s&token=%s&id=%s"
 			% [code, token, cid], null)
+		if serial != _migration_serial:
+			return {"ok": false, "state": "unknown", "reason": "результат уточняется после восстановления"}
 		for res in st.get("results", []):
 			if str(res.get("commandId", "")) != cid:
 				continue
@@ -877,3 +1023,54 @@ func send_command(type: String, payload: Dictionary) -> Dictionary:
 	last_command = unk
 	command_done.emit(unk)
 	return unk
+
+
+func pause_migration() -> void:
+	if migration_paused:
+		return
+	migration_paused = true
+	_migration_serial += 1
+	_last_frame_at = 0
+	_started = false
+	_want_ws = false
+	_fallback = false
+	_close_sse()
+	if _ws != null:
+		_ws.close()
+		_ws = null
+	_ws_was_open = false
+	connected = false
+	transport = "none"
+	connection.emit("migrating", "Восстанавливаем подключение…")
+
+
+func resume_migration(url: String, keep_paused := false) -> bool:
+	base = url.rstrip("/")
+	var result := await _entry("GET", "/api/resume?code=%s&token=%s" % [code, token], null)
+	if not result.get("ok", false):
+		return false
+	is_host = bool(result.get("host", false))
+	lobby_players = _status_players(result)
+	if bool(result.get("started", false)):
+		var start: Dictionary = result.get("start", {})
+		if start.is_empty():
+			return false
+		_start_done = false
+		latest_snapshot = {}
+		world = null
+		await _after_start(start, false)
+		var session: Dictionary = result.get("session", {})
+		if session.get("nextClientSequence") != null:
+			cmd_seq = int(session.nextClientSequence) - 1
+		if not _started:
+			return false
+	else:
+		_start_done = false
+	if not keep_paused:
+		finish_migration()
+	return true
+
+
+func finish_migration() -> void:
+	migration_paused = false
+	connection.emit("online", "")

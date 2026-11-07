@@ -22,7 +22,9 @@ func _init() -> void:
 func _shot(name: String) -> void:
 	await process_frame
 	await process_frame
-	await RenderingServer.frame_post_draw
+	DisplayServer.window_move_to_foreground()
+	RenderingServer.force_draw(false)
+	await process_frame
 	var img := root.get_texture().get_image()
 	var path := "res://shots/" + name + ".png"
 	var err := img.save_png(path)

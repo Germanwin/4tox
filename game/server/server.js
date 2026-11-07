@@ -50,6 +50,8 @@ const { Worker } = require('worker_threads');
 const UPnP = require('./upnp');
 const Tunnel = require('./tunnel');
 const WS = require('./ws');
+const MigrationBundle = require('./migration-bundle');
+const ipAddress = require('node:net');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const NetWire = require(path.join(ROOT, 'game', 'shared', 'net-wire.js'));
@@ -64,6 +66,34 @@ function opt(name, def) {
 }
 const PORT = parseInt(opt('port', '8787'), 10);
 const LOCAL = !!opt('local', false);
+/* Не включать публично: экспорт содержит комнатные токены и пока является
+   экспериментальным контрактом будущей миграции. */
+const MIGRATION_EXPORT = LOCAL && !!opt('migration-export', false);
+const LEASE_REQUIRED = MIGRATION_EXPORT && !!opt('lease-required', false);
+const leaseClock = () => Number(process.hrtime.bigint() / 1000000n);
+let leaseDeadline = 0, leaseWallDeadline = 0, leaseExpired = false;
+const leaseBootDeadline = Date.now() + 30000;
+function leaseValid() {
+  return !LEASE_REQUIRED || (!leaseExpired && leaseDeadline > 0 && leaseClock() < leaseDeadline && Date.now() < leaseWallDeadline);
+}
+function expireLeaseIfNeeded() {
+  if (!LEASE_REQUIRED || leaseExpired || (leaseDeadline === 0 && Date.now() < leaseBootDeadline) || leaseValid()) return;
+  leaseExpired = true;
+  for (const lobby of [...lobbies.values()]) closeLobby(lobby, 'lease-expired');
+}
+if (MIGRATION_EXPORT) {
+  const log = console.log.bind(console), error = console.error.bind(console);
+  console.log = (...items) => {
+    const line = items.map(String).join(' ');
+    if (/^\s*(лобби|комната)/i.test(line)) return log('  состояние комнаты изменено');
+    return log(...items);
+  };
+  console.error = (...items) => {
+    const line = items.map(String).join(' ');
+    if (/^\s*(лобби|комната|request:)/i.test(line)) return error('  ошибка обработки комнаты');
+    return error(...items);
+  };
+}
 const OPEN = !!opt('open', false);
 const TUNNEL = !!opt('tunnel', false);
 const NO_UPNP = !!opt('no-upnp', false);
@@ -273,10 +303,10 @@ function ringPush(arr, rec) {
 }
 function makeLogRec(room, kind, data) {
   const rec = { t: now(), kind: String(kind || 'event') };
-  if (room) rec.room = room;
+  if (room && !MIGRATION_EXPORT) rec.room = room;
   if (data && typeof data === 'object') {
     Object.keys(data).slice(0, 24).forEach(function (k) {
-      if (/token|secret|authorization|cookie/i.test(k)) return;
+      if (/token|secret|authorization|cookie/i.test(k) || (MIGRATION_EXPORT && /^(room|roomid|code)$/i.test(k))) return;
       rec[k] = cleanLogValue(data[k], 0);
     });
   }
@@ -609,22 +639,24 @@ function lobbyMetaPath(roomId) {
   return path.join(STATE_DIR, roomId, 'lobby.json');
 }
 
+function lobbyMeta(lobby) {
+  return {
+    code: lobby.code, max: lobby.max, hostId: lobby.hostId,
+    started: !!lobby.started,
+    seed: lobby.seed, size: lobby.size, createdAt: lobby.createdAt,
+    solo: !!lobby.solo, bot: !!lobby.bot,
+    players: lobby.players.map(function (p) {
+      return { id: p.id, token: p.token, name: p.name, color: p.color,
+        proto: p.proto, owner: p.owner, ready: !!p.ready };
+    })
+  };
+}
 function saveLobbyMeta(lobby) {
   if (!lobby || !lobby.code) return;
   try {
     const dir = path.dirname(lobbyMetaPath(lobby.code));
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-    const meta = {
-      code: lobby.code, max: lobby.max, hostId: lobby.hostId,
-      seed: lobby.seed, size: lobby.size, createdAt: lobby.createdAt,
-      solo: !!lobby.solo, bot: !!lobby.bot,
-      players: lobby.players.map(function (p) {
-        return {
-          id: p.id, token: p.token, name: p.name, color: p.color,
-          proto: p.proto, owner: p.owner, ready: !!p.ready
-        };
-      })
-    };
+    const meta = lobbyMeta(lobby);
     const file = lobbyMetaPath(lobby.code);
     fs.writeFileSync(file, JSON.stringify(meta, null, 2) + '\n', { mode: 0o600 });
     try { fs.chmodSync(file, 0o600); } catch (e) { /* Windows */ }
@@ -633,11 +665,30 @@ function saveLobbyMeta(lobby) {
   }
 }
 
+/* Лобби, пережившее остановку Node, не должно воскресать вечно: если
+   lobby.json не менялся дольше INACTIVE_TTL, активности не было, и каталог
+   стирается ещё до restoreLobbies. Иначе после каждого запуска в STATE_DIR
+   копились бы вчерашние лобби (и тесты, и закрытые окна). */
+function pruneStaleLobby(roomId) {
+  const file = lobbyMetaPath(roomId);
+  try {
+    const age = now() - fs.statSync(file).mtimeMs;
+    if (age <= INACTIVE_TTL) return false;
+    fs.rmSync(path.join(STATE_DIR, roomId), { recursive: true, force: true });
+    console.log('  лобби ' + roomId + ': удалено (нет активности ' +
+      Math.round(age / 1000) + ' с)');
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 function restoreLobbies() {
   let dirs = [];
   try { dirs = fs.readdirSync(STATE_DIR); } catch (e) { return 0; }
   let n = 0;
   for (const roomId of dirs) {
+    if (pruneStaleLobby(roomId)) continue;
     let meta = null;
     try {
       meta = JSON.parse(fs.readFileSync(lobbyMetaPath(roomId), 'utf8'));
@@ -655,16 +706,17 @@ function restoreLobbies() {
     lobby.solo = !!meta.solo;
     lobby.bot = !!meta.bot;
     lobby.createdAt = meta.createdAt || now();
-    lobby.started = true;
+    lobby.started = meta.started !== false;
     lobby.startPayload = null;
     lobby.lastSnapshot = null;
     lobby.players = meta.players.map(function (p) {
       return {
         id: p.id, token: p.token, name: p.name || ('Игрок ' + p.id),
         color: p.color, proto: p.proto || PROTOCOL, owner: p.owner,
-        ready: true, online: false, lastSeen: now(), timer: null, goneAt: 0
+        ready: lobby.started ? true : !!p.ready, online: false, lastSeen: 0, timer: null, goneAt: 0
       };
     });
+    lobby.nextId = lobby.players.reduce((n, p) => Math.max(n, Number(p.id) + 1), 0);
     n++;
     console.log('  лобби ' + lobby.code + ' восстановлено из ' + roomId);
   }
@@ -815,6 +867,15 @@ function createRoomWorker(lobby) {
         /* roomSubmit ждёт форму сообщения, а worker отдаёт один элемент
            пачки. Оборачиваем здесь, чтобы не было второго формата ответа. */
         p.resolve({ commands: [item] });
+      }
+      return;
+    }
+    if (msg.type === 'migrationCapture') {
+      const p = rec.pending.get(msg.requestId);
+      if (p) {
+        rec.pending.delete(msg.requestId);
+        if (p.timer) clearTimeout(p.timer);
+        p.resolve(msg);
       }
       return;
     }
@@ -1580,6 +1641,8 @@ function send(res, type, data) {
    отдельную управляющую очередь. Так тысяча промежуточных кадров не может
    вытеснить command-result или host-left. */
 function broadcast(lobby, type, data, exceptId, opts) {
+  if (LEASE_REQUIRED) expireLeaseIfNeeded();
+  if (LEASE_REQUIRED && type === 'snapshot' && !leaseValid()) return { bytes: 0, streams: 0 };
   var streams = lobby.streams ? lobby.streams.size : 0;
   var wsClients = lobby.ws ? lobby.ws.size : 0;
   var text = null, bin = null, wsText = null;
@@ -1669,6 +1732,8 @@ function wsStats(conn) {
 /* Подключение WebSocket. Аутентификация та же, что у SSE: код лобби и
    токен игрока в query. Токен не логируем. */
 function onWsConnection(conn, req, url) {
+  if (LEASE_REQUIRED) expireLeaseIfNeeded();
+  if (LEASE_REQUIRED && !leaseValid()) { conn.close(1008, 'lease_required'); return; }
   var lobby = lobbyForRequest({ code: url.searchParams.get('code') });
   var p = playerByToken(lobby, url.searchParams.get('token'));
   if (!lobby || !p) { conn.close(1008, 'forbidden'); return; }
@@ -2410,6 +2475,9 @@ function startBlock(lobby) {
   if (!lobby.solo && lobby.players.length < 2) {
     return { reason: 'нужен ещё один игрок', waiting: 2 - lobby.players.length };
   }
+  if (MIGRATION_EXPORT && lobby.players.some(p => !p.lastSeen || now() - p.lastSeen > 5000)) {
+    return { reason: 'ждём возвращения игроков', waiting: 1 };
+  }
   const notReady = lobby.players.filter(function (p) { return !p.ready; });
   if (notReady.length) {
     return {
@@ -2582,6 +2650,11 @@ function readJson(req, res, cb) {
   }
   function dispatch(raw) {
     if (settled || aborted) return;
+    if (LEASE_REQUIRED) {
+      expireLeaseIfNeeded();
+      if (leaseExpired) { send(503, { ok: false, reason: 'lease_expired' }); return; }
+      if (['/api/start', '/api/command'].includes((req.url || '').split('?')[0]) && !leaseValid()) { send(503, { ok: false, reason: 'lease_required' }); return; }
+    }
     const text = raw.toString('utf8');
     if (!text.trim()) { send(400, { ok: false, reason: 'пустое тело' }); return; }
     let body;
@@ -2589,7 +2662,7 @@ function readJson(req, res, cb) {
     catch (e) {
       serverLog('json-broken', {
         path: (req.url || '').split('?')[0], bytes: raw.length,
-        message: e.message
+        message: MIGRATION_EXPORT ? 'invalid_json' : e.message
       });
       send(400, { ok: false, reason: 'тело не JSON' });
       return;
@@ -2603,7 +2676,7 @@ function readJson(req, res, cb) {
     catch (e) {
       serverLog('handler-error', {
         path: (req.url || '').split('?')[0],
-        message: (e && e.message) || String(e)
+        message: MIGRATION_EXPORT ? 'handler_error' : ((e && e.message) || String(e))
       });
       if (!res.headersSent && !res.writableEnded) {
         send(500, { ok: false, reason: 'внутренняя ошибка сервера' });
@@ -2825,6 +2898,44 @@ function streamStatsView(lobby) {
 /* ------------------------------- сервер ------------------------------- */
 async function handleRequest(req, res) {
   const u = new URL(req.url || '/', 'http://' + (req.headers.host || 'localhost'));
+  if (LEASE_REQUIRED) expireLeaseIfNeeded();
+  if (LEASE_REQUIRED && leaseExpired && u.pathname !== '/api/health') return json(res, 503, { ok: false, reason: 'lease_expired' });
+  if (LEASE_REQUIRED && !leaseValid() && ['/api/start', '/api/command', '/api/resume'].includes(u.pathname)) return json(res, 503, { ok: false, reason: 'lease_required' });
+
+  if (LEASE_REQUIRED && req.method === 'POST' && u.pathname === '/api/migration-lease') {
+    return readJson(req, res, function (body) {
+      const lobby = body && lobbyForRequest(body);
+      const p = lobby && playerByToken(lobby, body.token);
+      const ms = Number(body && body.leaseMs);
+      if (!p || p.id !== lobby.hostId || !Number.isFinite(ms) || ms <= 0 || ms > 10000 || leaseExpired) return json(res, 403, { ok: false, reason: 'lease_denied' });
+      leaseDeadline = leaseClock() + ms;
+      leaseWallDeadline = Date.now() + ms;
+      return json(res, 200, { ok: true });
+    });
+  }
+
+  /* Опциональный маршрут только к координатору. Caddy продолжает обслуживать
+     тот же /api/*; игровой трафик через координатор не проходит. Включать
+     только за доверенным loopback reverse proxy, который очищает XFF. */
+  if (u.pathname.startsWith('/api/eos-coordinator/')) {
+    const port = Number(process.env.COORDINATOR_PROXY_PORT || 0);
+    if (HOST !== '127.0.0.1' || !Number.isInteger(port) || port < 1 || port > 65535 || u.search) return json(res, 503, { ok: false, reason: 'coordinator_unavailable' });
+    const forwarded = String(req.headers['x-forwarded-for'] || '').split(',').pop().trim();
+    const source = ipAddress.isIP(forwarded) ? forwarded : (req.socket.remoteAddress || '127.0.0.1');
+    const headers = { 'content-type': String(req.headers['content-type'] || 'application/json'), 'x-forwarded-for': source };
+    if (['/api/eos-coordinator/openid/userinfo', '/api/eos-coordinator/openid/refresh'].includes(u.pathname) && typeof req.headers.authorization === 'string' && req.headers.authorization.length <= 263) headers.authorization = req.headers.authorization;
+    if (req.headers['content-length']) headers['content-length'] = req.headers['content-length'];
+    const upstream = http.request({ host: '127.0.0.1', port, method: req.method,
+      path: u.pathname.slice('/api/eos-coordinator'.length), headers, timeout: 15000 }, response => {
+      res.writeHead(response.statusCode || 502, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+      response.pipe(res);
+    });
+    upstream.on('timeout', () => upstream.destroy());
+    upstream.on('error', () => { if (!res.headersSent) json(res, 503, { ok: false, reason: 'coordinator_unavailable' }); else res.destroy(); });
+    req.on('aborted', () => upstream.destroy());
+    req.pipe(upstream);
+    return;
+  }
 
   /* Адреса сервера: из них клиент собирает ссылку-приглашение. */
   if (req.method === 'GET' && u.pathname === '/api/server') {
@@ -2910,6 +3021,32 @@ async function handleRequest(req, res) {
     }
     touchPlayer(p);
     return json(res, 200, streamStatsView(lobby));
+  }
+
+  if (req.method === 'POST' && u.pathname === '/api/migration-export' && MIGRATION_EXPORT && HOST === '127.0.0.1') {
+    return readJson(req, res, async function (body) {
+      const lobby = body && lobbyForRequest(body);
+      const player = lobby && playerByToken(lobby, body.token);
+      if (!lobby || !player || player.id !== lobby.hostId) return json(res, 403, { ok: false, reason: 'нет доступа' });
+      const rec = roomFor(lobby);
+      if ((lobby.started && !rec) || lobby.migrationCaptureBusy) return json(res, 409, { ok: false, reason: 'комната не готова' });
+      lobby.migrationCaptureBusy = true;
+      const meta = lobbyMeta(lobby);
+      const fingerprint = crypto.createHash('sha256').update(JSON.stringify(meta)).digest('hex');
+      try {
+        if (!lobby.started) {
+          const b = MigrationBundle.encode({ format: 1, roomId: lobby.code, lobby: meta, checkpoint: null });
+          return json(res, 200, Object.assign({ ok: true }, b));
+        }
+        const result = await roomRequest(rec, 'migrationCapture', { lobby: meta }, 10000);
+        const same = lobbies.get(lobby.code) === lobby && roomFor(lobby) === rec &&
+          crypto.createHash('sha256').update(JSON.stringify(lobbyMeta(lobby))).digest('hex') === fingerprint;
+        if (!same || result.error || !result.result) return json(res, 409, { ok: false, reason: 'состав изменился или копия не создана' });
+        return json(res, 200, Object.assign({ ok: true }, result.result));
+      } catch (e) {
+        return json(res, 503, { ok: false, reason: 'не удалось создать копию' });
+      } finally { lobby.migrationCaptureBusy = false; }
+    });
   }
 
   if (req.method === 'POST' && u.pathname === '/api/lobby') {
@@ -3760,6 +3897,12 @@ function requestHandler(req, res) {
   });
 }
 const server = http.createServer(requestHandler);
+if (LEASE_REQUIRED) {
+  const leaseWatchdog = setInterval(() => {
+    expireLeaseIfNeeded();
+  }, 100);
+  leaseWatchdog.unref();
+}
 attachWs(server);
 function createServer() {
   const s = http.createServer(requestHandler);

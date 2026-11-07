@@ -13,6 +13,12 @@ var css := Vector2(1440, 900)
 var valid := true
 var valid_known := false
 var reason := ""
+## Спрайт ведомой постройки: сам дом, а не только ромб пятна. Так игрок видит,
+## куда именно встанет стена и дверь, а не абстрактный прямоугольник.
+var sprite_tex: Texture2D = null
+var sprite_region := Rect2()
+var sprite_dst := Rect2()
+var sprite_tint := Color(1, 1, 1, 0.55)
 
 
 func _draw() -> void:
@@ -31,6 +37,8 @@ func _draw() -> void:
 		pts.append(Vector2(
 			half.x + (wx - wy - float(cam["x"]) + float(cam["y"])) * z * 0.5,
 			half.y + (wx + wy - float(cam["x"]) - float(cam["y"])) * z * 0.25))
+	if sprite_tex != null:
+		draw_texture_rect_region(sprite_tex, sprite_dst, sprite_region, sprite_tint)
 	var fill := Color(0.49, 0.91, 0.64, 0.30)
 	var edge := Color(0.98, 0.96, 0.86, 0.85)
 	if valid_known and not valid:

@@ -99,6 +99,8 @@ async function main() {
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), '4tox-inactive-'));
   const logPath = path.join(os.tmpdir(), '4tox-inactive-' + port + '.log');
   const log = fs.createWriteStream(logPath);
+  let child2 = null;
+  let logPath2 = '';
   const child = spawn(process.execPath, [path.join(ROOT, 'game', 'server', 'server.js'),
     '--local', '--port', String(port), '--no-upnp'], {
     cwd: ROOT,
@@ -180,14 +182,47 @@ async function main() {
     await post(base, '/api/leave', { code: d.code, token: d.guestTok });
     await post(base, '/api/leave', { code: d.code, token: d.hostTok });
     await waitGone(async () => !fs.existsSync(roomDir(d.code)), 6000);
+
+    /* 5. Лобби, пережившее остановку Node, не воскресает после TTL.
+       Сервер убит сразу после создания лобби, поэтому sweep не успел;
+       второй сервер на том же STATE_DIR обязан вычистить протухшее. */
+    const e = await post(base, '/api/lobby', { name: 'HostE', max: 2, protocol: 4 });
+    const eCode = e.json && e.json.code;
+    const eTok = e.json && e.json.token;
+    check('lobby E created before server stop', e.status === 200 && !!eCode, eCode);
+    child.kill('SIGKILL');
+    await sleep(TTL + 900);
+    const port2 = await freePort();
+    logPath2 = path.join(os.tmpdir(), '4tox-inactive-restart-' + port2 + '.log');
+    const log2 = fs.createWriteStream(logPath2);
+    child2 = spawn(process.execPath, [path.join(ROOT, 'game', 'server', 'server.js'),
+      '--local', '--port', String(port2), '--no-upnp'], {
+      cwd: ROOT,
+      env: Object.assign({}, process.env, {
+        STATE_DIR: stateDir,
+        INACTIVE_TTL: String(TTL)
+      }),
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    child2.stdout.pipe(log2);
+    child2.stderr.pipe(log2);
+    const base2 = 'http://127.0.0.1:' + port2;
+    await waitFor(base2 + '/api/build', 10000);
+    const eAfter = await get(base2, '/api/status?code=' + eCode + '&token=' + eTok);
+    check('stale lobby is not restored after a long downtime',
+      eAfter.status === 403, 'status ' + eAfter.status);
+    check('stale lobby state dir is pruned at restart',
+      !fs.existsSync(roomDir(eCode)), roomDir(eCode));
   } catch (e) {
     check('acceptance runs', false, String(e && e.stack || e));
   } finally {
     sse.forEach((s) => { try { s.ctrl.abort(); } catch (e) {} });
     try { child.kill('SIGKILL'); } catch (e) {}
+    if (child2) { try { child2.kill('SIGKILL'); } catch (e) {} }
     await sleep(200);
     try { fs.rmSync(stateDir, { recursive: true, force: true }); } catch (e) {}
     try { fs.unlinkSync(logPath); } catch (e) {}
+    if (logPath2) { try { fs.unlinkSync(logPath2); } catch (e) {} }
   }
   console.log(fails ? ('FAILED: ' + fails) : 'OK: all checks passed');
   return fails ? 1 : 0;

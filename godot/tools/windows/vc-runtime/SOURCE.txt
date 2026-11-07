@@ -1,0 +1,19 @@
+VC++ 2015–2022 runtime, x64 (14.44.35211.0)
+============================================
+
+Файлы msvcp140.dll, vcruntime140.dll, vcruntime140_1.dll взяты из
+официального пакета Microsoft:
+
+  https://aka.ms/vs/17/release/vc_redist.x64.exe  (25 МБ)
+  внутри: cab/a12 (amd64), имена с суффиксом _amd64
+
+Они нужны EOSSDK-Win64-Shipping.dll (плагин EOS), которая импортирует
+MSVCP140.dll и VCRUNTIME140*.dll. Без них на чистой Windows без
+установленного VC++ Redistributable расширение EOS не загрузится.
+
+Microsoft разрешает распространять эти DLL вместе с приложением
+(app-local deployment). Универсальный CRT (api-ms-win-crt-*.dll) входит в
+Windows 10/11 и отдельно не кладётся.
+
+Обновление: скачать свежий vc_redist.x64.exe, распаковать cab и заменить
+файлы здесь. Версия проверяется в tools/package_windows.sh только наличием.

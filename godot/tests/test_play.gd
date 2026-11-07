@@ -143,6 +143,9 @@ func _run() -> void:
 		await hold_at(p, 0.62)
 		await process_frame
 		check(hud.panel == "edit" and hud.selected_id != "", "удержание открыло правку")
+		check(demo.move_active(), "удержание взяло постройку в руку")
+		check(demo.move_target() == Vector2i(int(house.get("x", 0)), int(house.get("y", 0))),
+			"дом не прыгнул под курсор при удержании")
 		check(await click_text(demo, "Повернуть"), "нажато «Повернуть»")
 		var rotated := await _wait_for(func() -> bool:
 			for b in demo._layer.buildings:
@@ -179,15 +182,19 @@ func _run() -> void:
 		check(spot.x >= 0, "сервер нашёл место для переноса: %s" % str(spot))
 		if spot.x >= 0:
 			await click_at(demo.cell_to_screen(spot))
+			await process_frame
+			check(demo.move_placed(), "клик поставил призрак переноса")
+			check(demo.move_target() == spot, "призрак стоит в выбранной клетке")
+			check(await click_text(demo, "Применить"), "нажато «Применить» переноса")
 			var moved := await _wait_for(func() -> bool:
 				var b: Dictionary = demo.building_by_id(home_id)
 				return not b.is_empty() and int(b.get("x", -1)) == spot.x and int(b.get("y", -1)) == spot.y, 8.0)
 			check(moved, "перенос применён сервером")
-			# Ждём, пока map_click дочитает /api/command-state и откроет
-			# панель правки (снимок приходит раньше ответа команды).
 			await create_timer(0.6).timeout
-			# Перенос оставляет правку открытой — сразу жмём «Снести».
-			check(hud.panel == "edit", "перенос оставил правку открытой")
+			# «Применить» закрывает правку; открываем её снова кликом по дому.
+			await click_at(demo.cell_to_screen(Vector2i(spot.x, spot.y)))
+			await process_frame
+			check(hud.panel == "edit", "правка снова открыта после переноса")
 			check(await click_text(demo, "Снести"), "нажато «Снести»")
 			var gone := await _wait_for(func() -> bool:
 				return demo.building_by_id(home_id).is_empty(), 8.0)

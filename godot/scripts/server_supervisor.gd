@@ -1,6 +1,8 @@
 class_name ToxServerSupervisor
 extends Node
 
+const ClientProfile = preload("res://scripts/client_profile.gd")
+
 ## Встроенный Node-сервер: приложение само находит `node`, выбирает свободный
 ## порт, поднимает `game/server/server.js --local --no-upnp --port N`,
 ## дожидается `GET /api/health` и гасит процесс при выходе.
@@ -21,6 +23,9 @@ const PORT_LAST := 8899
 const MAX_RESTARTS := 3
 
 var pid := -1
+## Номер окна: у каждого клиента свой state-dir и свой лог, иначе два
+## локальных сервера читают и закрывают комнаты друг друга.
+var profile := -1
 var base := ""
 var project_dir := ""
 var server_js := ""
@@ -28,6 +33,8 @@ var node_path := ""
 var port := 0
 var log_path := ""
 var state_dir := ""
+var migration_enabled := false
+var recovery_state_dir := ""
 var starting := false
 var restarts := 0
 var last_error := ""
@@ -111,7 +118,7 @@ func log_dir() -> String:
 
 
 func state_root() -> String:
-	var dir := "user://state"
+	var dir := ClientProfile.state_root(profile)
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dir))
 	return ProjectSettings.globalize_path(dir)
 
@@ -133,8 +140,8 @@ func start_server(base_url := "") -> bool:
 	node_path = find_node(project_dir)
 	if node_path == "":
 		return _fail("не найден node: положите его рядом с приложением или установите Node.js")
-	log_path = log_dir().path_join("server.log")
-	state_dir = state_root().path_join("rooms")
+	log_path = log_dir().path_join(ClientProfile.log_name(profile))
+	state_dir = recovery_state_dir if recovery_state_dir != "" else state_root().path_join("rooms")
 	port = _free_port()
 	if port <= 0:
 		return _fail("нет свободного порта для локального сервера")
@@ -144,6 +151,9 @@ func start_server(base_url := "") -> bool:
 		server_js, "--local", "--no-upnp", "--port", str(port),
 		"--state-dir", state_dir, "--log-file", log_path,
 	])
+	if migration_enabled:
+		args.append("--migration-export")
+		args.append("--lease-required")
 	pid = OS.create_process(node_path, args)
 	if pid <= 0:
 		return _fail("не удалось запустить node (" + node_path + ")")
@@ -211,6 +221,9 @@ func _process(_dt: float) -> void:
 		server_js, "--local", "--no-upnp", "--port", str(port),
 		"--state-dir", state_dir, "--log-file", log_path,
 	])
+	if migration_enabled:
+		args.append("--migration-export")
+		args.append("--lease-required")
 	pid = OS.create_process(node_path, args)
 	var ok := await _wait_health(20.0)
 	starting = false
@@ -229,6 +242,62 @@ func stop() -> void:
 		pid = -1
 	starting = false
 	base = ""
+	if recovery_state_dir != "":
+		_remove_tree(recovery_state_dir.get_base_dir())
+		recovery_state_dir = ""
+
+
+func _remove_tree(path: String) -> void:
+	var d := DirAccess.open(path)
+	if d == null:
+		return
+	d.list_dir_begin()
+	var name := d.get_next()
+	while name != "":
+		var child := path.path_join(name)
+		if d.current_is_dir():
+			_remove_tree(child)
+		else:
+			DirAccess.remove_absolute(child)
+		name = d.get_next()
+	d.list_dir_end()
+	DirAccess.remove_absolute(path)
+
+
+## Восстановление выполняется до запуска Node и в отдельном каталоге. Файл
+## передачи лежит в приватном каталоге и удаляется независимо от исхода.
+func import_migration(payload: Dictionary) -> bool:
+	if is_running() or not payload.has("data") or not payload.has("sha256") or not payload.has("playerId"):
+		return false
+	project_dir = find_project_dir()
+	node_path = find_node(project_dir)
+	if project_dir == "" or node_path == "":
+		return false
+	var tag := Crypto.new().generate_random_bytes(12).hex_encode()
+	var dir := state_root().path_join("migration-" + tag)
+	if DirAccess.make_dir_recursive_absolute(dir) != OK:
+		return false
+	if OS.get_name() != "Windows":
+		FileAccess.set_unix_permissions(dir, FileAccess.UNIX_READ_OWNER | FileAccess.UNIX_WRITE_OWNER | FileAccess.UNIX_EXECUTE_OWNER)
+	var file := dir.path_join("transfer.json")
+	var f := FileAccess.open(file, FileAccess.WRITE)
+	if f == null:
+		DirAccess.remove_absolute(dir)
+		return false
+	f.store_string(JSON.stringify({"data": payload.data, "sha256": payload.sha256, "codec": payload.get("codec", "json")}))
+	f.close()
+	if OS.get_name() != "Windows":
+		FileAccess.set_unix_permissions(file, FileAccess.UNIX_READ_OWNER | FileAccess.UNIX_WRITE_OWNER)
+	var target := dir.path_join("rooms")
+	var output := []
+	var result := OS.execute(node_path, PackedStringArray([project_dir.path_join("game/server/migration-import.js"), file, target, str(int(payload.playerId))]), output, true)
+	DirAccess.remove_absolute(file)
+	if result != 0:
+		last_error = "import_failed: " + (str(output[0]).strip_edges() if not output.is_empty() else str(result))
+		_remove_tree(dir)
+		return false
+	recovery_state_dir = target
+	return true
 
 
 func _exit_tree() -> void:

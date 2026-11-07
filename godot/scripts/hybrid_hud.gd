@@ -37,6 +37,10 @@ var status_text := ""
 var buttons: Dictionary = {}
 var constants: Dictionary = {}
 var _panel_sig_last := ""
+## Подпись панели деревни: при 600 жителях пересобирать список на каждый
+## снимок (10 раз в секунду) — это сотни новых Control-нод и просадка кадра.
+var _village_sig := ""
+var _village_fill_ms := 0
 var _minimap_cam := {"x": 0.0, "y": 0.0, "zoom": 40.0}
 var _viewport := Vector2(1440, 900)
 var _follow := false
@@ -67,9 +71,17 @@ var line_seq := 0
 
 var _top: PanelContainer
 var _top_label: Label
+var _logs_word: Label
+var _village_btn: Button
+var _top_stats := ""
 var _events: PanelContainer
 var _events_label: Label
 var _status: Label
+var _hints: PanelContainer
+var _mm_panel: PanelContainer
+var _mm_bar: HBoxContainer
+var _zoom_out: Button
+var _zoom_in: Button
 var _bottom: HBoxContainer
 var _panel: PanelContainer
 var _panel_body: VBoxContainer
@@ -84,6 +96,8 @@ var _village_body: VBoxContainer
 var _end: PanelContainer
 var _end_body: VBoxContainer
 var _badge: Label
+var _badge_panel: PanelContainer
+var _dim: ColorRect
 var _hint: Label
 
 
@@ -128,49 +142,116 @@ func _type_name(type: String) -> String:
 
 
 func _build_frame() -> void:
-	_top = UI.panel(10)
-	_top.custom_minimum_size = Vector2(720, 44)
+	# Затемнение под модальными экранами (меню, итог): карта остаётся видна,
+	# но центр внимания — на доске. Один ColorRect, в кадре ничего не стоит.
+	_dim = ColorRect.new()
+	_dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_dim.color = Color(0.02, 0.05, 0.08, 0.42)
+	_dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_dim.visible = false
+	add_child(_dim)
+	move_child(_dim, 0)
+	# Верх слева — ровно как в браузере: «Добыто», охапка, число, «брёвен»
+	# и кнопка «Деревня». Остальные счётчики живут в панели деревни.
+	_top = UI.panel(8)
+	_top.custom_minimum_size = Vector2(286, 54)
 	add_child(_top)
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 18)
+	row.add_theme_constant_override("separation", 7)
 	_top.add_child(row)
-	_top_label = UI.ink_label("Брёвна 0 · Жители 0 · Воины 0", 17)
+	var cap := UI.label("ДОБЫТО", 9, Color("#f0dcb4"), 1)
+	row.add_child(cap)
+	var icon := TextureRect.new()
+	icon.texture = load("res://assets/wood.png") as Texture2D
+	icon.custom_minimum_size = Vector2(40, 32)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	row.add_child(icon)
+	_top_label = UI.label("0", 22, Color("#fff6d8"), 2)
 	row.add_child(_top_label)
+	_logs_word = UI.label("брёвен", 11, Color("#f0dcb4"), 1)
+	row.add_child(_logs_word)
 
-	_events = UI.panel(8)
-	_events.custom_minimum_size = Vector2(720, 34)
+	_village_btn = UI.button("☰ Деревня", 14)
+	_village_btn.custom_minimum_size = Vector2(124, 44)
+	_village_btn.pressed.connect(func() -> void: toggle_panel("village"))
+	add_child(_village_btn)
+	buttons["Деревня"] = _village_btn
+
+	_events = UI.panel(6)
+	_events.custom_minimum_size = Vector2(360, 30)
 	add_child(_events)
-	_events_label = UI.ink_label("событий нет", 14)
+	var erow := HBoxContainer.new()
+	erow.add_theme_constant_override("separation", 5)
+	_events.add_child(erow)
+	# Живая точка ленты: пульсирует, но это одна Tween-анимация на весь HUD.
+	var dot := UI.label("●", 9, UI.MOSS_LITE, 0)
+	dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	erow.add_child(dot)
+	UI.pulse(dot, 2.2)
+	_events_label = UI.ink_label("событий пока нет", 12)
 	_events_label.add_theme_color_override("font_color", UI.INK_SOFT)
-	_events.add_child(_events_label)
+	erow.add_child(_events_label)
 
+	# Верх справа — три кнопки, как в браузере: войска, стройка, меню.
 	_bottom = HBoxContainer.new()
-	_bottom.add_theme_constant_override("separation", 10)
+	_bottom.add_theme_constant_override("separation", 8)
 	add_child(_bottom)
-	for spec in [["build", "Стройка"], ["edit", "Правка"], ["army", "Войска"],
-			["village", "Деревня"], ["menu", "Меню"]]:
-		var b := UI.button(str(spec[1]), 16)
-		b.custom_minimum_size = Vector2(108, 46)
+	for spec in [["army", "Войска", "secondary"], ["build", "Стройка", "primary"],
+			["menu", "Меню", "ghost"]]:
+		var b := UI.button(str(spec[1]), 15, str(spec[2]))
+		b.custom_minimum_size = Vector2(112, 44)
 		b.pressed.connect(func() -> void: toggle_panel(str(spec[0])))
 		_bottom.add_child(b)
 		buttons[str(spec[1])] = b
 
-	_status = UI.label("", 15, UI.CREAM, 3)
+	_status = UI.label("", 13, UI.CREAM, 2)
+	# Ответ сервера и так виден в ленте событий сверху; отдельная строка поверх
+	# карты в браузере не нужна и только налезала на подсказки.
+	_status.visible = false
 	add_child(_status)
 
-	_hint = UI.label("ЛКМ — выбрать · удержать — правка · колесо — зум · WASD — камера · Esc — меню",
-		12, Color(0.94, 0.92, 0.84, 0.8), 2)
-	add_child(_hint)
+	# Низ слева — тёмная доска подсказок, как в браузере. Это не декор:
+	# игрок должен видеть, что удержание — правка, а H/C — камера.
+	_hints = PanelContainer.new()
+	var hb := UI.panel_style(true)
+	hb.content_margin_left = 14
+	hb.content_margin_right = 14
+	hb.content_margin_top = 9
+	hb.content_margin_bottom = 9
+	_hints.add_theme_stylebox_override("panel", hb)
+	add_child(_hints)
+	var hbox := VBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 2)
+	_hints.add_child(hbox)
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 7)
+	hbox.add_child(head)
+	head.add_child(UI.label("✦", 13, UI.GOLD, 1))
+	var hcap := UI.label("ПОДСКАЗКИ", 10, Color(0.96, 0.84, 0.56, 0.95), 1)
+	head.add_child(hcap)
+	head.add_child(UI.hsep(2))
+	for line in [
+		"Тянуть — панорама · колесо/два пальца — зум",
+		"Клик — выбрать постройку или жителя",
+		"Удержать — правка постройки",
+		"H — к выбранному жителю · C — следить за ним",
+		"T — сведения о деревне · O — войска · V — общий план",
+		"N — новый остров · Esc — снять выбор · меню"]:
+		hbox.add_child(UI.label(line, 12, Color(0.96, 0.94, 0.86, 0.92), 1))
+	_hint = UI.label("", 11, Color(0.94, 0.92, 0.84, 0.8))
+	hbox.add_child(_hint)
 
-	_panel = UI.panel(14)
-	_panel.custom_minimum_size = Vector2(760, 0)
+	_panel = UI.panel(12)
+	_panel.custom_minimum_size = Vector2(360, 0)
 	_panel.visible = false
 	add_child(_panel)
 	_panel_body = VBoxContainer.new()
-	_panel_body.add_theme_constant_override("separation", 8)
+	_panel_body.add_theme_constant_override("separation", 6)
 	_panel.add_child(_panel_body)
 
-	_place_bar = UI.panel(12)
+	_place_bar = UI.panel(10)
 	_place_bar.custom_minimum_size = Vector2(640, 64)
 	_place_bar.visible = false
 	add_child(_place_bar)
@@ -202,11 +283,51 @@ func _build_frame() -> void:
 	prow.add_child(pcancel)
 	buttons["Отменить"] = pcancel
 
+	# Низ справа — обзор в деревянной раме, с «−», «ОБЗОР», «+», как в браузере.
+	_mm_panel = UI.panel(6)
+	_mm_panel.custom_minimum_size = Vector2(212, 236)
+	add_child(_mm_panel)
+	var mm_box := VBoxContainer.new()
+	mm_box.add_theme_constant_override("separation", 4)
+	_mm_panel.add_child(mm_box)
 	_minimap = Minimap.new()
-	add_child(_minimap)
+	_minimap.custom_minimum_size = Vector2(192, 192)
+	mm_box.add_child(_minimap)
 	_minimap.cell_clicked.connect(func(cell: Vector2i) -> void:
 		if demo != null:
 			demo.minimap_to(cell))
+	# Компас на обзоре: маленькая деталь, но карта сразу читается как карта.
+	var north := UI.label("С", 10, UI.GOLD, 2)
+	north.position = Vector2(88, 3)
+	north.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_minimap.add_child(north)
+	var east := UI.label("В", 9, Color(0.96, 0.86, 0.62, 0.72), 1)
+	east.position = Vector2(174, 86)
+	east.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_minimap.add_child(east)
+	_mm_bar = HBoxContainer.new()
+	_mm_bar.add_theme_constant_override("separation", 4)
+	mm_box.add_child(_mm_bar)
+	_zoom_out = UI.button("−", 14)
+	_zoom_out.custom_minimum_size = Vector2(28, 28)
+	_zoom_out.tooltip_text = "Отдалить"
+	_zoom_out.pressed.connect(func() -> void:
+		if demo != null:
+			demo.zoom_step(-1))
+	_mm_bar.add_child(_zoom_out)
+	buttons["Зум −"] = _zoom_out
+	var mm_cap := UI.ink_label("ОБЗОР", 10)
+	mm_cap.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	mm_cap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_mm_bar.add_child(mm_cap)
+	_zoom_in = UI.button("+", 14)
+	_zoom_in.custom_minimum_size = Vector2(28, 28)
+	_zoom_in.tooltip_text = "Приблизить"
+	_zoom_in.pressed.connect(func() -> void:
+		if demo != null:
+			demo.zoom_step(1))
+	_mm_bar.add_child(_zoom_in)
+	buttons["Зум +"] = _zoom_in
 
 	_village = UI.panel(12)
 	_village.custom_minimum_size = Vector2(320, 520)
@@ -216,8 +337,11 @@ func _build_frame() -> void:
 	_village_body.add_theme_constant_override("separation", 6)
 	_village.add_child(_village_body)
 
-	_badge = UI.label("", 14, UI.CREAM, 3)
-	add_child(_badge)
+	_badge_panel = UI.panel(5, UI.PANEL_DARK)
+	_badge_panel.visible = false
+	add_child(_badge_panel)
+	_badge = UI.label("", 14, UI.CREAM, 2)
+	_badge_panel.add_child(_badge)
 
 	_end = UI.panel(20)
 	_end.visible = false
@@ -229,33 +353,71 @@ func _build_frame() -> void:
 
 func _on_resized() -> void:
 	_viewport = get_viewport_rect().size
-	# Как в браузере: ресурсы сверху слева, действия сверху справа, подсказки
-	# снизу слева, обзор снизу справа, события под ресурсами.
-	_top.position = Vector2(24, 16)
-	_top.size = Vector2(720, 44)
-	_events.position = Vector2(24, 66)
-	_events.size = Vector2(720, 34)
-	_bottom.position = Vector2(_viewport.x - 604, 16)
-	_status.position = Vector2(24, _viewport.y - 58)
-	_status.size = Vector2(760, 24)
-	_hint.position = Vector2(24, _viewport.y - 30)
-	_hint.size = Vector2(900, 20)
-	_panel.position = Vector2(_viewport.x * 0.5 - 380, 120)
-	_place_bar.position = Vector2(_viewport.x * 0.5 - 320, _viewport.y - 190)
-	_minimap.position = Vector2(_viewport.x - 216, _viewport.y - 192)
-	_minimap.size = Vector2(196, 168)
-	_village.position = Vector2(16, 110)
+	# Раскладка снята с браузера: ресурсы и «Деревня» сверху слева, события
+	# под ними, действия сверху справа, подсказки снизу слева, обзор снизу
+	# справа. Ни одна панель не закрывает центр карты без нужды.
+	_top.position = Vector2(16, 16)
+	_top.size = Vector2(286, 54)
+	_village_btn.position = Vector2(310, 16)
+	_village_btn.size = Vector2(124, 44)
+	_events.position = Vector2(16, 80)
+	_events.size = Vector2(360, 30)
+	_bottom.position = Vector2(_viewport.x - 16 - 352, 16)
+	_bottom.size = Vector2(352, 44)
+	_status.position = Vector2(_viewport.x * 0.5 - 260, _viewport.y - 126)
+	_status.size = Vector2(520, 22)
+	_hints.position = Vector2(16, _viewport.y - 190)
+	_hints.size = Vector2(470, 174)
+	_mm_panel.position = Vector2(_viewport.x - 228, _viewport.y - 252)
+	_mm_panel.size = Vector2(212, 236)
+	_badge_panel.position = Vector2(_viewport.x - 228, _viewport.y - 286)
+	_badge_panel.size = Vector2(212, 30)
+	_place_bar.position = Vector2(_viewport.x * 0.5 - 320, _viewport.y - 218)
+	_village.position = Vector2(16, 120)
 	_village.size = Vector2(330, 520)
-	_badge.position = Vector2(_viewport.x - 216, _viewport.y - 216)
 	_end.position = Vector2(_viewport.x * 0.5 - 300, _viewport.y * 0.5 - 150)
 	_end.size = Vector2(600, 300)
+	_place_panel()
 	_panel_sig_last = ""
+
+
+## Панель — на своё место: стройка справа (как в браузере), правка внизу по
+## центру, наём/войска слева, меню по центру.
+func _place_panel() -> void:
+	if _panel == null:
+		return
+	var w := 360.0
+	match panel:
+		"build":
+			w = 360.0
+			_panel.position = Vector2(_viewport.x - 16 - w, 80)
+		"edit":
+			w = 760.0
+			_panel.position = Vector2(_viewport.x * 0.5 - w * 0.5, _viewport.y - 300)
+		"hire":
+			w = 360.0
+			_panel.position = Vector2(16, 120)
+		"army":
+			w = 560.0
+			_panel.position = Vector2(16, 120)
+		"menu":
+			w = 600.0
+			_panel.position = Vector2(_viewport.x * 0.5 - 300, _viewport.y * 0.5 - 150)
+		_:
+			w = 760.0
+			_panel.position = Vector2(_viewport.x * 0.5 - 380, 120)
+	# PanelContainer не уменьшается сам при смене панели: после «Правки» (760)
+	# карточки стройки оставались за правым краем экрана. Ширину задаём явно.
+	_panel.custom_minimum_size = Vector2(w, 0)
+	_panel.size = Vector2(w, _panel.size.y)
+	_panel.reset_size()
 
 
 # ------------------------------------------------------------------ данные
 
 func reset() -> void:
 	snap = {}
+	_village_sig = ""
 	panel = ""
 	place_type = ""
 	place_name = ""
@@ -386,17 +548,19 @@ func refresh() -> void:
 	var felled := int(t.get("felled", 0))
 	var delivered := int(t.get("deliveries", 0))
 	var lost := int(t.get("lost", 0))
-	_top_label.text = "Брёвна %d · Жители %d · Воины %d · Учатся %d · Срублено %d · Доставлено %d" % [
+	_top_stats = "Брёвна %d · Жители %d · Воины %d · Учатся %d · Срублено %d · Доставлено %d" % [
 		logs, int(c["villagers"]) + int(c["trainees"]), c["warriors"], c["trainees"],
 		felled, delivered]
+	_top_label.text = str(logs)
+	_logs_word.text = "брёвен"
 	var mode_text := "одиночная партия"
 	if mode == "bot":
 		mode_text = "против деревни"
 	elif mode == "multi":
 		mode_text = "сетевая партия"
-	_events_label.text = ("Ответ: " + status_text) if status_text != "" else \
-		("потеряно брёвен %d · кадр №%d · %s" % [lost, int(snap.get("revision", 0)),
-			mode_text])
+	_events_label.text = status_text if status_text != "" else \
+		("событий пока нет · потеряно брёвен %d · кадр №%d · %s" % [
+			lost, int(snap.get("revision", 0)), mode_text])
 	if _badge != null:
 		if spectator:
 			_badge.text = "наблюдатель"
@@ -414,6 +578,10 @@ func refresh() -> void:
 				_badge.add_theme_color_override("font_color", UI.CREAM)
 		else:
 			_badge.text = "" if mode == "solo" else ("локальный сервер · %s" % mode)
+		if _badge_panel != null:
+			_badge_panel.visible = _badge.text != ""
+	if _dim != null:
+		_dim.visible = panel == "menu" or (_end != null and _end.visible)
 	_update_place_bar()
 	if panel != "":
 		var sig := _panel_sig(logs, c)
@@ -421,7 +589,12 @@ func refresh() -> void:
 			_panel_sig_last = sig
 			_fill_current(logs, c)
 	if _village.visible:
-		_fill_village()
+		var vs := _village_signature()
+		var now_ms := Time.get_ticks_msec()
+		if vs != _village_sig and now_ms - _village_fill_ms >= 400:
+			_village_sig = vs
+			_village_fill_ms = now_ms
+			_fill_village()
 	if demo != null:
 		var fx: Variant = demo.get("_fx")
 		if fx != null:
@@ -437,6 +610,19 @@ func refresh() -> void:
 						fp = Vector2i(int(a[0]), int(a[1]))
 			fx.selected_building = selected_id
 			fx.footprint = fp
+
+
+## Дёшево: только поля, которые видно в списке. Меняется состояние или
+## состав — пересобираем; иначе панель не трогаем.
+func _village_signature() -> String:
+	var t := _town()
+	var parts: Array = [int(t.get("logs", 0)), int(t.get("felled", 0)),
+		int(t.get("deliveries", 0)), int(t.get("lost", 0))]
+	for v in _villagers_of_mine():
+		parts.append("%s:%s:%s:%s:%s" % [str(v.get("id", "")),
+			_villager_state(v), str(v.get("employerId", "")),
+			int(v.get("hp", 0)), int(v.get("tileX", -1))])
+	return "|".join(parts)
 
 
 func _panel_sig(logs: int, c: Dictionary) -> String:
@@ -459,7 +645,11 @@ func open_panel(name: String) -> void:
 	order_mode = false
 	if name == "village":
 		_village.visible = true
+		_village_sig = _village_signature()
+		_village_fill_ms = Time.get_ticks_msec()
 		_fill_village()
+		_village.reset_size()
+		UI.pop_in(_village, 0.22)
 		refresh()
 		return
 	if name == "hire":
@@ -467,10 +657,14 @@ func open_panel(name: String) -> void:
 	_panel.visible = true
 	_village.visible = false
 	_panel_sig_last = ""
+	_panel.reset_size()
+	UI.pop_in(_panel, 0.22)
 	refresh()
 
 
 func close_panel() -> void:
+	if move_id != "" and demo != null:
+		demo.cancel_move()
 	edit_prev = {}
 	panel = ""
 	place_type = ""
@@ -484,6 +678,8 @@ func close_panel() -> void:
 		_place_bar.visible = false
 	if _village != null:
 		_village.visible = false
+	if _dim != null:
+		_dim.visible = false
 	if demo != null:
 		demo.set_place_hint("", place_rot)
 		demo.set_order_marker(Vector2i(-1, -1))
@@ -500,6 +696,18 @@ func _clear(node: Node) -> void:
 
 func _title(text: String) -> void:
 	_panel_body.add_child(UI.ink_label(text, 18))
+
+
+## Пояснение в панели: переносится по словам и не выезжает за дощечку.
+func _note(text: String, size: int = 12, width: int = 300) -> Label:
+	var l := UI.ink_label(text, size)
+	l.add_theme_color_override("font_color", UI.INK_SOFT)
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# Ширина нужна и для МИНИМАЛЬНОГО размера: при нулевой ширине Label с
+	# переносом считает по слову на строку и раздувает панель на весь экран.
+	l.custom_minimum_size = Vector2(float(width), 0.0)
+	return l
 
 
 ## Кнопки прошлой панели удаляются вместе с панелью, но ссылки в `buttons`
@@ -523,45 +731,88 @@ func _fill_current(logs: int, c: Dictionary) -> void:
 		"army": _fill_army(c)
 		"menu": _fill_menu()
 	_panel.reset_size()
-	_panel.position.y = maxf(110.0, _bottom.position.y - 12.0 - _panel.size.y)
+	_place_panel()
 
 
 func _fill_build(logs: int) -> void:
 	_title("Постройки · брёвен %d" % logs)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	_panel_body.add_child(row)
+	# Карточки столбиком справа, как в браузере: картинка, название с
+	# описанием, цена и две кнопки. Раньше четыре карточки лежали в ряд по
+	# центру и закрывали карту.
+	var bdata = null
+	if demo != null and demo.get("_layer") != null:
+		bdata = demo.get("_layer").bdata
 	for item in _menu_items():
-		var card := UI.panel(8)
-		card.custom_minimum_size = Vector2(180, 132)
-		var col := VBoxContainer.new()
-		col.add_theme_constant_override("separation", 2)
-		card.add_child(col)
-		col.add_child(UI.ink_label(_type_name(str(item["type"])), 15))
-		col.add_child(UI.ink_label("%d брёвен" % int(item["price"]), 14))
-		var note := UI.ink_label(str(item.get("note", "")), 12)
+		var type := str(item["type"])
+		var variant := str(item.get("variant", "a"))
+		var card := UI.panel(6)
+		card.custom_minimum_size = Vector2(336, 76)
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 8)
+		card.add_child(row)
+		var prev := TextureRect.new()
+		prev.custom_minimum_size = Vector2(58, 58)
+		prev.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		prev.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		prev.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+		if bdata != null:
+			var f: Dictionary = bdata.frame_for(type, variant, 90)
+			if not f.is_empty():
+				var at := AtlasTexture.new()
+				at.atlas = bdata.set_for(type)["tex"]
+				at.region = Rect2(float(f["x"]), float(f["y"]),
+					float(f["w"]), float(f["h"]))
+				prev.texture = at
+		row.add_child(prev)
+		var info := VBoxContainer.new()
+		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		info.add_theme_constant_override("separation", 0)
+		row.add_child(info)
+		info.add_child(UI.ink_label(_type_name(type), 15))
+		var note := UI.ink_label(str(item.get("note", "")), 11)
 		note.add_theme_color_override("font_color", UI.INK_SOFT)
 		note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		note.custom_minimum_size = Vector2(160, 0)
-		col.add_child(note)
-		var b := UI.button("Построить", 14)
+		note.custom_minimum_size = Vector2(150, 0)
+		info.add_child(note)
+		var right := VBoxContainer.new()
+		right.custom_minimum_size = Vector2(104, 0)
+		right.add_theme_constant_override("separation", 2)
+		row.add_child(right)
+		var price := UI.ink_label("%d брёвен" % int(item["price"]), 12)
+		price.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		right.add_child(price)
+		var b := UI.button("Построить", 12)
+		b.custom_minimum_size = Vector2(104, 28)
 		b.disabled = logs < int(item["price"])
-		b.pressed.connect(func() -> void: begin_place(str(item["type"]), _type_name(str(item["type"]))))
-		col.add_child(b)
-		buttons["Построить " + str(item["type"])] = b
-		var line := UI.button("Серия", 12)
+		b.pressed.connect(func() -> void: begin_place(type, _type_name(type)))
+		right.add_child(b)
+		buttons["Построить " + type] = b
+		var line := UI.button("Линия", 11)
+		line.custom_minimum_size = Vector2(104, 24)
 		line.disabled = logs < int(item["price"]) * 2
-		line.pressed.connect(func() -> void: begin_line(str(item["type"])))
-		col.add_child(line)
-		buttons["Серия " + str(item["type"])] = line
-		row.add_child(card)
-	_panel_body.add_child(UI.ink_label(
-		"Стройка тратит брёвна: их приносят лесорубы из лагеря.", 12))
+		line.pressed.connect(func() -> void: begin_line(type))
+		right.add_child(line)
+		buttons["Серия " + type] = line
+		_panel_body.add_child(card)
+	_panel_body.add_child(_note(
+		"Стройка тратит брёвна: их приносят лесорубы из лагеря.", 11, 280))
+	_panel_body.add_child(UI.hsep(3))
 
 
 func _fill_edit() -> void:
 	var name := _sel_name()
 	_title(("Правка · " + name) if selected_id != "" else "Правка · выберите постройку")
+	var state := "удержание или «Двигать» — вести · клик — поставить"
+	if move_id != "":
+		if demo != null and demo.move_placed():
+			state = "место выбрано · «Применить» отправит перенос"
+		else:
+			state = "ведите мышью · клик — поставить · «Применить»/«Отменить»"
+		if demo != null and not demo.move_valid() and str(demo.move_reason()) != "":
+			state = str(demo.move_reason())
+		elif demo != null and not demo.move_valid():
+			state = "место не годится"
+	_panel_body.add_child(_note(state, 12, 680))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	_panel_body.add_child(row)
@@ -573,15 +824,15 @@ func _fill_edit() -> void:
 		row.add_child(b)
 	var apply := UI.button("Применить", 14)
 	apply.disabled = selected_id == ""
-	apply.pressed.connect(func() -> void: close_panel())
+	apply.pressed.connect(func() -> void: apply_edit())
 	buttons["Применить"] = apply
 	row.add_child(apply)
 	var cancel := UI.button("Отменить", 14)
 	cancel.pressed.connect(func() -> void: edit_cancel())
 	buttons["Отменить правку"] = cancel
 	row.add_child(cancel)
-	_panel_body.add_child(UI.ink_label(
-		"сервер проверяет место и выходы соседей; отказ придёт словами", 12))
+	_panel_body.add_child(_note(
+		"сервер проверяет место и выходы соседей; отказ придёт словами", 12, 680))
 
 
 func _camp_name(b: Dictionary) -> String:
@@ -634,7 +885,7 @@ func _fill_hire() -> void:
 	# Строки: кто здесь и кто свободен. Причина отказа не решается здесь —
 	# кнопка ведёт к серверу, а он отвечает словами.
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(720, 220)
+	scroll.custom_minimum_size = Vector2(320, 300)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_panel_body.add_child(scroll)
 	var list := VBoxContainer.new()
@@ -730,29 +981,42 @@ func _fill_army(c: Dictionary) -> void:
 	buttons["Стоп"] = stop
 	row2.add_child(stop)
 	var sel: Array = demo.army_selection() if demo != null else []
-	_panel_body.add_child(UI.ink_label(
-		"Выбрано %d · «Половина» — половина всех, «½ группы» — половина одной. «Приказ» — затем клик по карте." % sel.size(), 12))
+	_panel_body.add_child(_note(
+		"Выбрано %d · «Половина» — половина всех, «½ группы» — половина одной. «Приказ» — затем клик по карте." % sel.size(), 12, 500))
+	_panel_body.add_child(UI.hsep(4))
 
 
 func _fill_menu() -> void:
-	_title("Меню · игра не останавливается")
+	_panel_body.add_child(UI.ink_label("Меню", 26))
+	var note := UI.ink_label("игра не останавливается · сервер продолжает считать", 12)
+	note.add_theme_color_override("font_color", UI.INK_SOFT)
+	_panel_body.add_child(note)
+	_panel_body.add_child(UI.hsep(2))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
 	_panel_body.add_child(row)
-	var cont := UI.button("Продолжить", 15)
+	var cont := UI.button("Продолжить", 15, "primary")
+	cont.custom_minimum_size = Vector2(0, 44)
+	cont.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	cont.pressed.connect(func() -> void: close_panel())
 	buttons["Продолжить"] = cont
 	row.add_child(cont)
 	var again := UI.button("Новый остров", 15)
+	again.custom_minimum_size = Vector2(0, 44)
+	again.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	again.pressed.connect(func() -> void: restart())
 	buttons["Новый остров"] = again
 	row.add_child(again)
-	var out := UI.button("В главное меню", 15)
+	var out := UI.button("В главное меню", 15, "ghost")
+	out.custom_minimum_size = Vector2(0, 44)
+	out.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	out.pressed.connect(func() -> void: leave())
 	buttons["В главное меню"] = out
 	row.add_child(out)
-	_panel_body.add_child(UI.ink_label(
-		"Время мира идёт: сервер продолжает считать, пока меню открыто. Esc — закрыть.", 12))
+	_panel_body.add_child(UI.hsep(2))
+	var hint := UI.ink_label("Esc — закрыть. Мир за меню живёт.", 12)
+	hint.add_theme_color_override("font_color", UI.INK_SOFT)
+	_panel_body.add_child(hint)
 
 
 func _fill_village() -> void:
@@ -992,6 +1256,8 @@ func confirm_line() -> void:
 
 func begin_place(type: String, name: String) -> void:
 	_end_line()
+	if move_id != "" and demo != null:
+		demo.cancel_move()
 	close_panel()
 	place_type = type
 	place_name = name
@@ -1022,7 +1288,7 @@ func begin_order() -> void:
 	close_panel()
 	order_mode = true
 	panel = ""
-	_status.text = "клик по карте — приказ выбранным воинам, ПКМ/Esc — отмена"
+	status_text = "клик по карте — приказ выбранным воинам, ПКМ/Esc — отмена"
 	refresh()
 
 
@@ -1043,8 +1309,11 @@ func cancel_action() -> void:
 		refresh()
 		return
 	if move_id != "":
+		if demo != null:
+			demo.cancel_move()
 		move_id = ""
 		status_text = "перенос отменён"
+		close_panel()
 		refresh()
 		return
 	if order_mode:
@@ -1110,6 +1379,7 @@ func select_villager(v: Dictionary) -> void:
 	selected_villager_id = str(v.get("id", ""))
 	selected_id = ""
 	_village.visible = true
+	_village_sig = _village_signature()
 	_fill_village()
 	refresh()
 
@@ -1125,23 +1395,100 @@ func edit_action(kind: String) -> void:
 	if selected_id == "" or room == null:
 		return
 	if kind == "move":
-		# close_panel() сбрасывает move_id и снимок для «Отменить», поэтому
-		# порядок важен: запоминаем, закрываем, возвращаем снимок.
-		var id := selected_id
-		var keep: Dictionary = edit_prev.duplicate()
-		close_panel()
-		edit_prev = keep
-		move_id = id
-		panel = ""
-		_status.text = "клик по карте — новое место постройки, ПКМ/Esc — отмена"
+		begin_move_hold(selected_id, Vector2i(-1, -1))
 		return
+	# Поворот/снос во время ведения: сначала убираем призрак, иначе он
+	# остался бы висеть после команды и «Отменить» отменяла бы не то.
+	if move_id != "":
+		if demo != null:
+			demo.cancel_move()
+		move_id = ""
 	var act := "rotate" if kind == "rotate" else "delete"
+	var gen := _panel_gen
 	status_text = "команда: %s…" % act
+	# Поворот/снос видны сразу: снимок подтвердит их параллельно.
+	if demo != null and demo.has_method("apply_pending_edit"):
+		if act == "delete":
+			demo.apply_pending_edit(selected_id, "delete")
+		else:
+			var b: Dictionary = demo.building_by_id(selected_id) if demo != null else {}
+			demo.apply_pending_edit(selected_id, "rotate",
+				0, 0, (int(b.get("rot", 0)) + 90) % 360)
 	refresh()
 	var r: Dictionary = await room.send_command("edit", {"action": act, "id": selected_id})
+	if not bool(r.get("ok", false)) and demo != null and demo.has_method("drop_pending_edit"):
+		demo.drop_pending_edit(selected_id)
 	_after_command("правка", r)
-	if kind == "delete" and bool(r.get("ok", false)):
+	# Снос закрывает правку только если игрок не открыл другую панель, пока
+	# команда ходила на сервер. Иначе поздний ответ закрывал «Стройку».
+	if kind == "delete" and bool(r.get("ok", false)) and gen == _panel_gen:
 		clear_selection()
+
+
+## Взять постройку в руку. grab — клетка пятна, за которую взялись
+## удержанием (у «Двигать» её нет).
+func begin_move_hold(id: String, grab: Vector2i) -> void:
+	if id == "":
+		return
+	var keep: Dictionary = edit_prev.duplicate()
+	if str(keep.get("id", "")) != id:
+		var b: Dictionary = demo.building_by_id(id) if demo != null else {}
+		keep = {"id": id, "x": int(b.get("x", 0)), "y": int(b.get("y", 0)),
+			"rot": int(b.get("rot", 0))} if not b.is_empty() else {}
+	edit_prev = keep
+	_panel_gen += 1
+	selected_id = id
+	move_id = id
+	place_type = ""
+	place_name = ""
+	if _place_bar != null:
+		_place_bar.visible = false
+	panel = "edit"
+	_panel.visible = true
+	_village.visible = false
+	_panel_sig_last = ""
+	status_text = ""
+	if demo != null:
+		demo.begin_move(id, grab)
+	refresh()
+	_panel.reset_size()
+
+
+## «Применить»: перенос уже показан призраком, серверу уходит только место.
+## Пока место не годно — не отправляем и говорим причину.
+func apply_edit() -> void:
+	if move_id != "":
+		var wid := move_id
+		if demo != null and not demo.move_valid():
+			var why := str(demo.move_reason())
+			status_text = "перенос: " + (why if why != "" else "место не годится")
+			refresh()
+			return
+		var target: Dictionary = demo.commit_move() if demo != null else {}
+		move_id = ""
+		if target.is_empty():
+			close_panel()
+			return
+		if room == null:
+			close_panel()
+			return
+		status_text = "переносим…"
+		if demo != null and demo.has_method("apply_pending_edit"):
+			demo.apply_pending_edit(wid, "move",
+				int(target.get("x", 0)), int(target.get("y", 0)))
+		refresh()
+		var gen := _panel_gen
+		var r: Dictionary = await room.send_command("edit", {
+			"action": "move", "id": wid,
+			"x": int(target.get("x", 0)), "y": int(target.get("y", 0))})
+		if not bool(r.get("ok", false)) and demo != null and demo.has_method("drop_pending_edit"):
+			demo.drop_pending_edit(wid)
+		_after_command("перенос", r)
+		# Пока ответ шёл, игрок мог открыть другую панель — её не закрываем.
+		if gen == _panel_gen:
+			close_panel()
+		return
+	close_panel()
 
 
 ## Показать панель правки для уже выбранной постройки, не сбрасывая снимок
@@ -1160,6 +1507,14 @@ func _reopen_edit(id: String) -> void:
 
 func edit_cancel() -> void:
 	var gen := _panel_gen
+	if move_id != "":
+		if demo != null:
+			demo.cancel_move()
+		move_id = ""
+		status_text = "перенос отменён"
+		close_panel()
+		refresh()
+		return
 	if selected_id == "" or room == null:
 		close_panel()
 		return
@@ -1182,6 +1537,8 @@ func edit_cancel() -> void:
 	for i in range(steps):
 		r = await room.send_command("edit", {"action": "rotate", "id": selected_id})
 	_after_command("отмена", r)
+	if demo != null and demo.has_method("drop_pending_edit"):
+		demo.drop_pending_edit(selected_id)
 	if _panel_gen == gen:
 		close_panel()
 
@@ -1298,21 +1655,28 @@ func map_click(cell: Vector2i) -> bool:
 		if demo != null:
 			demo.set_place_hint("", rot)
 		_update_place_bar()
+		# Дом встаёт в кадр до ответа сервера: подтверждение идёт параллельно.
+		var pending: Dictionary = {}
+		if demo != null and demo.has_method("add_pending_build"):
+			pending = demo.add_pending_build({
+				"type": type, "variant": str(item.get("variant", "a")),
+				"rot": rot, "x": cell.x, "y": cell.y,
+				"cost": int(item.get("price", 0))}, owner_id)
 		refresh()
 		var r: Dictionary = await room.send_command("build", {
 			"buildingType": type, "variant": str(item.get("variant", "a")),
 			"rot": rot, "x": cell.x, "y": cell.y})
+		if not bool(r.get("ok", false)) and not pending.is_empty() \
+				and demo != null and demo.has_method("drop_pending_build"):
+			demo.drop_pending_build(str(pending.get("id", "")))
 		_after_command("постройка", r)
 		return true
 	if move_id != "":
 		var id := move_id
-		move_id = ""
-		status_text = "переносим…"
-		var r: Dictionary = await room.send_command("edit", {
-			"action": "move", "id": id, "x": cell.x, "y": cell.y})
-		_after_command("перенос", r)
-		# Перенос не закрывает правку: «Применить»/«Отменить» должны остаться,
-		# иначе отменить перенос нечем (снимок edit_prev уже потерян бы).
+		if demo != null:
+			demo.place_move(cell)
+		status_text = "место выбрано · «Применить» отправит перенос"
+		# Перенос не закрывает правку: «Применить»/«Отменить» должны остаться.
 		_reopen_edit(id)
 		return true
 	if order_mode:
@@ -1357,9 +1721,14 @@ func _check_end() -> void:
 	_clear(_end_body)
 	var win := winner == owner_id
 	var title := "Победа" if win else "Поражение"
-	var t := UI.ink_label(title, 34)
+	# Первый Label — ровно «Победа»/«Поражение»: по нему приёмка читает итог.
+	var t := UI.label(title, 36, UI.MOSS_LITE if win else Color("#ff9f8a"), 8)
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_end_body.add_child(t)
+	var ribbon := UI.label("✦ матч выигран ✦" if win else "✕ матч проигран ✕", 12,
+		Color(0.96, 0.88, 0.66, 0.9), 1)
+	ribbon.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_end_body.add_child(ribbon)
 	var t2 := _town()
 	var text := "Брёвен: %d · срублено: %d · доставлено: %d" % [
 		int(t2.get("logs", 0)), int(t2.get("felled", 0)), int(t2.get("deliveries", 0))]
@@ -1374,15 +1743,16 @@ func _check_end() -> void:
 	row.add_theme_constant_override("separation", 12)
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	_end_body.add_child(row)
-	var again := UI.button("Новый остров", 18)
+	var again := UI.button("Новый остров", 18, "primary")
 	again.custom_minimum_size = Vector2(200, 50)
 	again.pressed.connect(func() -> void: restart())
-	_end_body.add_child(again)
-	var out := UI.button("В меню", 18)
+	row.add_child(again)
+	var out := UI.button("В меню", 18, "ghost")
 	out.custom_minimum_size = Vector2(200, 50)
 	out.pressed.connect(func() -> void: leave())
-	_end_body.add_child(out)
+	row.add_child(out)
 	_end.visible = true
+	UI.pop_in(_end, 0.28)
 
 
 # ------------------------------------------------------------------- тесты
@@ -1405,7 +1775,7 @@ func state() -> Dictionary:
 			end_title = (first as Label).text
 	return {
 		"panel": panel,
-		"top": _top_label.text,
+		"top": _top_stats,
 		"events": _events_label.text,
 		"status": _status.text,
 		"buttons": names,

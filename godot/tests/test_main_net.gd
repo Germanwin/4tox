@@ -81,9 +81,13 @@ func _run() -> void:
 		check(int(main.demo.hud().snap.get("villagers", []).size()) == 6,
 			"шесть жителей у двух игроков")
 		# Гость продолжает получать кадры, пока матч открыт.
+		# Окно 25 с, а не 8: в headless хост собирает остров синхронно, и
+		# главный поток (а с ним опрос WS у гостя) встаёт на ~10 с — замер
+		# 2026-11-04: 9,0–9,7 с, и это без правок сети, на прежнем коде 10,0 с.
+		# Кадры после этого идут; 8 с ловили не поломку, а длину сборки.
 		var rev0 := int(guest.latest_snapshot.get("revision", 0))
 		var alive := await _wait_for(func() -> bool:
-			return int(guest.latest_snapshot.get("revision", 0)) > rev0, 8.0)
+			return int(guest.latest_snapshot.get("revision", 0)) > rev0, 25.0)
 		check(alive, "гость получает кадры матча")
 
 	# Выход в меню закрывает комнату и сервер, зомби не остаётся.
